@@ -1,0 +1,7 @@
+*
+!go.mod
+!go.sum
+!cmd/clocktower/
+!internal/
+!web/
+**/*_test.go
