@@ -87,6 +87,49 @@ connect(() => ({ role: 'tv', room: store.get(KEY_ROOM), token: store.get(KEY_TOK
 
 // ---------------------------------------------------------------- frame loop
 
+// ?fps=1: readout of frames actually drawn (rAF and timer fallback both pass
+// through frame()). Without the flag `perf` is null and costs one check.
+const perf = new URLSearchParams(location.search).get('fps') === '1' ? makePerf() : null;
+
+function makePerf() {
+  const el = document.createElement('div');
+  el.id = 'fps';
+  stage.append(el);
+  const stamps = []; // frame start times, last 5 s
+  const draws = []; // matching draw durations (ms)
+  const p = { fps: 0, worstGap: 0, drawMs: 0, canvas: '', enemies: 0 };
+  let lastShown = 0;
+  p.record = (t0, t1) => {
+    stamps.push(t0);
+    draws.push(t1 - t0);
+    while (stamps[0] < t1 - 5000) {
+      stamps.shift();
+      draws.shift();
+    }
+    if (t1 - lastShown < 500) return;
+    lastShown = t1;
+    let n = 0;
+    let sum = 0;
+    let worst = t1 - stamps[stamps.length - 1];
+    for (let i = stamps.length - 1; i >= 0; i--) {
+      if (stamps[i] >= t1 - 1000) {
+        n++;
+        sum += draws[i];
+      }
+      if (i > 0) worst = Math.max(worst, stamps[i] - stamps[i - 1]);
+    }
+    let e = 0;
+    for (const en of game.ents.values()) if (!en.gone) e++;
+    p.fps = n;
+    p.worstGap = Math.round(worst);
+    p.drawMs = n ? Math.round((sum / n) * 100) / 100 : 0;
+    p.canvas = `${canvas.width}x${canvas.height}`;
+    p.enemies = e;
+    el.textContent = `${p.fps} fps  gap ${p.worstGap} ms  draw ${p.drawMs.toFixed(1)} ms  ${p.canvas}  ${p.enemies} enemies`;
+  };
+  return p;
+}
+
 let last = performance.now();
 function frame() {
   const now = performance.now();
@@ -94,6 +137,7 @@ function frame() {
   last = now;
   game.frame(now, dt);
   ui.tick(game, now);
+  perf?.record(now, performance.now());
 }
 function raf() {
   frame();
@@ -105,4 +149,4 @@ setInterval(() => {
   if (performance.now() - last > 60) frame();
 }, 33);
 
-window.ctDebug = { game, ui };
+window.ctDebug = { game, ui, perf };

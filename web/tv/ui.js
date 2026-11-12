@@ -93,6 +93,7 @@ export class UI {
   show(which) {
     if (this.screen === which) return;
     this.screen = which;
+    if (which === 'end') this.clearBanners(); // the end overlay is translucent
     $('lobby').classList.toggle('on', which === 'lobby' || which === 'connecting');
     $('hud').classList.toggle('on', which === 'game');
     $('end').classList.toggle('on', which === 'end');
@@ -240,7 +241,7 @@ export class UI {
       to.classList.add('got');
       const f = document.createElement('div');
       f.className = 'giftfloat';
-      f.innerHTML = `${GEAR_SVG('coin')}+${ev.amount}`;
+      f.innerHTML = `${GEAR_SVG('coin')}+${esc(ev.amount)}`;
       to.append(f);
       setTimeout(() => f.remove(), 1800);
     }
@@ -278,17 +279,24 @@ export class UI {
     el.innerHTML = `<div class="bt">${esc(b.title)}</div>${b.sub ? `<div class="bs">${esc(b.sub)}</div>` : ''}`;
     void el.offsetWidth;
     el.className = `on ${b.kind}`;
+    const glow = $('glow');
+    glow.className = '';
+    if (b.kind === 'boss') {
+      void glow.offsetWidth;
+      glow.className = 'on';
+    }
     clearTimeout(this.bannerTimer);
     this.bannerTimer = setTimeout(() => {
       el.className = '';
       this.bannerTimer = setTimeout(() => this.nextBanner(), 350);
-    }, 2400);
+    }, 2500);
   }
 
   clearBanners() {
     this.bannerQueue.length = 0;
     clearTimeout(this.bannerTimer);
     $('banner').className = '';
+    $('glow').className = '';
     this.bannerBusy = false;
   }
 
@@ -341,9 +349,9 @@ export class UI {
     $('end').innerHTML = `
       <div class="endwrap ${won ? 'won' : 'lost'}">
         <h1 class="et">${won ? 'Victory' : 'Defeat'}</h1>
-        <div class="es">${sub}</div>
+        <div class="es">${esc(sub)}</div>
         ${awards ? `<div class="awards">${awards}</div>` : ''}
-        <table class="stats"><thead><tr><th>Engineer</th>${cols.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+        <table class="stats"><thead><tr><th>Engineer</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
         <div class="ew">${host ? `Waiting for <b style="color:${esc(host.color)}">${esc(host.name)}</b> to start a new game` : 'Waiting for the host'}<span class="dots"></span></div>
       </div>`;
     $('end').classList.toggle('compact', ids.length > 5);

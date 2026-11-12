@@ -5,8 +5,11 @@
 //   light - additive gaslight pools (drawn every frame with a slight flicker)
 // plus a list of chimney positions for animated smoke.
 //
-// If /assets/img/backdrop.png exists it replaces the procedural base (the
-// light layer and chimneys are then skipped; a painted backdrop has its own).
+// If /assets/manifest.json names a backdrop (e.g. "backdrop": "img/backdrop.png",
+// relative to /assets/) and the image loads, it replaces the procedural base
+// (the light layer and chimneys are then skipped; a painted backdrop has its
+// own). The manifest always exists, so nothing is probed with a request that
+// 404s and the browser console stays clean.
 
 import { TAU, rng, distToPaths } from './geom.js';
 
@@ -18,14 +21,16 @@ let probed = null;
 // Probe once for a painted backdrop. Resolves to an Image or null.
 export function probeBackdrop() {
   if (probed) return probed;
-  probed = fetch('/assets/img/backdrop.png', { method: 'HEAD' })
-    .then((r) => {
-      if (!r.ok) return null;
+  probed = fetch('/assets/manifest.json')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => {
+      const file = typeof m?.backdrop === 'string' ? m.backdrop.replace(/^\/+/, '') : '';
+      if (!file) return null;
       return new Promise((res) => {
         const img = new Image();
         img.onload = () => res((painted = img));
         img.onerror = () => res(null);
-        img.src = '/assets/img/backdrop.png';
+        img.src = `/assets/${file}`;
       });
     })
     .catch(() => null);
