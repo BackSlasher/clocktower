@@ -242,3 +242,63 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
   .chip { min-height: 44px; }
   .sheet .big-btn { min-height: 48px; }
 }
+
+/* ---- perks, menu ---- */
+.perkchip { margin-left: 6px; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 2px solid var(--gas-glow); background: linear-gradient(180deg, #ffd27a, var(--brass-400)); color: #2a1a04; font-family: var(--font-display); font-weight: 800; font-size: 1rem; animation: chippulse 1.1s ease-in-out infinite; flex: none; }
+@keyframes chippulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(255 182 72 / 0.7); } 50% { box-shadow: 0 0 0 7px rgb(255 182 72 / 0); transform: scale(1.06); } }
+.menubtn { margin-left: 4px; width: 44px; height: 40px; flex: none; border-radius: 10px; border: 2px solid var(--soot-600); background: var(--soot-800); color: var(--brass-300); font-size: 1.6rem; line-height: 1; padding: 0 0 6px; }
+#topbar { gap: 4px; }
+.stat.timer { min-width: 0; }
+
+.perk-sheet .sheet-body { max-height: 100%; overflow: hidden; }
+.perk-sheet .later { flex: none; min-height: 44px; padding: 0 18px; }
+.perk-cards { display: flex; flex-direction: column; gap: 10px; }
+.pcard { position: relative; text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; min-height: 120px; border-radius: 12px; border: 2px solid var(--brass-700); background: linear-gradient(170deg, var(--soot-600), var(--soot-800)); color: var(--ink); }
+.pcard:active { transform: scale(0.98); }
+.pcard .pn { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; color: var(--brass-300); }
+.pcard .pd { font-size: 0.95rem; line-height: 1.3; color: var(--ink); }
+.pcard .pown { margin-top: auto; font-size: 0.8rem; color: var(--ink-dim); font-family: var(--font-mono); }
+.pcard.rare { border-color: #b78cff; background: linear-gradient(170deg, #3a2f5a, var(--soot-800)); box-shadow: 0 0 14px rgb(183 140 255 / 0.45); }
+.pcard.rare .pn { color: #d8c2ff; }
+.pcard .rare-tag { position: absolute; top: 8px; right: 10px; font-size: 0.65rem; letter-spacing: 0.14em; font-weight: 800; color: #d8c2ff; }
+.pcard.taken { border-color: var(--verdigris); box-shadow: 0 0 16px rgb(95 211 168 / 0.5); }
+.pcard.taken .pown { color: #8be0c8; font-weight: 700; }
+.pcard:disabled:not(.taken) { opacity: 0.4; }
+
+.menu-body { display: flex; flex-direction: column; gap: 8px; }
+.menu-body .ttl, .perklist .ttl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-dim); }
+.myperks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow: auto; }
+.myperks li { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: 8px; background: var(--soot-800); border: 1px solid var(--soot-600); }
+.myperks li b { color: var(--brass-300); font-family: var(--font-display); }
+.myperks li span { font-size: 0.8rem; color: var(--ink-dim); line-height: 1.25; }
+.nopk { margin: 0; }
+.mrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.mrow > .btn { flex: 1; }
+.btn.warn { color: #ffb3a6; }
+.confirm { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; }
+.confirm span { flex: 1; font-size: 0.95rem; }
+.confirm .btn { flex: 0 0 72px; }
+
+.card.free .cost { color: var(--gas-glow); font-weight: 800; }
+.perklist { padding: 8px 10px; border-radius: 10px; background: var(--soot-800); border: 1px solid var(--soot-600); }
+.pkcs { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+.pkc { font-size: 0.8rem; padding: 2px 9px; border-radius: 12px; background: var(--soot-600); color: var(--brass-300); }
+.pkc.rare { background: #3a2f5a; color: #d8c2ff; }
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .perk-sheet .sheet-body { max-width: none; width: calc(100% - 24px); padding: 8px 12px 10px; }
+  .perk-cards { flex-direction: row; gap: 8px; }
+  .pcard { flex: 1 1 0; min-width: 0; min-height: 0; height: calc(100dvh - 120px); max-height: 210px; padding: 10px 12px; gap: 6px; overflow: hidden; }
+  .pcard .pn { font-size: 1.25rem; padding-right: 36px; }
+  .pcard .pd { font-size: 1rem; line-height: 1.25; }
+  .perkchip { min-height: 32px; padding: 0 10px; font-size: 0.9rem; margin-left: 2px; }
+  .menubtn { width: 36px; height: 34px; }
+  .perk-sheet .sheet-head { margin: 0; }
+  .myperks { max-height: 120px; }
+  #s-end .perklist { grid-column: 1; }
+  .pkc { font-size: 0.7rem; }
+}
+@media (orientation: landscape) and (max-height: 400px) and (max-width: 700px) {
+  .pcard .pn { font-size: 1.05rem; }
+  .pcard .pd { font-size: 0.84rem; }
+}

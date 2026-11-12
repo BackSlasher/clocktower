@@ -145,6 +145,9 @@ export async function createTVSound({ stage, ui }) {
       case 'gift':
         play('gift');
         break;
+      case 'perk':
+        play('upgrade', { gain: 0.8 });
+        break;
       case 'wave_start':
         play('wave_start');
         if (ui.isBossWave?.(ev.wave)) {

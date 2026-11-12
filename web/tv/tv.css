@@ -957,3 +957,68 @@ body {
   transition: opacity 0.25s;
 }
 #voltoast.on { opacity: 1; }
+
+/* ------------------------------------------------------------------ perks */
+
+.chip .pk { display: none; }
+.chip.offer .pk { display: flex; animation: pkpulse 1.2s ease-in-out infinite; }
+.pkicon { width: 30px; height: 30px; fill: none; stroke: var(--gas-glow); stroke-width: 1.8; stroke-linejoin: round; }
+.chip.offer .pkicon { fill: rgb(255 182 72 / 0.25); }
+@keyframes pkpulse { 50% { transform: scale(1.22); filter: drop-shadow(0 0 6px var(--gas-glow)); } }
+
+.perkfloat {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px 4px 10px;
+  font-size: 28px;
+  color: var(--ink);
+  white-space: nowrap;
+  background: rgb(10 14 16 / 0.88);
+  border: 2px solid var(--pc);
+  border-radius: 10px;
+  box-shadow: 0 0 18px rgb(255 182 72 / 0.35);
+  pointer-events: none;
+  animation: perkin 2.4s ease-out forwards;
+}
+.perkfloat.right { left: auto; right: 0; }
+.perkfloat b { color: var(--pc); }
+@keyframes perkin {
+  0% { opacity: 0; transform: translateY(10px); }
+  10%, 85% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+.stats th.pk, .stats td.pk { text-align: left; }
+.stats td.pk {
+  max-width: 620px;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--brass-300);
+  font-variant-numeric: normal;
+}
+
+/* ------------------------------------------------------------------ quit overlay */
+
+#quit {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  z-index: 60;
+  transform: translate(-50%, -50%);
+  padding: 22px 48px;
+  font: bold 48px/1.2 Georgia, serif;
+  color: #f0d48a;
+  background: rgb(10 14 16 / 0.92);
+  border: 3px solid #b88a34;
+  border-radius: 16px;
+  box-shadow: 0 0 40px rgb(0 0 0 / 0.7);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#quit.on { opacity: 1; }
+.stats td.who { white-space: nowrap; }

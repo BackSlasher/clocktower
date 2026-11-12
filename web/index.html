@@ -58,6 +58,8 @@
       <div class="stat" title="Lives"><span class="ico heart">&#9829;</span><b id="tLives">0</b></div>
       <div class="stat wave"><small>Wave</small><b id="tWave">0/0</b></div>
       <div class="stat wave timer" id="tTimerBox"><small>Build</small><b id="tTimer">0</b></div>
+      <button id="perkBtn" class="perkchip" type="button" hidden>Perk!</button>
+      <button id="menuBtn" class="menubtn" type="button" aria-label="Menu">&#8943;</button>
     </header>
     <div id="mapwrap">
       <canvas id="map"></canvas>
@@ -77,6 +79,7 @@
     <h1 id="endTitle" class="display"></h1>
     <p id="endSub" class="dim center-text"></p>
     <div id="endMine" class="plate mine"></div>
+    <div id="endPerks" class="perklist" hidden></div>
     <div id="endAwards" class="awards"></div>
     <div class="lobby-foot">
       <button id="againBtn" class="btn big-btn" hidden>Play again</button>
@@ -91,6 +94,22 @@
       <div id="giftPlayers" class="chips"></div>
       <div id="giftAmts" class="chips amts"></div>
       <button id="giftSend" class="btn big-btn" disabled>Send</button>
+    </div>
+  </div>
+
+  <!-- Perk offer sheet -->
+  <div id="perkSheet" class="sheet perk-sheet" hidden>
+    <div class="sheet-body plate">
+      <div class="sheet-head"><b class="display">Choose a perk</b><button id="perkLater" class="btn sm ghost later" type="button">Later</button></div>
+      <div id="perkCards" class="perk-cards"></div>
+    </div>
+  </div>
+
+  <!-- Menu sheet (my perks, end game, leave) -->
+  <div id="menuSheet" class="sheet" hidden>
+    <div class="sheet-body plate">
+      <div class="sheet-head"><b class="display">Menu</b><button id="menuClose" class="x" aria-label="Close">&times;</button></div>
+      <div id="menuBody" class="menu-body"></div>
     </div>
   </div>
 

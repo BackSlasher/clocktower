@@ -27,6 +27,7 @@ function gearD(r, teeth) {
 }
 
 const TICK_SVG = `<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>`;
+const CARD_SVG = `<svg class="pkicon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M12 7.5l1.4 3h3.2l-2.6 2 1 3.3-3-2-3 2 1-3.3-2.6-2h3.2z"/></svg>`;
 const CROWN_SVG = `<svg class="crown" viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-8-5 8-6-5z"/></svg>`;
 
 export class UI {
@@ -41,6 +42,8 @@ export class UI {
     this.previewByWave = new Map();
     this.lastCountdown = null;
     this.endTimer = null;
+    this.perkQueue = [];
+    this.perkBusy = false;
   }
 
   setWelcome(w) {
@@ -160,12 +163,13 @@ export class UI {
         el = document.createElement('div');
         el.className = 'chip';
         el.dataset.pid = p.id;
-        el.innerHTML = `<span class="sw">${GEAR_SVG()}</span><span class="nm"></span><span class="purse">${GEAR_SVG('coin')}<b></b></span><span class="rd">${TICK_SVG}</span>`;
+        el.innerHTML = `<span class="sw">${GEAR_SVG()}</span><span class="nm"></span><span class="purse">${GEAR_SVG('coin')}<b></b></span><span class="rd">${TICK_SVG}</span><span class="pk" title="Choosing a perk">${CARD_SVG}</span>`;
       }
       el.style.setProperty('--pc', p.color);
       el.classList.toggle('away', !p.connected);
       el.classList.toggle('ready', build && p.ready);
       el.classList.toggle('isHost', p.id === room.host);
+      el.classList.toggle('offer', (room.phase === 'build' || room.phase === 'wave') && !!p.offer);
       el.querySelector('.nm').textContent = p.name;
       const v = purses[p.id];
       el.querySelector('.purse b').textContent = v === undefined ? '–' : v;
@@ -258,6 +262,34 @@ export class UI {
     }
   }
 
+  // A perk pick: a small label floating above the player's chip, one at a time.
+  perk(ev) {
+    this.perkQueue.push(ev);
+    if (!this.perkBusy) this.nextPerk();
+  }
+
+  nextPerk() {
+    const ev = this.perkQueue.shift();
+    if (!ev) {
+      this.perkBusy = false;
+      return;
+    }
+    this.perkBusy = true;
+    const chip = document.querySelector(`#pstrip .chip[data-pid="${ev.pid}"]`);
+    const defs = this.welcome?.defs;
+    const who = this.room?.players.find((p) => p.id === ev.pid);
+    if (chip && document.body.dataset.phase !== 'lobby') {
+      const f = document.createElement('div');
+      f.className = 'perkfloat';
+      const r = chip.getBoundingClientRect();
+      if (r.left + r.width / 2 > innerWidth / 2) f.classList.add('right');
+      f.innerHTML = `${CARD_SVG}<span><b>${esc(who?.name || '')}</b>: ${esc(defs?.perks?.[ev.id]?.name || ev.id)}</span>`;
+      chip.append(f);
+      setTimeout(() => f.remove(), 2400);
+    }
+    setTimeout(() => this.nextPerk(), this.perkQueue.length ? 1300 : 600);
+  }
+
   isBossWave(wave) {
     const defs = this.welcome?.defs;
     return !!(this.previewByWave.get(wave) || []).find((g) => defs?.enemies[g.kind]?.boss);
@@ -346,6 +378,13 @@ export class UI {
       ['winds', 'Winds'],
       ['gifted', 'Gifted'],
     ];
+    const perkText = (id) => {
+      const m = end.stats[id].perks || {};
+      const items = Object.keys(m).filter((k) => m[k] > 0).sort((a, b) => m[b] - m[a]);
+      const nm = (k) => `${defs?.perks?.[k]?.name || k}${m[k] > 1 ? ` ×${m[k]}` : ''}`;
+      const shown = items.slice(0, 8).map(nm).join(', ');
+      return items.length > 8 ? `${shown} +${items.length - 8} more` : shown;
+    };
     const ids = Object.keys(end.stats || {});
     ids.sort((a, b) => (end.stats[b].dmg || 0) - (end.stats[a].dmg || 0));
     const best = {};
@@ -355,7 +394,7 @@ export class UI {
         const s = end.stats[id];
         return `<tr style="--pc:${esc(col(id))}"><td class="who">${GEAR_SVG()}${esc(name(id))}</td>${cols
           .map(([k]) => `<td class="${s[k] && s[k] === best[k] ? 'best' : ''}">${Math.round(s[k] || 0).toLocaleString('en-US')}</td>`)
-          .join('')}</tr>`;
+          .join('')}<td class="pk">${esc(perkText(id)) || '–'}</td></tr>`;
       })
       .join('');
     const host = byId.get(room.host);
@@ -367,7 +406,7 @@ export class UI {
         <h1 class="et">${won ? 'Victory' : 'Defeat'}</h1>
         <div class="es">${esc(sub)}</div>
         ${awards ? `<div class="awards">${awards}</div>` : ''}
-        <table class="stats"><thead><tr><th>Engineer</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+        <table class="stats"><thead><tr><th>Engineer</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th class="pk">Perks</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="ew">${host ? `Waiting for <b style="color:${esc(host.color)}">${esc(host.name)}</b> to start a new game` : 'Waiting for the host'}<span class="dots"></span></div>
       </div>`;
     $('end').classList.toggle('compact', ids.length > 5);

@@ -319,7 +319,7 @@ export class Minimap {
           ctx.setLineDash([6, 6]);
           ctx.strokeStyle = 'rgb(255 182 72 / 0.55)';
           ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(x, y, lv.range * s, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, lv.range * (t.rangeMul || 1) * s, 0, TAU); ctx.stroke();
           ctx.setLineDash([]);
         }
       }

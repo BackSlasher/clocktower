@@ -137,9 +137,10 @@ export class Game {
         s.lvl = t.lvl;
         s.owner = t.owner;
         s.spent = t.spent;
+        s.rangeMul = t.rangeMul || 1;
       } else {
         const pl = this.plots.get(t.plot) || { x: 0, y: 0 };
-        s = { plot: t.plot, kind: t.kind, lvl: t.lvl, owner: t.owner, spent: t.spent, x: pl.x, y: pl.y, aim0: t.aim, aim1: t.aim, ten0: t.tension, ten1: t.tension, born: contiguous ? now : now - 1000, recoil: 0, anim: Math.random() * 10, kick: 0 };
+        s = { plot: t.plot, kind: t.kind, lvl: t.lvl, owner: t.owner, spent: t.spent, rangeMul: t.rangeMul || 1, x: pl.x, y: pl.y, aim0: t.aim, aim1: t.aim, ten0: t.tension, ten1: t.tension, born: contiguous ? now : now - 1000, recoil: 0, anim: Math.random() * 10, kick: 0 };
         this.towers.set(t.plot, s);
       }
     }
@@ -292,6 +293,9 @@ export class Game {
       case 'gift':
         this.ui.gift?.(ev);
         break;
+      case 'perk':
+        this.ui.perk?.(ev);
+        break;
       case 'wave_start':
         this.ui.waveStart?.(ev);
         break;
@@ -439,7 +443,7 @@ export class Game {
       if (td?.wind === 'range') {
         const lv = this.towerLevel(s.kind, s.lvl);
         const ten = lerp(s.ten0, s.ten1, Math.min(1, a));
-        const r = (lv.range || 150) * (1 + (defs.windRangeBonus || 0) * ten);
+        const r = (lv.range || 150) * (s.rangeMul || 1) * (1 + (defs.windRangeBonus || 0) * ten);
         drawChronoField(g, s.x, s.y, r, t, ten);
       }
     }

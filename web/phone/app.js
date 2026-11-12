@@ -39,6 +39,10 @@ const me = () => st.players.get(st.you);
 const isHost = () => st.room && st.room.host === st.you;
 const purse = () => st.snap?.purses?.[st.you] ?? 0;
 const towerAt = (plot) => st.snap?.towers?.find((t) => t.plot === plot) || null;
+// prices: the server's per-player `costs` (price perks) win over defs; `free` builds cost nothing
+const freeLeft = () => me()?.free || 0;
+const buildCost = (kind) => (freeLeft() > 0 ? 0 : me()?.costs?.[kind]?.[0] ?? st.defs.towers[kind].levels[0].cost);
+const upCost = (kind, lvl) => me()?.costs?.[kind]?.[lvl] ?? st.defs.towers[kind].levels[lvl]?.cost;
 const pname = (id) => st.players.get(id)?.name || '?';
 
 // ---------------------------------------------------------------- screens
@@ -108,6 +112,7 @@ function onMessage(m) {
       if (m.code === 'bad_name') return joinFail(m.msg || 'Pick another name (1-12 characters).');
       toast(m.msg || m.code, 'err');
       buzz([30, 40, 30]);
+      if (picked) { picked = null; if (!$('perkSheet').hidden) renderOffer(); }
     }
   }
 }
@@ -144,6 +149,7 @@ function renderAll() {
   if (screen === 'game') { renderTop(); renderUnder(); renderActions(); updatePanel(); }
   if (screen === 'end') renderEnd();
   if (!$('giftSheet').hidden) renderGift();
+  syncPerks();
 }
 
 // ---------------------------------------------------------------- join form
@@ -191,12 +197,16 @@ function renderLobby() {
   w.textContent = `Waiting for ${pname(r.host)} to start…`;
 }
 $('startBtn').onclick = () => send({ t: 'start' });
-$('leaveBtn').onclick = () => {
+function leaveRoom() {
   conn?.close(); conn = null;
   store.del(tokKey(st.code)); store.del('ct.room');
-  st.room = null; welcomed = false;
+  st.room = null; st.snap = null; st.sel = null; welcomed = false;
+  $('banner').hidden = true;
+  for (const id of ['giftSheet', 'perkSheet', 'menuSheet']) $(id).hidden = true;
+  offerKey = ''; shownOffer = ''; picked = null;
   showJoin('', '');
-};
+}
+$('leaveBtn').onclick = leaveRoom;
 $('takeBtn').onclick = () => { $('replaced').hidden = true; if (joinInfo) startConn(joinInfo.room, joinInfo.name); };
 
 // ---------------------------------------------------------------- top bar & under-map
@@ -273,6 +283,7 @@ function onEvent(e) {
       if (e.from === st.you) toast(`Sent ${e.amount} cogs to ${pname(e.to)}`);
       else if (e.to === st.you) { toast(`${pname(e.from)} sent you ${e.amount} cogs`); buzz([15, 30, 15]); }
       break;
+    case 'perk': if (e.pid === st.you) { toast(`Perk: ${d.perks?.[e.id]?.name || e.id}`); buzz(20); } break;
     case 'wave_clear': toast(`Wave ${e.wave} cleared! +${e.bonus} cogs`); break;
     case 'wave_start': buzz(40); break;
   }
@@ -314,7 +325,7 @@ try { if (sessionStorage.getItem('ct.rot')) $('rotate').hidden = true; } catch {
 
 // ---------------------------------------------------------------- panel
 let shownKey = '';
-let sellArmed = false; let sellTimer = null;
+let sellArmed = false; let sellTimer = null; let lastCrankAt = -1e9;
 let refs = {};
 const panelKey = () => {
   const ph = st.room?.phase;
@@ -360,7 +371,7 @@ function renderPanel() {
       },
         h('span', { class: 'nm' }, h('span', { style: `color:${kindColor(defs, kind)}` }, def.name), h('span', { class: 'cost' }, lv.cost + '⚙')),
         h('span', { class: 'st' }, statStr(lv)));
-      b.dataset.cost = lv.cost;
+      b.dataset.kind = kind;
       return b;
     });
     P.replaceChildren(h('div', { class: 'cards' }, refs.cards));
@@ -375,8 +386,9 @@ function renderPanel() {
   const owner = st.players.get(t.owner);
   refs.up = h('button', { class: 'btn', type: 'button', onclick: () => { send({ t: 'upgrade', plot: st.sel }); } });
   if (next) {
-    refs.up.dataset.cost = next.cost;
-    refs.up.append(h('span', {}, `Upgrade · ${next.cost}⚙`), h('small', {}, diffStr(lv, next) || `level ${t.lvl + 1}`));
+    refs.upKind = t.kind; refs.upLvl = t.lvl;
+    refs.upLbl = h('span', {}, '');
+    refs.up.append(refs.upLbl, h('small', {}, diffStr(lv, next) || `level ${t.lvl + 1}`));
   } else {
     refs.up.disabled = true;
     refs.up.append(h('span', {}, 'Max level'), h('small', {}, statStr(lv, ['dmg', 'rate', 'range'])));
@@ -425,8 +437,21 @@ function setSell() {
 
 function updatePanel() {
   const p = purse();
-  for (const c of refs.cards || []) c.classList.toggle('poor', p < +c.dataset.cost);
-  if (refs.up && refs.up.dataset.cost) refs.up.disabled = p < +refs.up.dataset.cost;
+  const free = freeLeft() > 0;
+  for (const c of refs.cards || []) {
+    const cost = buildCost(c.dataset.kind);
+    c.classList.toggle('poor', p < cost);
+    c.classList.toggle('free', free);
+    const el = c.querySelector('.cost');
+    const txt = free ? 'FREE' : cost + '⚙';
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+  if (refs.up && refs.upLbl) {
+    const cost = upCost(refs.upKind, refs.upLvl);
+    refs.up.disabled = p < cost;
+    const txt = `Upgrade · ${cost}⚙`;
+    if (refs.upLbl.textContent !== txt) refs.upLbl.textContent = txt;
+  }
   updateGauge();
 }
 
@@ -436,6 +461,7 @@ function crankTap() {
   const t = towerAt(st.sel);
   if (!t) return;
   windPlot = st.sel;
+  lastCrankAt = performance.now();
   pending++; unacked++;
   refs.angle = (refs.angle || 0) + 45;
   refs.gear.style.transform = `rotate(${refs.angle}deg)`;
@@ -513,11 +539,105 @@ function renderEnd() {
     h('i', { class: 'dot', style: `background:${st.players.get(a.pid)?.color || '#999'}` }),
     h('div', {}, h('div', { class: 'at' }, a.title), h('div', { class: 'ad' }, a.detail)),
     h('div', { class: 'ap' }, a.pid === st.you ? 'You' : pname(a.pid)))));
+  const pk = Object.entries(me()?.perks || {}).filter(([, n]) => n > 0).map(([id, n]) => h('span', { class: 'pkc' + (d.perks?.[id]?.rare ? ' rare' : '') }, perkName(id) + (n > 1 ? ` ×${n}` : '')));
+  const ep = $('endPerks');
+  ep.hidden = !pk.length;
+  ep.replaceChildren(...(pk.length ? [h('div', { class: 'ttl' }, 'Your perks'), h('div', { class: 'pkcs' }, pk)] : []));
   $('againBtn').hidden = !isHost();
   $('againWait').hidden = isHost();
   $('againWait').textContent = `Waiting for ${pname(st.room.host)} to play again…`;
 }
 $('againBtn').onclick = () => send({ t: 'restart' });
+
+// ---------------------------------------------------------------- perks
+const perkName = (id) => st.defs?.perks?.[id]?.name || id;
+let offerKey = ''; // the offer we have seen (joined ids), '' when none
+let shownOffer = ''; // the offer the sheet currently shows
+let picked = null; // card tapped, awaiting the server
+let deferTimer = null;
+const CRANK_QUIET_MS = 1500;
+// any touch on the game screen counts as "busy": a sheet must not open under a moving finger
+$('s-game').addEventListener('pointerdown', () => { lastCrankAt = performance.now(); }, true);
+
+// Called from every room update: reacts to the offer appearing, changing or being taken.
+function syncPerks() {
+  const offer = me()?.offer;
+  const key = offer ? offer.join(',') : '';
+  const inGame = screen === 'game';
+  $('perkBtn').hidden = !(offer && inGame);
+  if (key !== offerKey) {
+    offerKey = key;
+    picked = null;
+    if (key && inGame) {
+      if (!$('perkSheet').hidden) renderOffer(); // replaced while open: refresh in place
+      else openOfferSoon();
+    } else if (!key) $('perkSheet').hidden = true;
+  }
+  if (!inGame) $('perkSheet').hidden = true;
+  if (!$('menuSheet').hidden) renderMenu();
+}
+
+// Opens the offer, but never over a player who is cranking right now (the wave may be running).
+function openOfferSoon() {
+  clearTimeout(deferTimer);
+  const wait = CRANK_QUIET_MS - (performance.now() - lastCrankAt);
+  if (wait > 0) { deferTimer = setTimeout(openOfferSoon, wait + 50); return; }
+  if (!me()?.offer || screen !== 'game' || offerKey !== me().offer.join(',')) return;
+  if (!$('giftSheet').hidden || !$('menuSheet').hidden) { deferTimer = setTimeout(openOfferSoon, 800); return; }
+  openOffer();
+}
+function openOffer() { flushWind(); $('perkSheet').hidden = false; renderOffer(); }
+function renderOffer() {
+  const offer = me()?.offer;
+  if (!offer) { $('perkSheet').hidden = true; return; }
+  shownOffer = offer.join(',');
+  const owned = me()?.perks || {};
+  $('perkCards').replaceChildren(...offer.map((id) => {
+    const def = st.defs.perks?.[id] || { name: id, desc: '' };
+    const n = owned[id] || 0;
+    return h('button', {
+      class: 'pcard' + (def.rare ? ' rare' : '') + (picked === id ? ' taken' : ''), type: 'button', 'data-id': id,
+      disabled: picked != null && picked !== id,
+      onclick: () => {
+        if (picked) return;
+        picked = id; send({ t: 'perk', id }); buzz(15); renderOffer();
+      },
+    },
+      def.rare ? h('span', { class: 'rare-tag' }, 'RARE') : null,
+      h('span', { class: 'pn' }, def.name),
+      h('span', { class: 'pd' }, def.desc),
+      h('span', { class: 'pown' }, picked === id ? 'Taken ✓' : n > 0 ? `you have ${n}` : ''));
+  }));
+}
+$('perkBtn').onclick = openOffer;
+$('perkLater').onclick = () => ($('perkSheet').hidden = true);
+
+// ---------------------------------------------------------------- menu
+let armed = null; let armTimer = null;
+function openMenu() { armed = null; $('menuSheet').hidden = false; renderMenu(); }
+$('menuBtn').onclick = openMenu;
+$('menuClose').onclick = () => ($('menuSheet').hidden = true);
+$('menuSheet').addEventListener('click', (e) => { if (e.target === $('menuSheet')) $('menuSheet').hidden = true; });
+function renderMenu() {
+  const owned = Object.entries(me()?.perks || {}).filter(([, n]) => n > 0);
+  const perks = owned.length
+    ? h('ul', { class: 'myperks' }, owned.map(([id, n]) => h('li', {}, h('b', {}, `${perkName(id)} ×${n}`), h('span', {}, st.defs.perks?.[id]?.desc || ''))))
+    : h('p', { class: 'dim small nopk' }, 'No perks yet. You pick one after each cleared wave.');
+  const confirmItem = (key, label, ask, danger, fn) => armed === key
+    ? h('div', { class: 'confirm' }, h('span', {}, ask),
+      h('button', { class: 'btn sm danger', type: 'button', onclick: fn }, 'Yes'),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { armed = null; renderMenu(); } }, 'No'))
+    : h('button', {
+      class: 'btn sm ' + (danger ? 'ghost warn' : 'ghost'), type: 'button',
+      onclick: () => { armed = key; clearTimeout(armTimer); armTimer = setTimeout(() => { armed = null; if (!$('menuSheet').hidden) renderMenu(); }, 5000); renderMenu(); },
+    }, label);
+  const items = [];
+  if (isHost()) {
+    items.push(confirmItem('end', 'End game', 'End the game for everyone?', true, () => { armed = null; $('menuSheet').hidden = true; send({ t: 'restart' }); }));
+  }
+  items.push(confirmItem('leave', 'Leave game', 'Leave this game?', true, () => { $('menuSheet').hidden = true; leaveRoom(); }));
+  $('menuBody').replaceChildren(h('div', { class: 'ttl' }, 'Your perks'), perks, h('div', { class: 'mrow' }, items));
+}
 
 // ---------------------------------------------------------------- boot
 (function boot() {

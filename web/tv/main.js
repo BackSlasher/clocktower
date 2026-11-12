@@ -176,3 +176,41 @@ setTimeout(() => {
     })
     .catch(() => {});
 }, 200);
+
+// ---------------------------------------------------------------- quit shortcut
+// Back/Escape once: "Press Back again to quit" for 3 s; again within that time: window.close().
+// Browsers refuse to close windows scripts did not open, so if we are still here 300 ms later,
+// tell the viewer to close it themselves. Never stops propagation: audio keys and the
+// sound-unlock-on-first-key behaviour are untouched.
+{
+  const el = document.createElement('div');
+  el.id = 'quit';
+  stage.append(el);
+  let armed = false;
+  let timer = 0;
+  const say = (text, ms) => {
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      el.classList.remove('on');
+      armed = false;
+    }, ms);
+  };
+  addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (!['Escape', 'GoBack', 'BrowserBack', 'Backspace'].includes(e.key)) return;
+    e.preventDefault();
+    if (!armed) {
+      armed = true;
+      say('Press Back again to quit', 3000);
+      return;
+    }
+    armed = false;
+    clearTimeout(timer);
+    window.close();
+    setTimeout(() => {
+      if (!window.closed) say('Close this window to quit', 4000);
+    }, 300);
+  });
+}
