@@ -1,4 +1,4 @@
-import { createAudio } from './audio.js';
+import { createAudio } from '/shared/audio.js';
 
 const audio = createAudio({ base: '/assets/audio/', persist: 'clocktower.soundboard' });
 window.audio = audio; // for poking from the console

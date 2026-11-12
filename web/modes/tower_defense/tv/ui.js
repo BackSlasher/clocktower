@@ -1,34 +1,12 @@
-// DOM side of the TV: lobby, HUD plates, banners, end screen, status badge.
+// DOM side of the tower_defense TV mode: HUD plates, banners, perk announcements and the end
+// screen. (The lobby, room code and status badge belong to the shell: web/tv/main.js.)
 
 import { drawEnemyIcon } from './sprites.js';
 import { fmtTime } from './geom.js';
-
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-const GEAR_SVG = (cls = '') =>
-  `<svg class="gear ${cls}" viewBox="-12 -12 24 24" aria-hidden="true"><path d="${gearD(11, 8)}"/><circle r="3.2" class="hole"/></svg>`;
-
-function gearD(r, teeth) {
-  const inner = r * 0.75;
-  const step = (Math.PI * 2) / teeth;
-  let d = '';
-  for (let i = 0; i < teeth; i++) {
-    const a = i * step;
-    const pts = [
-      [a - step * 0.3, inner],
-      [a - step * 0.16, r],
-      [a + step * 0.16, r],
-      [a + step * 0.3, inner],
-    ];
-    for (const [an, rr] of pts) d += `${d ? 'L' : 'M'}${(Math.cos(an) * rr).toFixed(2)} ${(Math.sin(an) * rr).toFixed(2)}`;
-  }
-  return d + 'Z';
-}
+import { $, esc, GEAR_SVG } from '/shared/dom.js';
 
 const TICK_SVG = `<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>`;
 const CARD_SVG = `<svg class="pkicon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M12 7.5l1.4 3h3.2l-2.6 2 1 3.3-3-2-3 2 1-3.3-2.6-2h3.2z"/></svg>`;
-const CROWN_SVG = `<svg class="crown" viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-8-5 8-6-5z"/></svg>`;
 
 export class UI {
   constructor() {
@@ -46,15 +24,9 @@ export class UI {
     this.perkBusy = false;
   }
 
+  // w: the mode's setup ({ map, defs }).
   setWelcome(w) {
     this.welcome = w;
-    window.ctRoom = w.room;
-    $('code').innerHTML = [...w.room].map((ch) => `<span>${esc(ch)}</span>`).join('');
-    $('joinHost').textContent = w.joinHost || location.host;
-    $('code2').textContent = w.room;
-    const qr = $('qr');
-    const src = `/qr.svg?room=${encodeURIComponent(w.room)}`;
-    if (qr.getAttribute('src') !== src) qr.src = src;
     $('waveTotal').textContent = `/ ${w.defs.waves}`;
   }
 
@@ -62,7 +34,6 @@ export class UI {
     const prev = this.room;
     this.room = room;
     if (room.nextWave?.length) this.previewByWave.set(room.wave, room.nextWave);
-    this.renderLobby(room);
     this.renderStrip(game);
     this.renderPreview(room);
     $('waveN').textContent = this._wave = String(room.wave || 1);
@@ -89,7 +60,6 @@ export class UI {
         }, 2600);
       } else if (!this.endTimer) this.show('end');
     }
-    document.body.dataset.phase = phase;
     this.updatePaused(room);
   }
 
@@ -97,7 +67,6 @@ export class UI {
     if (this.screen === which) return;
     this.screen = which;
     if (which === 'end') this.clearBanners(); // the end overlay is translucent
-    $('lobby').classList.toggle('on', which === 'lobby' || which === 'connecting');
     $('hud').classList.toggle('on', which === 'game');
     $('end').classList.toggle('on', which === 'end');
     if (which === 'end') this.fitAwards();
@@ -116,32 +85,6 @@ export class UI {
     const running = room.phase === 'build' || room.phase === 'wave';
     const anyone = room.players.some((p) => p.connected);
     $('paused').classList.toggle('on', running && !anyone);
-  }
-
-  // ------------------------------------------------------------ lobby
-
-  renderLobby(room) {
-    const max = this.welcome?.defs.maxPlayers || 8;
-    const ps = room.players;
-    $('pcount').textContent = `${ps.length} / ${max}`;
-    const slots = Math.min(max, Math.max(4, ps.length + 1));
-    let html = '';
-    this.seenPids ??= new Set();
-    for (const p of ps) {
-      const fresh = !this.seenPids.has(p.id);
-      this.seenPids.add(p.id);
-      html += `<li class="pl ${p.connected ? '' : 'away'} ${fresh ? 'new' : ''}" style="--pc:${esc(p.color)}">
-        ${GEAR_SVG('spin')}<span class="nm">${esc(p.name)}</span>
-        ${p.id === room.host ? `<span class="host">${CROWN_SVG}Host</span>` : ''}
-        ${p.connected ? '' : '<span class="aw">away</span>'}</li>`;
-    }
-    for (let i = ps.length; i < slots; i++) html += `<li class="pl empty"><span class="nm">waiting for an engineer…</span></li>`;
-    $('plist').innerHTML = html;
-    $('plist').classList.toggle('dense', ps.length > 5);
-    const host = ps.find((p) => p.id === room.host);
-    $('lobbyStatus').innerHTML = host
-      ? `Waiting for <b style="color:${esc(host.color)}">${esc(host.name)}</b> to start the game<span class="dots"></span>`
-      : `Waiting for engineers to join<span class="dots"></span>`;
   }
 
   // ------------------------------------------------------------ HUD
@@ -278,7 +221,7 @@ export class UI {
     const chip = document.querySelector(`#pstrip .chip[data-pid="${ev.pid}"]`);
     const defs = this.welcome?.defs;
     const who = this.room?.players.find((p) => p.id === ev.pid);
-    if (chip && document.body.dataset.phase !== 'lobby') {
+    if (chip && this.room?.phase !== 'lobby') {
       const f = document.createElement('div');
       f.className = 'perkfloat';
       const r = chip.getBoundingClientRect();
@@ -411,22 +354,6 @@ export class UI {
       </div>`;
     $('end').classList.toggle('compact', ids.length > 5);
     this.fitAwards();
-  }
-
-  // ------------------------------------------------------------ status
-
-  setStatus(s) {
-    const b = $('badge');
-    if (s === 'open') b.className = '';
-    else if (s === 'replaced') {
-      b.textContent = 'This room is now shown on another screen';
-      b.className = 'on';
-    } else if (s === 'connecting' || s === 'closed') {
-      if (this.welcome) {
-        b.textContent = 'Reconnecting…';
-        b.className = 'on';
-      }
-    }
   }
 }
 

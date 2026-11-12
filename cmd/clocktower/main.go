@@ -36,6 +36,7 @@ func main() {
 	dev := flag.Bool("dev", false, "serve web/ from disk with caching disabled")
 	webDir := flag.String("web-dir", "web", "web directory used with -dev")
 	speed := flag.Int("speed", 1, "run the simulation N times faster (testing only)")
+	stubMode := flag.Bool("stub-mode", false, "also register the dev-only \"stub\" mode, to try mode selection (testing only)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -57,6 +58,9 @@ func main() {
 		os.Exit(2)
 	}
 	all.Register()
+	if *stubMode {
+		all.RegisterStub()
+	}
 	reg := room.NewRegistry(room.Config{Logger: log, Speed: *speed})
 	h, err := server.New(server.Config{BaseURL: *baseURL, Dev: *dev, Logger: log}, reg, webFS)
 	if err != nil {

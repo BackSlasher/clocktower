@@ -5,14 +5,30 @@ package all
 import (
 	"sync"
 
+	"clocktower/internal/mode"
+	"clocktower/internal/modes/stub"
 	towerdefense "clocktower/internal/modes/tower_defense"
 )
 
-var once sync.Once
+var once, stubOnce sync.Once
 
-// Register registers all modes; safe to call more than once.
+// RegisterTo registers the product modes in r, plus the dev-only stub mode
+// when withStub is set. The stub always comes after the real modes.
+func RegisterTo(r *mode.Registry, withStub bool) {
+	towerdefense.RegisterTo(r)
+	if withStub {
+		stub.RegisterTo(r)
+	}
+}
+
+// Register registers all product modes; safe to call more than once.
 func Register() {
-	once.Do(func() {
-		towerdefense.Register()
-	})
+	once.Do(func() { towerdefense.Register() })
+}
+
+// RegisterStub additionally registers the dev-only stub mode (the server's
+// -stub-mode flag). It registers the product modes first if needed.
+func RegisterStub() {
+	Register()
+	stubOnce.Do(stub.Register)
 }

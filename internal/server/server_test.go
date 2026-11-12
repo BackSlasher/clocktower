@@ -33,11 +33,12 @@ func newEnvCfg(t *testing.T, cfg room.Config) *env {
 	all.Register()
 	reg := room.NewRegistry(cfg)
 	web := fstest.MapFS{
-		"index.html":     {Data: []byte("<p>phone</p>")},
-		"tv/index.html":  {Data: []byte("<p>tv</p>")},
-		"shared/net.js":  {Data: []byte("export {}")},
-		"assets/a.txt":   {Data: []byte("a")},
-		"shared/.secret": {Data: []byte("x")},
+		"index.html":         {Data: []byte("<p>phone</p>")},
+		"tv/index.html":      {Data: []byte("<p>tv</p>")},
+		"shared/net.js":      {Data: []byte("export {}")},
+		"assets/a.txt":       {Data: []byte("a")},
+		"modes/m/tv/mode.js": {Data: []byte("export {}")},
+		"shared/.secret":     {Data: []byte("x")},
 	}
 	h, err := New(Config{}, reg, web)
 	if err != nil {
@@ -345,7 +346,7 @@ func TestHTTPRoutes(t *testing.T) {
 		return resp
 	}
 	for path, want := range map[string]int{"/": 200, "/?c=ABCD": 200, "/tv": 200, "/healthz": 200, "/shared/net.js": 200,
-		"/assets/a.txt": 200, "/nope": 404, "/shared/.secret": 404, "/qr.svg?room=ABCD": 200, "/qr.svg?room=1": 400,
+		"/assets/a.txt": 200, "/modes/m/tv/mode.js": 200, "/modes/m/nope.js": 404, "/nope": 404, "/shared/.secret": 404, "/qr.svg?room=ABCD": 200, "/qr.svg?room=1": 400,
 		"/shared/../../go.mod": 404} {
 		if got := get(path).StatusCode; got != want {
 			t.Errorf("GET %s = %d, want %d", path, got, want)

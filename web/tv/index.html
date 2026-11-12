@@ -10,12 +10,11 @@
 </head>
 <body data-phase="connecting">
 <div id="stage">
-  <canvas id="cv"></canvas>
-
   <section id="lobby" class="on">
     <div class="lobby-left">
       <h1 class="title display">Clocktower</h1>
-      <p class="tagline">Brasswick needs engineers. Build, wind, and keep the Great Clock ticking.</p>
+      <p id="tagline" class="tagline">Brasswick needs engineers. Build, wind, and keep the Great Clock ticking.</p>
+      <div id="modeline" class="modeline" hidden><div id="modeName" class="mname display"></div><div id="modeTag" class="mtag"></div></div>
       <div class="join">
         <div class="codebox">
           <div class="label">Room code</div>
@@ -32,19 +31,9 @@
     <div id="lobbyStatus" class="status">Connecting to the clockworks<span class="dots"></span></div>
   </section>
 
-  <section id="hud">
-    <div id="wavePlate" class="plate">
-      <div class="wv"><span class="lbl">Wave</span><span id="waveN">1</span><span id="waveTotal" class="of">/ 15</span></div>
-      <div class="ph"><span id="phaseLbl"></span><span id="phaseVal"></span></div>
-      <div id="preview"></div>
-    </div>
-    <div id="pstrip"></div>
-    <div id="paused">Paused &mdash; waiting for engineers to reconnect</div>
-  </section>
+  <!-- the current mode's pages (web/modes/<id>/tv/mode.js) live here, above the lobby -->
+  <div id="mode"></div>
 
-  <div id="glow"></div>
-  <div id="banner"></div>
-  <section id="end"></section>
   <div id="badge"></div>
 </div>
 <script type="module" src="/tv/main.js"></script>

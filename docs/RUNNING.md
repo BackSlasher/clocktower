@@ -27,6 +27,7 @@ go build -o bin/clocktower ./cmd/clocktower
 | | `-dev` | off | Serve `web/` from disk (caching disabled) instead of the embedded copy. |
 | | `-web-dir` | `web` | Web directory used with `-dev`. |
 | | `-speed` | `1` | Run the simulation N times faster (1 to 50; testing only). |
+| | `-stub-mode` | off | Also register the dev-only `stub` mode ("Stub"), so the lobby offers a choice of modes (testing only; the container image does not set it). |
 
 The wire-level details of these are in [PROTOCOL.md](PROTOCOL.md).
 
@@ -67,12 +68,13 @@ internal/server/  HTTP routes, websocket upgrade, QR endpoint (mode-agnostic)
 internal/modes/   game modes, one directory per mode id; all/ registers them
   tower_defense/      the tower defence game: pure simulation (no networking), unit-tested; balance numbers are in defs.go
   tower_defense/bot/  scripted players and the balance harness
-web/              embedded front end: phone/ (controller), tv/ (big screen), shared/
+  stub/               dev-only test mode (see -stub-mode); the template for a new mode
+web/              embedded front end: phone/ and tv/ (the generic shells), shared/, modes/<id>/{tv,phone}/ (one module per mode, see web/modes/README.md), assets/
 tools/shot.mjs    screenshot helper for headless Chromium
 docs/             DESIGN.md (design rationale), PROTOCOL.md (wire protocol), this page and GAMEPLAY.md
 ```
 
-The front end is plain ES modules with no build step and makes no external network requests. The game art is drawn in code, one draw function per tower and enemy kind in `web/tv/sprites.js`. [PROTOCOL.md](PROTOCOL.md) is the contract between the server and both clients, so change it first if something must change.
+The front end is plain ES modules with no build step and makes no external network requests. The game art is drawn in code, one draw function per tower and enemy kind in `web/modes/tower_defense/tv/sprites.js`. [PROTOCOL.md](PROTOCOL.md) is the contract between the server and both clients, so change it first if something must change.
 
 ### Tests
 
@@ -90,6 +92,8 @@ CI runs the same two commands, then builds the container image.
 ```sh
 go run ./cmd/clocktower -addr :8096 -dev -speed 3
 ```
+
+To try the mode selection, start a second mode: `go run ./cmd/clocktower -dev -stub-mode`. The lobby then shows both "Cobble Crawlers" and "Stub"; the host picks one on the phone. Without the flag there is only one mode and the lobby shows no selection at all.
 
 ### Bots
 
@@ -132,7 +136,7 @@ chromium --headless=new --remote-debugging-port=9222 --user-data-dir=/tmp/ct-pro
 node tools/shot.mjs http://localhost:8096/tv shot.png --size 1920x1080 --wait 2000
 ```
 
-`--mobile` emulates a phone, `--eval 'js'` runs script before the shot; run `node tools/shot.mjs` without arguments for usage. The tower and enemy sprites in `docs/img/towers/` and `docs/img/enemies/` were rendered by calling the draw functions from `web/tv/sprites.js` on a canvas.
+`--mobile` emulates a phone, `--eval 'js'` runs script before the shot; run `node tools/shot.mjs` without arguments for usage. The tower and enemy sprites in `docs/img/towers/` and `docs/img/enemies/` were rendered by calling the draw functions from `web/modes/tower_defense/tv/sprites.js` on a canvas.
 
 ### Balance
 

@@ -18,7 +18,10 @@ var Info = mode.Info{ID: ModeID, Name: "Cobble Crawlers", Tagline: "Hold the str
 
 // Register adds the mode to the default registry. Call it once from wiring
 // code (see internal/modes/all).
-func Register() { mode.Register(Info, newMode) }
+func Register() { RegisterTo(mode.Default) }
+
+// RegisterTo adds the mode to r.
+func RegisterTo(r *mode.Registry) { r.Register(Info, newMode) }
 
 func newMode(rng *rand.Rand, roster []mode.Member) mode.Game {
 	return &modeGame{newFromRoster(rng, roster)}

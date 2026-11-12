@@ -66,7 +66,7 @@ func New(cfg Config, reg *room.Registry, web fs.FS) (*Server, error) {
 	})
 	s.mux.HandleFunc("GET /qr.svg", s.qr)
 	s.mux.HandleFunc("GET /ws", s.ws)
-	for _, dir := range []string{"shared", "phone", "tv", "assets"} {
+	for _, dir := range []string{"shared", "phone", "tv", "modes", "assets"} {
 		s.mux.HandleFunc("GET /"+dir+"/", s.static)
 	}
 	return s, nil

@@ -43,6 +43,10 @@
       <div class="me-chip"><i id="lobbyDot" class="dot"></i><span id="lobbyName" class="display"></span></div>
       <div class="dim small">Room <b id="lobbyRoom" class="mono"></b></div>
     </div>
+    <div id="modeBox" class="modebox" hidden>
+      <div class="dim small">Game</div>
+      <div id="modeCards" class="mcards"></div>
+    </div>
     <ul id="lobbyList" class="plate plist"></ul>
     <div class="lobby-foot">
       <button id="startBtn" class="btn big-btn" hidden>Start the game</button>
@@ -51,67 +55,8 @@
     </div>
   </section>
 
-  <!-- Game -->
-  <section id="s-game" class="screen game" hidden>
-    <header id="topbar" class="plate">
-      <div class="stat" title="Cogs"><span class="ico cog">&#9881;</span><b id="tPurse">0</b></div>
-      <div class="stat" title="Lives"><span class="ico heart">&#9829;</span><b id="tLives">0</b></div>
-      <div class="stat wave"><small>Wave</small><b id="tWave">0/0</b></div>
-      <div class="stat wave timer" id="tTimerBox"><small>Build</small><b id="tTimer">0</b></div>
-      <button id="perkBtn" class="perkchip" type="button" hidden>Perk!</button>
-      <button id="menuBtn" class="menubtn" type="button" aria-label="Menu">&#8943;</button>
-    </header>
-    <div id="mapwrap">
-      <canvas id="map"></canvas>
-      <div id="under"></div>
-    </div>
-    <div id="actions">
-      <button id="giftBtn" class="btn sm">Gift cogs</button>
-      <button id="readyBtn" class="btn sm" hidden>Ready</button>
-      <button id="zoomBtn" class="btn sm ghost">Zoom</button>
-    </div>
-    <div id="rotate" class="rotate"><span>Rotate your phone for a bigger map</span><button id="rotateX" aria-label="Dismiss">&times;</button></div>
-    <div id="panel" class="plate"></div>
-  </section>
-
-  <!-- End -->
-  <section id="s-end" class="screen end" hidden>
-    <h1 id="endTitle" class="display"></h1>
-    <p id="endSub" class="dim center-text"></p>
-    <div id="endMine" class="plate mine"></div>
-    <div id="endPerks" class="perklist" hidden></div>
-    <div id="endAwards" class="awards"></div>
-    <div class="lobby-foot">
-      <button id="againBtn" class="btn big-btn" hidden>Play again</button>
-      <p id="againWait" class="dim center-text" hidden></p>
-    </div>
-  </section>
-
-  <!-- Gift sheet -->
-  <div id="giftSheet" class="sheet" hidden>
-    <div class="sheet-body plate">
-      <div class="sheet-head"><b class="display">Send cogs</b><button id="giftClose" class="x" aria-label="Close">&times;</button></div>
-      <div id="giftPlayers" class="chips"></div>
-      <div id="giftAmts" class="chips amts"></div>
-      <button id="giftSend" class="btn big-btn" disabled>Send</button>
-    </div>
-  </div>
-
-  <!-- Perk offer sheet -->
-  <div id="perkSheet" class="sheet perk-sheet" hidden>
-    <div class="sheet-body plate">
-      <div class="sheet-head"><b class="display">Choose a perk</b><button id="perkLater" class="btn sm ghost later" type="button">Later</button></div>
-      <div id="perkCards" class="perk-cards"></div>
-    </div>
-  </div>
-
-  <!-- Menu sheet (my perks, end game, leave) -->
-  <div id="menuSheet" class="sheet" hidden>
-    <div class="sheet-body plate">
-      <div class="sheet-head"><b class="display">Menu</b><button id="menuClose" class="x" aria-label="Close">&times;</button></div>
-      <div id="menuBody" class="menu-body"></div>
-    </div>
-  </div>
+  <!-- The current mode's pages (web/modes/<id>/phone/mode.js) live here -->
+  <div id="mode" hidden></div>
 
   <div id="toast" class="toast" hidden></div>
   <div id="banner" class="banner" hidden>Connection lost &mdash; reconnecting&hellip;</div>

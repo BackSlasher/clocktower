@@ -13,7 +13,7 @@ Open `/tv` on the big screen. It shows a four-letter room code and a QR code.
 - **Join:** scan the QR code, or open the address shown and type the room code. Enter a name (1 to 12 characters) and join.
 - **Host:** the first player to join is the host and presses Start. If the host leaves, host passes to whoever has been connected longest.
 - **Rejoining:** a phone that sleeps, locks or reloads comes back as the same player, with its purse and towers intact. The phone remembers who it was; there is nothing to type.
-- **Joining mid-game:** allowed (up to eight players in total). A latecomer gets a catch-up purse based on what the team already holds, and their first perk offer comes at the next wave clear.
+- **Joining mid-game:** allowed (up to eight players in total). A latecomer gets a catch-up purse based on what the team already holds, and their first perk offer comes with the next round of perks.
 
 <img src="img/phone-join.jpg" alt="Phone join screen with room code and name fields" width="260">
 
@@ -91,10 +91,16 @@ Waves 8 and 15 are boss waves led by the Iron Baron. Wave 8 has one and is the h
 
 ![The Iron Baron arrives on wave 15](img/tv-boss.jpg)
 
-<!-- PERKS-BEGIN: remove everything from here to PERKS-END if the perks feature is dropped. -->
+## Ending or leaving a game
+
+- **End game:** the host opens the menu (the ⋯ button on the phone) and chooses End game. After a confirmation everyone returns to the lobby with the same players, and the host can start again.
+- **Leave:** any player can choose Leave game from the same menu. Their towers stay and keep firing; the phone forgets the room and goes back to the join screen.
+- **On the TV:** press Back (or Escape) twice to quit. Where the browser does not allow a page to close its own window, the TV says so and you close it yourself.
+- A game with nobody connected pauses, and the room is removed after 10 minutes.
+
 ## Perks
 
-When you clear a wave, every connected player is offered a choice: your phone shows three random perk cards and you keep one. This happens after waves 1 to 14, not after the last. The offer stays open through the next build phase and wave; if you have not picked by the time that wave is cleared, it is replaced by a new one. Picking is never required and never holds up Ready.
+After every odd-numbered wave except the last (waves 1, 3, 5, 7, 9, 11 and 13), every connected player is offered a choice: your phone shows three random perk cards and you keep one. That is seven picks in a full game. The cards open on their own when you stop tapping; "Later" puts them away and a pulsing Perk button brings them back. The offer stays open for two waves, until the next set of cards replaces it. Picking is never required and never holds up the Ready check, but a team that skips its perks will struggle in the late waves.
 
 Perks are personal: they change your towers, your cranking or your purse, not your teammates'. They stack, so a player can drift into a Rivet Gun specialist while another becomes the team's winder. The TV announces every pick and the end screen lists them. Rarer perks show up less often.
 
@@ -113,7 +119,6 @@ Perks are personal: they change your towers, your cranking or your purse, not yo
 | Windfall | A pile of cogs, right now. |
 | Free Sample | Your next tower is free. |
 | Clock Repair (rare) | The team gets lives back. |
-<!-- PERKS-END -->
 
 ## The end screen
 

@@ -1,78 +1,17 @@
 // TV sound: maps game events, phase changes and room changes onto the audio engine.
-// Loaded lazily by main.js; everything here degrades silently (no throw into the game).
+// Created by mode.js; everything here degrades silently (no throw into the game).
 //
 // Music policy: lobby -> music_lobby; build -> music_lobby at reduced volume (same track, so
 // no restless switching every build phase); wave -> music_battle; boss wave -> music_boss;
 // won/lost -> fade out, then the victory/defeat sting. amb_town is a quiet bed in build/wave.
 
-import { createAudio } from './audio.js';
-
-const KEY = 'ct.tv.audio';
 const MAP_W = 1920;
 const BUILD_GAIN = 0.55;
 
-const readSaved = () => {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) || 'null') || {};
-  } catch {
-    return {};
-  }
-};
-const writeSaved = (o) => {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(o));
-  } catch {
-    /* ignore */
-  }
-};
-
-export async function createTVSound({ stage, ui }) {
-  const audio = createAudio({ base: '/assets/audio/', log: () => {} });
+// The audio engine, volume/mute keys and the "sound is off" hint are the shell's (web/tv/main.js);
+// this file only maps the game onto them. `audio` is ctx.audio, `ready` is ctx.audioReady.
+export async function createTVSound({ audio, ready, ui }) {
   if (!audio.supported) return null;
-
-  // ---- volume / mute state -------------------------------------------------------------
-  const q = new URLSearchParams(location.search);
-  const saved = readSaved();
-  let master = typeof saved.master === 'number' ? saved.master : 0.8;
-  let muted = !!saved.muted;
-  if (q.has('vol') && isFinite(parseFloat(q.get('vol')))) master = parseFloat(q.get('vol'));
-  if (q.get('mute') === '1') muted = true;
-  master = Math.min(1, Math.max(0, master));
-  const apply = () => {
-    audio.setVolume({ master });
-    audio.setMuted(muted);
-  };
-  apply();
-
-  // ---- on-screen bits ------------------------------------------------------------------
-  const hint = document.createElement('div');
-  hint.id = 'soundhint';
-  hint.textContent = 'Sound is off — press any key or click to enable';
-  const vol = document.createElement('div');
-  vol.id = 'voltoast';
-  stage.append(hint, vol);
-  let volTimer = 0;
-  const showVol = () => {
-    vol.textContent = muted ? 'Sound muted' : `Volume ${Math.round(master * 100)}%`;
-    vol.classList.add('on');
-    clearTimeout(volTimer);
-    volTimer = setTimeout(() => vol.classList.remove('on'), 1400);
-  };
-  addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-    const k = e.key;
-    let used = true;
-    if (k === 'm' || k === 'M') muted = !muted;
-    else if (k === ']' || k === '=' || k === '+') {
-      master = Math.min(1, Math.round((master + 0.1) * 10) / 10);
-      muted = false;
-    } else if (k === '[' || k === '-' || k === '_') master = Math.max(0, Math.round((master - 0.1) * 10) / 10);
-    else used = false;
-    if (!used) return;
-    apply();
-    writeSaved({ master, muted });
-    showVol();
-  });
 
   // ---- state ---------------------------------------------------------------------------
   const S = {
@@ -90,7 +29,6 @@ export async function createTVSound({ stage, ui }) {
     shots: [], // recent shot times for gain scaling
     endTimer: 0,
     musicKey: '',
-    hintOn: null,
   };
 
   const hidden = () => typeof document !== 'undefined' && document.hidden;
@@ -200,7 +138,7 @@ export async function createTVSound({ stage, ui }) {
     }
   };
 
-  // ---- per-frame: music, countdown, chrono pulse, hint -----------------------------------
+  // ---- per-frame: music, countdown, chrono pulse -----------------------------------
   S.tick = (game, now) => {
     if (!S.ready) return;
     const phase = S.phase;
@@ -258,18 +196,11 @@ export async function createTVSound({ stage, ui }) {
         }
       }
     }
-
-    // unlock hint
-    const want = audio.locked && !muted;
-    if (want !== S.hintOn) {
-      S.hintOn = want;
-      hint.classList.toggle('on', want);
-    }
   };
 
   // ---- go ---------------------------------------------------------------------------------
   try {
-    await audio.load();
+    await ready;
   } catch {
     /* engine swallows its own errors */
   }
@@ -278,5 +209,12 @@ export async function createTVSound({ stage, ui }) {
   (async () => {
     for (const id of ['music_lobby', 'music_battle', 'music_boss']) await audio.preload(id);
   })();
+  // unmount: silence this mode's music and ambience
+  S.stop = () => {
+    S.ready = false;
+    clearTimeout(S.endTimer);
+    audio.music(null, { fade: 0.3 });
+    audio.ambience(null, { fade: 0.3 });
+  };
   return S;
 }

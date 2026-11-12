@@ -20,11 +20,15 @@ internal/modes/     one directory per game mode, named by its mode id
   tower_defense/    the tower_defense mode: pure simulation, no networking, unit-tested
     bot/            scripted players and the balance harness for this mode
 web/                embedded with go:embed (web/embed.go)
-  index.html        phone entry: join form, then the controller
-  phone/            phone JS/CSS
-  tv/index.html     TV page
-  tv/               TV JS/CSS
-  shared/           theme.css, net.js (used by both clients)
+  index.html        phone shell page: join form, lobby, then the current mode's page
+  phone/            phone shell JS/CSS (connection, join, lobby, mode loading)
+  tv/index.html     TV shell page
+  tv/               TV shell JS/CSS (lobby, stage scaling, audio keys, mode loading), soundboard.html
+  shared/           theme.css, net.js, audio.js, dom.js (used by both shells and the modes)
+  modes/            one directory per mode id; README.md has the module contract
+    tower_defense/  tv/ (battlefield, HUD, sound map, demo) and phone/ (minimap, panel, crank, perks)
+    stub/           tv/ and phone/: the dev-only test mode, and the template for a new one
+  assets/           audio samples and manifest
 ```
 
 Single static binary. Frontend is plain ES modules — **no build step, no npm,
@@ -37,6 +41,7 @@ no external network requests** (no CDNs, no web fonts).
 | `CLOCKTOWER_ADDR` / `-addr`     | `:8080`  | listen address |
 | `CLOCKTOWER_BASE_URL` / `-base-url` | (unset) | public base URL used in the QR/join link, e.g. `https://ct.example.com`. If unset, derived from the TV's request: `X-Forwarded-Proto`/`X-Forwarded-Host` if present, else scheme + `Host`. |
 | `-dev`                          | off      | serve `web/` from disk instead of the embedded copy |
+| `-stub-mode`                    | off      | also register the dev-only `stub` mode (id `stub`, "Stub"), so the lobby has something to choose; testing only |
 
 ## HTTP
 
@@ -47,7 +52,7 @@ no external network requests** (no CDNs, no web fonts).
 | `GET /qr.svg?room=CODE` | QR code (SVG, dark modules on transparent) of the join URL `{base}/?c=CODE` |
 | `GET /ws`        | websocket, see below |
 | `GET /healthz`   | `ok` |
-| static           | `/shared/*`, `/phone/*`, `/tv/*`, `/assets/*` |
+| static           | `/shared/*`, `/phone/*`, `/tv/*`, `/modes/*`, `/assets/*` |
 
 ## Websocket
 
@@ -280,6 +285,18 @@ protocol.
   `{ "t": "setup", "mode": "<id>", "map": Map, "defs": Defs }` followed by a
   `room` message. A client treats `setup` as "the mode-specific part of
   `welcome` changed" and rebuilds anything derived from `map` and `defs`.
+  The web clients unmount the old mode's module, load
+  `/modes/<id>/{tv,phone}/mode.js` for the new one and stay in the lobby
+  (contract in `web/modes/README.md`).
+- Lobby UI: with exactly one entry in `welcome.modes` the clients show no mode
+  selection and no mode name. With two or more, the host's phone shows one card
+  (name + tagline) per mode and sends `mode`; other phones and the TV show the
+  current mode's name and tagline. Display names come only from `welcome.modes`.
+- The generic lobby reads one optional field of the mode's `defs`:
+  `maxPlayers` (number, default 8), for the "n / max" counter.
+- The server's `-stub-mode` flag registers a second, do-nothing mode
+  (`stub`: lobby, host `start`, a "running" phase whose snaps carry `seconds`,
+  host `restart` back to the lobby) so this path can be tested.
 - Messages other than `ping` and `mode` are handed to the current mode; types it
   does not know are ignored.
 

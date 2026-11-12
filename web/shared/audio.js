@@ -1,6 +1,6 @@
-// Clocktower audio engine (TV only). Web Audio, no dependencies.
+// Clocktower audio engine (TV, and any page that needs sound). Web Audio, no dependencies.
 //
-//   import { createAudio } from './audio.js';
+//   import { createAudio } from '/shared/audio.js';
 //   const audio = createAudio({ base: '/assets/audio/' });
 //   await audio.load();                 // manifest + sfx/ambience decoded; music is decoded lazily
 //   audio.unlock();                     // call from any user gesture (also auto-bound, see autoUnlock)
