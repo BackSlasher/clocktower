@@ -3,36 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clocktower TV (debug)</title>
+<title>Clocktower</title>
 <link rel="stylesheet" href="/shared/theme.css">
-<style>body{padding:16px;font-family:var(--font-mono)}pre{white-space:pre-wrap;font-size:12px}img{width:160px;background:#fff;padding:6px}</style>
+<link rel="stylesheet" href="/tv/tv.css">
 </head>
-<body>
-<h1 id="code">…</h1>
-<p id="join"></p>
-<img id="qr" alt="QR code">
-<pre id="room"></pre>
-<pre id="snap"></pre>
-<script type="module">
-import { connect } from '/shared/net.js';
-const $ = (id) => document.getElementById(id);
-connect(() => ({ role: 'tv', room: sessionStorage.getItem('ct.room'), token: sessionStorage.getItem('ct.tvtoken') }), {
-  onStatus(s) { document.title = `Clocktower TV (${s})`; },
-  onMessage(m) {
-    if (m.t === 'welcome') {
-      sessionStorage.setItem('ct.room', m.room);
-      sessionStorage.setItem('ct.tvtoken', m.token);
-      $('code').textContent = m.room;
-      $('join').textContent = `Go to ${m.joinHost} and enter ${m.room} — ${m.joinUrl}`;
-      $('qr').src = `/qr.svg?room=${m.room}`;
-    } else if (m.t === 'room') {
-      $('room').textContent = JSON.stringify(m, null, 1);
-    } else if (m.t === 'snap') {
-      const { enemies, ev, ...rest } = m;
-      $('snap').textContent = JSON.stringify(rest) + `\nenemies: ${enemies.length}\nev: ${JSON.stringify(ev)}`;
-    }
-  },
-});
-</script>
+<body data-phase="connecting">
+<div id="stage">
+  <canvas id="cv"></canvas>
+
+  <section id="lobby" class="on">
+    <div class="lobby-left">
+      <h1 class="title display">Clocktower</h1>
+      <p class="tagline">Brasswick needs engineers. Build, wind, and keep the Great Clock ticking.</p>
+      <div class="join">
+        <div class="codebox">
+          <div class="label">Room code</div>
+          <div id="code" class="code"><span>·</span><span>·</span><span>·</span><span>·</span></div>
+        </div>
+        <div class="qrplate"><img id="qr" alt=""></div>
+      </div>
+      <p class="howto">On your phone, go to <b id="joinHost">…</b><br>and enter <b id="code2" class="mono">····</b> &mdash; or scan the code</p>
+    </div>
+    <div class="lobby-right plate">
+      <h2 class="display">Engineers <span id="pcount"></span></h2>
+      <ul id="plist"></ul>
+    </div>
+    <div id="lobbyStatus" class="status">Connecting to the clockworks<span class="dots"></span></div>
+  </section>
+
+  <section id="hud">
+    <div id="wavePlate" class="plate">
+      <div class="wv"><span class="lbl">Wave</span><span id="waveN">1</span><span id="waveTotal" class="of">/ 15</span></div>
+      <div class="ph"><span id="phaseLbl"></span><span id="phaseVal"></span></div>
+      <div id="preview"></div>
+    </div>
+    <div id="pstrip"></div>
+    <div id="paused">Paused &mdash; waiting for engineers to reconnect</div>
+  </section>
+
+  <div id="banner"></div>
+  <section id="end"></section>
+  <div id="badge"></div>
+</div>
+<script type="module" src="/tv/main.js"></script>
 </body>
 </html>
