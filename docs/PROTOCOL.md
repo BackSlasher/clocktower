@@ -183,7 +183,7 @@ Events:
 { "t": "upgrade", "plot": 4 }
 { "t": "sell",    "plot": 4 }
 { "t": "wind",    "plot": 4, "n": 3 }     // n taps since last send; send at most every 150 ms; server caps at 10 taps/s per player
-{ "t": "ready",   "ready": true }         // build phase; all connected ready → wave starts now
+{ "t": "ready",   "ready": true }         // build phase; every active connected player ready (≥1 ready) → wave starts now
 { "t": "gift",    "to": "p2", "amount": 50 }
 { "t": "restart" }                        // host, in won/lost → back to lobby, same players
 { "t": "ping" }                           // optional; server replies { "t": "pong" }
@@ -228,7 +228,9 @@ Additive details; nothing above changed meaning.
   then each target in order.
 - **Commands**: `build`/`upgrade`/`sell`/`wind`/`gift` outside build/wave get
   `bad_request`. `ready` outside the build phase is silently ignored (it races
-  with the countdown). `wind.n` must be an integer 1–100; taps over the
+  with the countdown); a wave starts early once every *active* connected player
+  is ready and at least one is, so idle players never block it (in wave 1
+  everyone is active). `wind.n` must be an integer 1–100; taps over the
   per-player cap (`maxTapsPerSec`, sim time) are dropped silently. Numbers that
   should be integers (`plot`, `n`, `amount`) are rejected if fractional. Gifts
   may go to disconnected players.

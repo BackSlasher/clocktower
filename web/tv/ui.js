@@ -97,6 +97,16 @@ export class UI {
     $('lobby').classList.toggle('on', which === 'lobby' || which === 'connecting');
     $('hud').classList.toggle('on', which === 'game');
     $('end').classList.toggle('on', which === 'end');
+    if (which === 'end') this.fitAwards();
+  }
+
+  // long, wide names: shrink an award's name until it fits (never below 22 px).
+  // Needs layout, so it also runs when the end screen is shown.
+  fitAwards() {
+    for (const an of $('end').querySelectorAll('.award .an')) {
+      an.style.fontSize = '';
+      for (let fs = 38; an.scrollWidth > an.clientWidth && fs >= 22; fs -= 2) an.style.fontSize = `${fs}px`;
+    }
   }
 
   updatePaused(room) {
@@ -124,6 +134,7 @@ export class UI {
     }
     for (let i = ps.length; i < slots; i++) html += `<li class="pl empty"><span class="nm">waiting for an engineer…</span></li>`;
     $('plist').innerHTML = html;
+    $('plist').classList.toggle('dense', ps.length > 5);
     const host = ps.find((p) => p.id === room.host);
     $('lobbyStatus').innerHTML = host
       ? `Waiting for <b style="color:${esc(host.color)}">${esc(host.name)}</b> to start the game<span class="dots"></span>`
@@ -360,6 +371,7 @@ export class UI {
         <div class="ew">${host ? `Waiting for <b style="color:${esc(host.color)}">${esc(host.name)}</b> to start a new game` : 'Waiting for the host'}<span class="dots"></span></div>
       </div>`;
     $('end').classList.toggle('compact', ids.length > 5);
+    this.fitAwards();
   }
 
   // ------------------------------------------------------------ status

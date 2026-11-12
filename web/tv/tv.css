@@ -243,6 +243,10 @@ body {
   flex: none;
 }
 
+#plist.dense .pl {
+  font-size: 36px;
+}
+
 .pl .nm {
   flex: 1;
   font-weight: 700;
@@ -438,12 +442,32 @@ body {
 }
 
 #pstrip.many {
-  gap: 10px;
+  /* more than 5 players: two 2x2 stacks in the bottom corners at full size
+     (32 px) instead of shrinking one long row. The middle stays clear so no
+     plot is hidden. */
+  width: 1880px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  gap: 8px 10px;
+  justify-content: stretch;
 }
+
+#pstrip.many .chip:nth-child(1) { grid-area: 1 / 1; }
+#pstrip.many .chip:nth-child(2) { grid-area: 1 / 2; }
+#pstrip.many .chip:nth-child(3) { grid-area: 2 / 1; }
+#pstrip.many .chip:nth-child(4) { grid-area: 2 / 2; }
+#pstrip.many .chip:nth-child(5) { grid-area: 1 / 4; }
+#pstrip.many .chip:nth-child(6) { grid-area: 1 / 5; }
+#pstrip.many .chip:nth-child(7) { grid-area: 2 / 4; }
+#pstrip.many .chip:nth-child(8) { grid-area: 2 / 5; }
 
 #pstrip.many .chip {
   padding: 0 14px 0 10px;
   gap: 8px;
+}
+
+#pstrip.many .chip .nm {
+  max-width: 280px;
 }
 
 #pstrip.many .chip.away .nm::after {

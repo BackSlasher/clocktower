@@ -557,17 +557,21 @@ func (g *Game) Ready(pid string, r bool) error {
 	return nil
 }
 
+// checkAllReady starts the wave once every active connected player is ready
+// and at least one player is. Idle players (see active) never block it; in
+// wave 1 everyone is active, so the first build phase waits for all.
 func (g *Game) checkAllReady() {
-	conn := g.connected()
-	if len(conn) == 0 {
-		return
-	}
-	for _, p := range conn {
-		if !p.ready {
+	any := false
+	for _, p := range g.connected() {
+		if p.ready {
+			any = true
+		} else if g.active(p) {
 			return
 		}
 	}
-	g.startWave()
+	if any {
+		g.startWave()
+	}
 }
 
 // Gift sends cogs to another player.

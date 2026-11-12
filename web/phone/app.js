@@ -243,6 +243,10 @@ function renderActions() {
   const ready = !!me()?.ready;
   rb.classList.toggle('on', ready);
   rb.textContent = ready ? 'Ready ✓' : 'Ready';
+  // nobody to gift to when playing solo: hide the button rather than open an empty sheet
+  const solo = st.room.players.length < 2;
+  $('giftBtn').hidden = solo;
+  if (solo) $('giftSheet').hidden = true;
 }
 $('readyBtn').onclick = () => { send({ t: 'ready', ready: !me()?.ready }); buzz(10); };
 

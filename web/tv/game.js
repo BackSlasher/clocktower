@@ -481,7 +481,7 @@ export class Game {
     // HUD drawn on canvas: lives gauge + boss bar (unshaken)
     g.setTransform(this.px, 0, 0, this.px, 0, 0);
     this.drawLivesGauge(g, t, low);
-    if (boss) this.drawBossBar(g, boss);
+    if (boss && this.phase !== 'lost' && this.phase !== 'won') this.drawBossBar(g, boss);
   }
 
   drawEnemy(g, e, now, t) {

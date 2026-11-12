@@ -79,6 +79,10 @@ upgrade, sell, wind, gift or Ready) during the current wave cycle or the
 previous one; a cycle is a build phase plus its wave. Connecting or
 reconnecting counts as a command, and everyone is active for wave 1.
 
+The Ready check follows the same rule: the build phase ends early once every
+active connected player is ready (at least one must be), so an idle player
+cannot hold up the wave; wave 1 still waits for everyone or the timer.
+
 Bounties and wave-clear bonuses are split among active players only (among
 all connected players if nobody is active), so a friend who wanders off does
 not drain a quarter of the team's income into a purse nobody spends. Enemy HP

@@ -469,7 +469,9 @@ func TestWaveProgressionWinLose(t *testing.T) {
 	if g.Lives() != Defs.MaxLives-leak || g.Phase() != PhaseBuild || g.Wave() != 2 {
 		t.Fatalf("after wave 1: lives %d phase %s wave %d", g.Lives(), g.Phase(), g.Wave())
 	}
-	// Ready skip: all connected ready → wave starts now.
+	// Ready skip: all active connected ready → wave starts now. (ids[1]
+	// sat out cycle 1, so show up first or they would not block at all.)
+	_ = g.Apply(ids[1], Cmd{T: "ready", Ready: BoolP(false)})
 	_ = g.Ready(ids[0], true)
 	if g.Phase() != PhaseBuild {
 		t.Fatal("one ready should not start")
@@ -672,5 +674,67 @@ func TestIdleShareRedistributed(t *testing.T) {
 	g.SetConnected(b, true)
 	if got := pay(); got != [3]float64{0, 30, 0} {
 		t.Fatalf("after reconnect: %v", got)
+	}
+}
+
+func TestReadyIgnoresIdlePlayers(t *testing.T) {
+	g, ids := started(t, 3)
+	a, b, c := ids[0], ids[1], ids[2]
+	ready := func(id string) {
+		t.Helper()
+		if err := g.Apply(id, Cmd{T: "ready", Ready: BoolP(true)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Wave 1: everyone is active, so all must be ready.
+	ready(a)
+	ready(b)
+	if g.phase != PhaseBuild {
+		t.Fatal("wave 1 must wait for everyone")
+	}
+	ready(c)
+	if g.phase != PhaseWave {
+		t.Fatal("wave 1 should start when all are ready")
+	}
+	// Move to wave 3's build phase with only a and b having acted in cycle 2.
+	g.phase, g.wave = PhaseBuild, 3
+	for _, p := range g.players {
+		p.ready = false
+	}
+	g.player(a).actWave, g.player(b).actWave, g.player(c).actWave = 3, 3, 1
+	g.checkAllReady()
+	if g.phase != PhaseBuild {
+		t.Fatal("nobody ready must not start the wave")
+	}
+	ready(a)
+	if g.phase != PhaseBuild {
+		t.Fatal("active b has not readied")
+	}
+	ready(b)
+	if g.phase != PhaseWave {
+		t.Fatal("idle c must not block the wave")
+	}
+	// An idle player who taps Ready is active again and counted.
+	g.phase, g.wave = PhaseBuild, 4
+	for _, p := range g.players {
+		p.ready = false
+	}
+	g.player(a).actWave, g.player(b).actWave, g.player(c).actWave = 4, 1, 1
+	ready(a)
+	if g.phase != PhaseWave {
+		t.Fatal("only a is active; a ready should start")
+	}
+	g.phase, g.wave = PhaseBuild, 5
+	for _, p := range g.players {
+		p.ready = false
+	}
+	g.player(a).actWave, g.player(b).actWave, g.player(c).actWave = 5, 1, 1
+	ready(b) // b was idle; tapping ready makes b active, so a must ready too
+	if g.phase != PhaseBuild {
+		t.Fatal("b's ready should count and a (active) still blocks")
+	}
+	ready(a)
+	if g.phase != PhaseWave {
+		t.Fatal("a and b ready, idle c ignored")
 	}
 }
