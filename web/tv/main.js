@@ -46,6 +46,9 @@ const store = {
 
 const demo = new URLSearchParams(location.search).get('demo');
 let demoOn = false;
+let sound = null; // audio, loaded lazily (see bottom)
+let lastWelcome = null;
+let lastRoom = null;
 
 function handle(m) {
   const now = performance.now();
@@ -56,10 +59,14 @@ function handle(m) {
       if (ui.welcome && ui.welcome.room !== m.room) game.reset(); // got a fresh room
       game.setWelcome(m);
       ui.setWelcome(m);
+      lastWelcome = m;
+      sound?.onWelcome(m);
       break;
     case 'room':
       game.setRoom(m);
       ui.setRoom(m, game);
+      lastRoom = m;
+      sound?.onRoom(m);
       break;
     case 'snap':
       game.onSnap(m, now);
@@ -137,6 +144,7 @@ function frame() {
   last = now;
   game.frame(now, dt);
   ui.tick(game, now);
+  sound?.tick(game, now);
   perf?.record(now, performance.now());
 }
 function raf() {
@@ -150,3 +158,21 @@ setInterval(() => {
 }, 33);
 
 window.ctDebug = { game, ui, perf };
+
+// ---------------------------------------------------------------- sound (lazy, optional)
+// The lobby paints first; the engine and samples load afterwards. Any failure leaves the
+// game exactly as it was, just silent.
+setTimeout(() => {
+  import('./sound.js')
+    .then(({ createTVSound }) => createTVSound({ stage, ui }))
+    .then((s) => {
+      if (!s) return;
+      s.game = game;
+      game.sound = s;
+      sound = s;
+      window.ctDebug.sound = s;
+      if (lastWelcome) s.onWelcome(lastWelcome);
+      if (lastRoom) s.onRoom(lastRoom);
+    })
+    .catch(() => {});
+}, 200);

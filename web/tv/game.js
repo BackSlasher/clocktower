@@ -22,6 +22,7 @@ export class Game {
     this.bd = null;
     this.colors = new Map(); // pid -> color
     this.phase = 'connecting';
+    this.sound = null; // set by main.js once the audio module has loaded
     this.lobbyGears = null;
     this.steam = [];
     this.reset();
@@ -149,7 +150,10 @@ export class Game {
     this.lives = m.lives;
 
     // events: shown one snap interval later, in step with the interpolation
-    if (contiguous) for (const ev of m.ev || []) this.queue.push({ at: now + this.ivl, ev });
+    // (a snap arriving after a long gap carries a burst of events: show them, but silently)
+    const quiet = contiguous && now - (this._prevRecv || now) > 500;
+    this._prevRecv = now;
+    if (contiguous) for (const ev of m.ev || []) this.queue.push({ at: now + this.ivl, ev, quiet });
   }
 
   // ------------------------------------------------------------ events
@@ -157,7 +161,12 @@ export class Game {
   runEvents(now) {
     if (!this.queue.length) return;
     let i = 0;
-    for (; i < this.queue.length && this.queue[i].at <= now; i++) this.event(this.queue[i].ev, now);
+    for (; i < this.queue.length && this.queue[i].at <= now; i++) {
+      const q = this.queue[i];
+      // events that are late (background tab, stalled frame) or part of a reconnect burst stay silent
+      if (this.sound && !q.quiet && now - q.at < 400) this.sound.event(q.ev, this);
+      this.event(q.ev, now);
+    }
     if (i) this.queue.splice(0, i);
     // never let a backlog build up (e.g. background tab)
     if (this.queue.length > 600) this.queue.splice(0, this.queue.length - 600);
@@ -188,7 +197,10 @@ export class Game {
         if (lv.splash) {
           fx.smoke(mx, my, 3, { size: 18, life: 0.9, color: 'rgba(230,230,220,0.55)' });
           fx.part('glow', mx, my, 0, 0, 0.2, 26, 'rgba(255,190,100,1)');
-          fx.proj('mortar', mx, my, ev.x, ev.y, dur, () => this.splash(ev.x, ev.y, lv.splash, ev.to));
+          fx.proj('mortar', mx, my, ev.x, ev.y, dur, () => {
+            this.sound?.impact(ev.x);
+            this.splash(ev.x, ev.y, lv.splash, ev.to);
+          });
         } else {
           fx.proj('rivet', mx, my, ev.x, ev.y, dur, () => {
             fx.burst(ev.x, ev.y, 3, { speed: 160, life: 0.25, size: 2, color: 'rgba(255,220,150,1)' });

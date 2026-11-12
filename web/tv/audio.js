@@ -277,7 +277,7 @@ export function createAudio(opts = {}) {
       const g = ctx.createGain(); g.gain.value = 0;
       src.connect(g); g.connect(bus); src.start();
       if (fade > 0.01) ramp(g, curveIn, t0, fade, peak); else g.gain.value = peak;
-      const old = c.cur; c.cur = { id, src, g };
+      const old = c.cur; c.cur = { id, src, g, peak };
       if (old) retire(old, fade);
     } catch (e) {
       warnOnce('loop:' + id, 'loop failed', id, e && e.message);
@@ -301,7 +301,17 @@ export function createAudio(opts = {}) {
         if (c.cur && ctx) { retire(c.cur, num(o.fade, 1.5)); c.cur = null; }
         return;
       }
-      if (c.cur && c.cur.id === id) { c.want = { id, opts: o }; return; }
+      if (c.cur && c.cur.id === id) {
+        c.want = { id, opts: o };
+        // same track asked for at a different level (e.g. lobby track, quieter in build): glide there
+        const s = sounds.get(id), peak = num(s && s.def.gain, 1) * num(o.gain, 1);
+        if (ctx && s && Math.abs(peak - (c.cur.peak ?? peak)) > 0.001) {
+          const t = ctx.currentTime, g = c.cur.g.gain;
+          g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.setTargetAtTime(peak, t, 0.5);
+          c.cur.peak = peak;
+        }
+        return;
+      }
       c.want = { id, opts: o };
       if (ctx && ctx.state === 'running') startLoop(kind, id, o);   // otherwise starts on unlock
     } catch (e) {

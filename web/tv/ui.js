@@ -247,6 +247,11 @@ export class UI {
     }
   }
 
+  isBossWave(wave) {
+    const defs = this.welcome?.defs;
+    return !!(this.previewByWave.get(wave) || []).find((g) => defs?.enemies[g.kind]?.boss);
+  }
+
   waveStart(ev) {
     const defs = this.welcome?.defs;
     const preview = this.previewByWave.get(ev.wave) || [];
