@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clocktower (debug phone)</title>
+<link rel="stylesheet" href="/shared/theme.css">
+<style>body{padding:12px;font-family:var(--font-mono)}pre{white-space:pre-wrap;font-size:11px}input,button{font:inherit;margin:2px}</style>
+</head>
+<body>
+<form id="join"><input id="c" placeholder="CODE" maxlength="4" size="5"> <input id="n" placeholder="name" maxlength="12"> <button>Join</button></form>
+<div id="ctl" hidden>
+  <button data-m='{"t":"start"}'>start</button> <button data-m='{"t":"ready","ready":true}'>ready</button>
+  <button data-m='{"t":"restart"}'>restart</button><br>
+  <input id="raw" size="40" value='{"t":"build","plot":0,"kind":"rivet"}'> <button id="send">send</button>
+</div>
+<pre id="err"></pre>
+<pre id="room"></pre>
+<pre id="snap"></pre>
+<script type="module">
+import { connect } from '/shared/net.js';
+const $ = (id) => document.getElementById(id);
+const code0 = new URLSearchParams(location.search).get('c');
+if (code0) $('c').value = code0.toUpperCase();
+let conn;
+$('join').onsubmit = (e) => {
+  e.preventDefault();
+  const room = $('c').value.trim().toUpperCase(), name = $('n').value;
+  conn?.close();
+  conn = connect(() => ({ role: 'player', room, name, token: localStorage.getItem('ct.token.' + room) }), {
+    onMessage(m) {
+      if (m.t === 'welcome') { localStorage.setItem('ct.token.' + room, m.token); $('ctl').hidden = false; }
+      else if (m.t === 'error') $('err').textContent = `${m.code}: ${m.msg}`;
+      else if (m.t === 'room') $('room').textContent = JSON.stringify(m, null, 1);
+      else if (m.t === 'snap') $('snap').textContent = JSON.stringify({ ...m, enemies: m.enemies.length });
+    },
+  });
+};
+document.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => conn?.send(JSON.parse(b.dataset.m))));
+$('send').onclick = () => conn?.send(JSON.parse($('raw').value));
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clocktower TV (debug)</title>
+<link rel="stylesheet" href="/shared/theme.css">
+<style>body{padding:16px;font-family:var(--font-mono)}pre{white-space:pre-wrap;font-size:12px}img{width:160px;background:#fff;padding:6px}</style>
+</head>
+<body>
+<h1 id="code">…</h1>
+<p id="join"></p>
+<img id="qr" alt="QR code">
+<pre id="room"></pre>
+<pre id="snap"></pre>
+<script type="module">
+import { connect } from '/shared/net.js';
+const $ = (id) => document.getElementById(id);
+connect(() => ({ role: 'tv', room: sessionStorage.getItem('ct.room'), token: sessionStorage.getItem('ct.tvtoken') }), {
+  onStatus(s) { document.title = `Clocktower TV (${s})`; },
+  onMessage(m) {
+    if (m.t === 'welcome') {
+      sessionStorage.setItem('ct.room', m.room);
+      sessionStorage.setItem('ct.tvtoken', m.token);
+      $('code').textContent = m.room;
+      $('join').textContent = `Go to ${m.joinHost} and enter ${m.room} — ${m.joinUrl}`;
+      $('qr').src = `/qr.svg?room=${m.room}`;
+    } else if (m.t === 'room') {
+      $('room').textContent = JSON.stringify(m, null, 1);
+    } else if (m.t === 'snap') {
+      const { enemies, ev, ...rest } = m;
+      $('snap').textContent = JSON.stringify(rest) + `\nenemies: ${enemies.length}\nev: ${JSON.stringify(ev)}`;
+    }
+  },
+});
+</script>
+</body>
+</html>

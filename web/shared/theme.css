@@ -1,0 +1,77 @@
+/* Shared look for TV and phone: brass and soot under gaslight. */
+:root {
+  --soot-900: #0d1416;
+  --soot-800: #142024;
+  --soot-700: #1d2e33;
+  --soot-600: #2b4248;
+  --brass-300: #f0d48a;
+  --brass-400: #d9b25a;
+  --brass-500: #b88a34;
+  --brass-700: #6e5120;
+  --copper-400: #d1794a;
+  --copper-600: #8f4a2a;
+  --gas-glow: #ffb648;
+  --steam: #dfe9ea;
+  --verdigris: #4fb39a;
+  --danger: #e2553f;
+  --ink: #f4ead2;
+  --ink-dim: #a9a08a;
+
+  --font-display: 'Playfair Display', 'Bodoni MT', Didot, 'Bookman Old Style', Georgia, serif;
+  --font-body: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  --font-mono: ui-monospace, 'DejaVu Sans Mono', Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--soot-900);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+/* Riveted brass plate, the basic panel. */
+.plate {
+  background: linear-gradient(160deg, var(--soot-700), var(--soot-800));
+  border: 2px solid var(--brass-700);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 4px 14px rgb(0 0 0 / 0.5);
+}
+
+.btn {
+  font: inherit;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #2a1c05;
+  background: linear-gradient(180deg, var(--brass-300), var(--brass-500));
+  border: 2px solid var(--brass-700);
+  border-radius: 10px;
+  padding: 0.7em 1.2em;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.5),
+    0 3px 0 var(--brass-700);
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.btn:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 1px 0 var(--brass-700);
+}
+
+.btn:disabled {
+  filter: grayscale(0.7) brightness(0.7);
+}
