@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clocktower soundboard</title>
+<link rel="stylesheet" href="/shared/theme.css">
+<style>
+  html, body { height: auto; min-height: 100%; }
+  body { padding: 0 0 4rem; }
+  header.top { position: sticky; top: 0; z-index: 5; background: linear-gradient(180deg, var(--soot-800), var(--soot-900)); border-bottom: 2px solid var(--brass-700); padding: .7rem 1.2rem; box-shadow: 0 6px 18px rgb(0 0 0 / .5); }
+  h1 { margin: 0 0 .4rem; font-size: 1.5rem; color: var(--brass-300); }
+  h2 { margin: 2rem 0 .6rem; font-size: 1.2rem; color: var(--brass-400); }
+  main { max-width: 1250px; margin: 0 auto; padding: 0 1.2rem; }
+  .bar { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; align-items: center; }
+  .bar label { display: inline-flex; gap: .5rem; align-items: center; font-size: .9rem; color: var(--ink-dim); }
+  .bar input[type=range] { width: 8rem; accent-color: var(--brass-400); }
+  .bar output { font-family: var(--font-mono); font-size: .8rem; min-width: 2.6em; color: var(--ink); }
+  .btn { padding: .35em .9em; font-size: .9rem; }
+  .btn.small { padding: .2em .6em; font-size: .8rem; }
+  .btn.on { background: linear-gradient(180deg, var(--verdigris), #2f7f6d); color: #05201a; }
+  .lock { display: none; margin-top: .5rem; padding: .5rem .8rem; border: 1px solid var(--danger); border-radius: 8px; color: var(--ink); background: rgb(226 85 63 / .15); }
+  .lock.show { display: block; }
+  #meter { font-family: var(--font-mono); font-size: .85rem; color: var(--ink); }
+  #meter b { color: var(--gas-glow); }
+  #meter.hot b { color: var(--danger); }
+  #log { font-family: var(--font-mono); font-size: .8rem; color: var(--ink-dim); min-height: 1.2em; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; table-layout: fixed; }
+  th:nth-child(1) { width: 9.5rem; } th:nth-child(2) { width: 9rem; } th:nth-child(3) { width: 12rem; } th:nth-child(4) { width: 5.5rem; } th:nth-child(5) { width: 9rem; } th:nth-child(6) { width: 22%; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--soot-600); vertical-align: top; }
+  th { color: var(--ink-dim); font-weight: normal; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+  td.id { font-family: var(--font-mono); white-space: nowrap; }
+  td.num { font-family: var(--font-mono); white-space: nowrap; text-align: right; }
+  td.lic { white-space: nowrap; }
+  td.lic.syn { color: var(--verdigris); }
+  td.src a { color: var(--brass-300); word-break: break-all; }
+  td.proc { color: var(--ink-dim); font-size: .8rem; max-width: 26rem; }
+  .vars { display: inline-flex; gap: .25rem; margin-left: .4rem; }
+  .missing { color: var(--danger); }
+  .tag { font-size: .7rem; color: var(--ink-dim); }
+  @media (max-width: 800px) { td.proc, th.proc { display: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1 class="display">Clocktower soundboard</h1>
+  <div class="bar">
+    <label>Master <input id="v-master" type="range" min="0" max="1" step="0.01" value="0.8"><output id="o-master"></output></label>
+    <label>Music <input id="v-music" type="range" min="0" max="1" step="0.01" value="0.5"><output id="o-music"></output></label>
+    <label>SFX <input id="v-sfx" type="range" min="0" max="1" step="0.01" value="1"><output id="o-sfx"></output></label>
+    <label>Ambience <input id="v-amb" type="range" min="0" max="1" step="0.01" value="0.6"><output id="o-amb"></output></label>
+    <button class="btn" id="mute">Mute</button>
+  </div>
+  <div class="bar" style="margin-top:.5rem">
+    <span class="tag">Music:</span>
+    <button class="btn small" data-music="music_lobby">Lobby</button>
+    <button class="btn small" data-music="music_battle">Battle</button>
+    <button class="btn small" data-music="music_boss">Boss</button>
+    <button class="btn small" data-music="">Stop</button>
+    <button class="btn small" id="amb">Ambience</button>
+    <button class="btn" id="stress">Stress test (15 s)</button>
+    <span id="meter">master peak <b id="peak">-inf</b> dBFS <button class="btn small" id="peakreset">reset</button></span>
+  </div>
+  <div class="bar" style="margin-top:.3rem"><span id="log">loading...</span></div>
+  <div class="lock" id="lock">The browser is blocking sound. Click anywhere on this page to enable audio.</div>
+</header>
+<main id="main"></main>
+<script type="module" src="/tv/soundboard.js"></script>
+</body>
+</html>

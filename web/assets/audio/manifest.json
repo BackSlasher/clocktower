@@ -1,0 +1,496 @@
+{
+ "version": 1,
+ "sounds": {
+  "shot_rivet": {
+   "files": [
+    "shot_rivet_1.ogg",
+    "shot_rivet_2.ogg",
+    "shot_rivet_3.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 45,
+   "maxVoices": 6,
+   "pitchVar": 0.07,
+   "gainVar": 0.25,
+   "bytes": [
+    3547,
+    3546,
+    3608
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "3 variations; peak -12 dBFS (frequent)"
+  },
+  "shot_mortar": {
+   "files": [
+    "shot_mortar.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 120,
+   "maxVoices": 3,
+   "pitchVar": 0.05,
+   "bytes": [
+    5131
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "peak -4 dBFS"
+  },
+  "impact_mortar": {
+   "files": [
+    "impact_mortar.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 100,
+   "maxVoices": 3,
+   "pitchVar": 0.06,
+   "bytes": [
+    11557
+   ],
+   "license": "CC0 1.0",
+   "author": "Joth",
+   "source": "https://opengameart.org/content/chunky-explosion",
+   "processing": "low-passed 2.8 kHz, trimmed to 1.4 s, fades, peak -4 dBFS, mono, Vorbis"
+  },
+  "chain_tesla": {
+   "files": [
+    "chain_tesla_1.ogg",
+    "chain_tesla_2.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 90,
+   "maxVoices": 4,
+   "pitchVar": 0.08,
+   "bytes": [
+    5769,
+    5936
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "2 variations; peak -8 dBFS"
+  },
+  "pulse_chrono": {
+   "files": [
+    "pulse_chrono.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 400,
+   "maxVoices": 2,
+   "pitchVar": 0.03,
+   "bytes": [
+    6255
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "peak -8 dBFS"
+  },
+  "die_small": {
+   "files": [
+    "die_small_1.ogg",
+    "die_small_2.ogg",
+    "die_small_3.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 50,
+   "maxVoices": 6,
+   "pitchVar": 0.1,
+   "bytes": [
+    5702,
+    5254,
+    5433
+   ],
+   "license": "CC0 1.0",
+   "author": "BMacZero",
+   "source": "https://opengameart.org/content/metal-impact-sounds",
+   "processing": "clink1_0 / clink2 / clink3 from the pack; pitch-shifted (x0.9, x1, x1.1), low-passed 9 kHz, trimmed, normalised -8 dBFS, mono, Vorbis"
+  },
+  "die_big": {
+   "files": [
+    "die_big.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 150,
+   "maxVoices": 3,
+   "pitchVar": 0.05,
+   "bytes": [
+    12573
+   ],
+   "license": "CC0 1.0",
+   "author": "Spring Spring",
+   "source": "https://opengameart.org/content/mechanical-explosion",
+   "processing": "mechanical_explosion.wav slowed (x0.8), low-passed 4.5 kHz, trimmed to 1.3 s; layered with thud3 (x0.9, low-passed 1.2 kHz); peak -5 dBFS",
+   "note": "layered with thud3.wav from https://opengameart.org/content/metal-impact-sounds (BMacZero, CC0)"
+  },
+  "die_boss": {
+   "files": [
+    "die_boss.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "maxVoices": 1,
+   "pitchVar": 0.02,
+   "duck": {
+    "depth": 0.55,
+    "hold": 1.2,
+    "release": 1.5
+   },
+   "bytes": [
+    18514
+   ],
+   "license": "CC0 1.0",
+   "author": "Spring Spring",
+   "source": "https://opengameart.org/content/mechanical-explosion",
+   "processing": "mechanical_explosion slowed (x0.6, low-passed 3.5 kHz) + thud2 (x0.8) + bong1 (x0.6, delayed 150 ms); trimmed to 2.8 s; peak -4 dBFS",
+   "note": "layered with thud2.wav and bong1.wav from https://opengameart.org/content/metal-impact-sounds (BMacZero, CC0)"
+  },
+  "leak": {
+   "files": [
+    "leak.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 300,
+   "maxVoices": 2,
+   "pitchVar": 0.01,
+   "gainVar": 0.05,
+   "duck": {
+    "depth": 0.5,
+    "hold": 1.2,
+    "release": 1.5
+   },
+   "bytes": [
+    18564
+   ],
+   "license": "CC0 1.0",
+   "author": "BMacZero",
+   "source": "https://opengameart.org/content/metal-impact-sounds",
+   "processing": "bong1.wav pitched down (x0.75), low-passed 6 kHz, tolled twice (second at 0.75 s, -2 dB), trimmed to 3.2 s; peak -3 dBFS",
+   "note": "bong1.wav"
+  },
+  "boss_arrive": {
+   "files": [
+    "boss_arrive.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "maxVoices": 1,
+   "pitchVar": 0.0,
+   "gainVar": 0.0,
+   "duck": {
+    "depth": 0.45,
+    "hold": 2.0,
+    "release": 2.0
+   },
+   "bytes": [
+    19420
+   ],
+   "license": "CC0 1.0",
+   "author": "bart",
+   "source": "https://opengameart.org/content/steam-whistle",
+   "processing": "whistle pitched down (x0.55) as a low horn, low-passed 2.5 kHz + bong1 (x0.5) + thud2 (x0.7); trimmed to 3.4 s; peak -3 dBFS",
+   "note": "steam_whistle.wav layered with bong1.wav and thud2.wav from https://opengameart.org/content/metal-impact-sounds (BMacZero, CC0)"
+  },
+  "build": {
+   "files": [
+    "build.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 80,
+   "maxVoices": 3,
+   "bytes": [
+    6957
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "ratchet + clank; peak -4 dBFS"
+  },
+  "upgrade": {
+   "files": [
+    "upgrade.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 80,
+   "maxVoices": 3,
+   "pitchVar": 0.02,
+   "bytes": [
+    10342
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "rising ratchet + music-box chord; peak -4 dBFS"
+  },
+  "sell": {
+   "files": [
+    "sell.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 80,
+   "maxVoices": 3,
+   "bytes": [
+    5975
+   ],
+   "license": "CC0 1.0",
+   "author": "LordTomorrow",
+   "source": "https://opengameart.org/content/coin-splash",
+   "processing": "low-passed 5.5 kHz, trimmed, fades, peak -5 dBFS, mono, Vorbis"
+  },
+  "wind": {
+   "files": [
+    "wind_1.ogg",
+    "wind_2.ogg",
+    "wind_3.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 60,
+   "maxVoices": 4,
+   "pitchVar": 0.08,
+   "gainVar": 0.25,
+   "bytes": [
+    4445,
+    4462,
+    4390
+   ],
+   "license": "CC0 1.0",
+   "author": "BMacZero",
+   "source": "https://opengameart.org/content/clock-wind-sounds",
+   "processing": "singlewind1/2/3 clips; band-limited 150 Hz - 9 kHz, trimmed, peak -16 dBFS (very frequent), mono, Vorbis"
+  },
+  "gift": {
+   "files": [
+    "gift.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 100,
+   "maxVoices": 3,
+   "bytes": [
+    5516
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "double coin clink; peak -6 dBFS"
+  },
+  "join": {
+   "files": [
+    "join.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 150,
+   "maxVoices": 3,
+   "pitchVar": 0.0,
+   "bytes": [
+    6296
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "two rising music-box notes; peak -5 dBFS"
+  },
+  "ready": {
+   "files": [
+    "ready.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 150,
+   "maxVoices": 3,
+   "pitchVar": 0.0,
+   "bytes": [
+    5613
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "two-note music-box tink; peak -6 dBFS"
+  },
+  "wave_start": {
+   "files": [
+    "wave_start.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "maxVoices": 1,
+   "pitchVar": 0.0,
+   "gainVar": 0.0,
+   "duck": {
+    "depth": 0.6,
+    "hold": 1.0,
+    "release": 1.2
+   },
+   "bytes": [
+    15594
+   ],
+   "license": "CC0 1.0",
+   "author": "bart",
+   "source": "https://opengameart.org/content/steam-whistle",
+   "processing": "low-passed 3.8 kHz to soften the whistle, trimmed to 1.8 s, 10 ms in / 350 ms out fades, peak -4 dBFS, mono, Vorbis"
+  },
+  "wave_clear": {
+   "files": [
+    "wave_clear.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "maxVoices": 1,
+   "pitchVar": 0.0,
+   "gainVar": 0.0,
+   "duck": {
+    "depth": 0.7,
+    "hold": 0.6,
+    "release": 1.0
+   },
+   "bytes": [
+    12312
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "four-note bell arpeggio; peak -4 dBFS"
+  },
+  "victory": {
+   "files": [
+    "victory.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "maxVoices": 1,
+   "pitchVar": 0.0,
+   "gainVar": 0.0,
+   "duck": {
+    "depth": 0.3,
+    "hold": 2.5,
+    "release": 2.0
+   },
+   "bytes": [
+    30736
+   ],
+   "license": "CC0 1.0",
+   "author": "fvcalderan",
+   "source": "https://opengameart.org/content/classic-fanfare-lick",
+   "processing": "fanfare_3.ogg slowed to 85% (pitch-preserving atempo), light echo/hall (ffmpeg aecho), low-passed 9 kHz, mono, peak -3 dBFS, 0.8 s fade-out"
+  },
+  "defeat": {
+   "files": [
+    "defeat.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "maxVoices": 1,
+   "pitchVar": 0.0,
+   "gainVar": 0.0,
+   "duck": {
+    "depth": 0.3,
+    "hold": 3.5,
+    "release": 2.0
+   },
+   "bytes": [
+    18628
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "unwinding spring drone + slowing ticks + low bell; peak -4 dBFS"
+  },
+  "countdown_tick": {
+   "files": [
+    "countdown_tick.ogg"
+   ],
+   "category": "sfx",
+   "gain": 1.0,
+   "minIntervalMs": 400,
+   "maxVoices": 1,
+   "pitchVar": 0.02,
+   "gainVar": 0.05,
+   "bytes": [
+    3820
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "clock tick; peak -10 dBFS"
+  },
+  "music_lobby": {
+   "files": [
+    "music_lobby.ogg"
+   ],
+   "category": "music",
+   "gain": 1.0,
+   "loop": true,
+   "maxVoices": 1,
+   "bytes": [
+    1421695
+   ],
+   "license": "CC0 1.0",
+   "author": "Aureolus_Omicron",
+   "source": "https://opengameart.org/content/4-music-box-tracks",
+   "processing": "musicbox2_cute_tune.ogg (designed loop, unchanged content); loudness-normalised to -18 LUFS integrated (-3.0 dB), alimiter, re-encoded stereo Vorbis 96 kbps"
+  },
+  "music_battle": {
+   "files": [
+    "music_battle.ogg"
+   ],
+   "category": "music",
+   "gain": 1.0,
+   "loop": true,
+   "maxVoices": 1,
+   "bytes": [
+    596794
+   ],
+   "license": "CC0 1.0",
+   "author": "skrjablin",
+   "source": "https://opengameart.org/content/a-clockwork",
+   "processing": "a_clockwork.ogg (loopable by the author); loudness-normalised to -18 LUFS (-1.4 dB), re-encoded stereo Vorbis 96 kbps"
+  },
+  "music_boss": {
+   "files": [
+    "music_boss.ogg"
+   ],
+   "category": "music",
+   "gain": 1.0,
+   "loop": true,
+   "maxVoices": 1,
+   "bytes": [
+    1548912
+   ],
+   "license": "CC0 1.0",
+   "author": "SubspaceAudio (Juhani Junkala; from the SubspaceAudio 400 Indie Game Music Loops pack)",
+   "source": "https://opengameart.org/content/boss-battle-music",
+   "processing": "\"Epic Boss Battle [Seamlessly Looping]\" WAV; loudness-normalised from -6.8 to -17 LUFS (-10.2 dB, i.e. 1 LU hotter than the other tracks), alimiter, re-encoded stereo Vorbis 96 kbps"
+  },
+  "amb_town": {
+   "files": [
+    "amb_town.ogg"
+   ],
+   "category": "amb",
+   "gain": 0.8,
+   "loop": true,
+   "maxVoices": 1,
+   "bytes": [
+    208497
+   ],
+   "license": "CC0 1.0 (original, synthesised)",
+   "author": "Clocktower project",
+   "source": "original, synthesised for this project",
+   "processing": "filtered-noise wind, steam hiss and low hum; 30 s with 2.5 s equal-power tail-to-head crossfade; stereo Vorbis 64 kbps, about -27 LUFS"
+  }
+ }
+}
