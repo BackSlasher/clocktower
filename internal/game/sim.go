@@ -310,9 +310,10 @@ func (g *Game) damage(e *enemy, dmg float64, pierce bool, owner string) {
 	g.emit(EvDie{E: "die", ID: e.id, Kind: e.kind, X: round(x, 0.1), Y: round(y, 0.1), Bounty: e.def.Bounty})
 }
 
-// payAll splits cogs equally among connected players; returns each share.
+// payAll splits cogs equally among the earners (active players, see
+// earners); returns each share.
 func (g *Game) payAll(total float64) float64 {
-	conn := g.connected()
+	conn := g.earners()
 	if len(conn) == 0 {
 		conn = g.players
 	}

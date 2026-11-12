@@ -20,25 +20,42 @@ const (
 	Good Skill = iota
 	// Bad builds random towers on random plots, never upgrades, never winds.
 	Bad
+	// Casual models a first-time living-room player: it reacts a second or
+	// two late, winds in bursts (~2 taps/s, roughly 45 % of a wave) and only
+	// on towers that have enemies in range, never gifts, sometimes dithers
+	// with cogs in its pocket, and picks decent rather than optimal plots and
+	// towers.
+	Casual
+	// Idle is connected but never sends a command (the AFK friend).
+	Idle
 )
 
-// ParseSkill maps "good"/"bad" to a Skill.
+// ParseSkill maps "good"/"bad"/"casual"/"idle" to a Skill.
 func ParseSkill(s string) (Skill, bool) {
 	switch s {
 	case "good":
 		return Good, true
 	case "bad":
 		return Bad, true
+	case "casual":
+		return Casual, true
+	case "idle":
+		return Idle, true
 	}
 	return Good, false
+}
+
+func (s Skill) String() string {
+	return [...]string{"good", "bad", "casual", "idle"}[s]
 }
 
 // Bot is one scripted player.
 type Bot struct {
 	ID         string
 	Skill      Skill
-	TapsPerSec float64 // winding speed (Good only)
-	ReadyDelay float64 // seconds into a build phase before readying up; <0 = never ready
+	TapsPerSec float64 // winding speed (Good only; Casual uses its own burst rate)
+	ReadyDelay float64 // seconds into a build phase before readying up; <0 = never ready (not Casual)
+	NoWind     bool    // never wind
 
 	rng        *rand.Rand
 	nextAct    float64
@@ -48,6 +65,14 @@ type Bot struct {
 	buildStart float64
 	buildWave  int
 	lastPhase  game.Phase
+
+	// Casual state.
+	crankUntil float64 // end of the current winding burst
+	crankNext  float64 // earliest start of the next burst
+	crankRate  float64 // taps/s during this burst
+	wantKind   string  // tower kind it is saving for
+	readyAt    float64 // when it readies up this build phase (<0 never)
+	pathSeen   []float64
 }
 
 // New creates a bot for player id.
@@ -79,6 +104,12 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 		b.lastPhase = ""
 		return nil
 	}
+	switch b.Skill {
+	case Idle:
+		return nil
+	case Casual:
+		return b.actCasual(now, room, s)
+	}
 	var out []game.Cmd
 	if room.Phase == game.PhaseBuild && (b.lastPhase != game.PhaseBuild || b.buildWave != room.Wave) {
 		b.buildStart, b.buildWave = now, room.Wave
@@ -95,16 +126,20 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 	if now >= b.nextAct {
 		b.nextAct = now + 0.4 + 0.4*b.rng.Float64()
 		c, want, ok := b.decide(room.Wave, purse, towers)
+		builders := map[string]bool{}
+		for _, t := range s.Towers {
+			builders[t.Owner] = true
+		}
 		if ok {
 			out = append(out, c)
-		} else if g, ok := b.pool(s.Purses, purse, want); ok {
+		} else if g, ok := b.pool(s.Purses, builders, purse, want); ok {
 			out = append(out, g)
 		} else if room.Phase == game.PhaseBuild && b.ReadyDelay >= 0 && now-b.buildStart >= b.ReadyDelay && !b.isReady(room) {
 			out = append(out, game.Cmd{T: "ready", Ready: game.BoolP(true)})
 		}
 	}
 
-	if b.Skill == Good && len(towers) > 0 {
+	if b.Skill == Good && !b.NoWind && len(towers) > 0 {
 		b.tapAcc += b.TapsPerSec * math.Max(0, math.Min(3, now-b.lastWind))
 		b.lastWind = now
 		if t, ok := towers[b.windPlot]; !ok || t.Tension > 0.92 {
@@ -162,13 +197,18 @@ func (b *Bot) decide(wave, purse int, towers map[int]game.TowerSnap) (c game.Cmd
 }
 
 // pool gifts our cogs to the richest teammate when neither of us can afford
-// what the team is saving for, so split income still buys big towers.
-func (b *Bot) pool(purses map[string]int, purse, want int) (game.Cmd, bool) {
+// what the team is saving for, so split income still buys big towers. Only
+// teammates who have built something count: cogs gifted to an AFK friend are
+// lost to the team.
+func (b *Bot) pool(purses map[string]int, builders map[string]bool, purse, want int) (game.Cmd, bool) {
 	if b.Skill != Good || want <= purse || purse < 10 {
 		return game.Cmd{}, false
 	}
 	rich, rp := "", -1
 	for id, p := range purses {
+		if id != b.ID && !builders[id] {
+			continue
+		}
 		if p > rp || (p == rp && id < rich) {
 			rich, rp = id, p
 		}
@@ -197,6 +237,24 @@ func (b *Bot) decideBad(purse int, towers map[int]game.TowerSnap) (game.Cmd, boo
 	return game.Cmd{T: "build", Plot: game.IntP(free[b.rng.IntN(len(free))]), Kind: kind}, true
 }
 
+// balancedScores rates plots for kind by coverage with diminishing returns
+// per street, so an expert team covers every road instead of stacking one.
+func balancedScores(kind string, towers map[int]game.TowerSnap) []float64 {
+	have := make([]float64, len(game.Map.Paths))
+	for _, t := range towers {
+		for j, c := range pathCover[t.Kind][t.Plot] {
+			have[j] += c
+		}
+	}
+	sc := make([]float64, len(game.Map.Plots))
+	for i, pc := range pathCover[kind] {
+		for j, c := range pc {
+			sc[i] += c / (1 + have[j]/800)
+		}
+	}
+	return sc
+}
+
 // desiredTowers is how many towers the team wants before it starts upgrading.
 func desiredTowers(wave int) int { return min(len(game.Map.Plots), 4+wave) }
 
@@ -213,10 +271,10 @@ func (b *Bot) nextKind(wave int, towers map[int]game.TowerSnap) string {
 		return "mortar"
 	case count["tesla"] == 0 && wave >= 3:
 		return "tesla"
-	case count["chrono"] < 2 && n >= 7:
+	case count["chrono"] < 1 && n >= 7, count["chrono"] < 2 && n >= 12:
 		return "chrono"
 	}
-	want := map[string]float64{"rivet": 0.4, "mortar": 0.3, "tesla": 0.3}
+	want := map[string]float64{"rivet": 0.45, "mortar": 0.2, "tesla": 0.35}
 	best, bd := "rivet", math.Inf(-1)
 	for _, k := range []string{"rivet", "mortar", "tesla"} {
 		d := want[k]*float64(n+1) - float64(count[k])
@@ -233,7 +291,7 @@ func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.C
 		if cost := game.Defs.Towers[kind].Levels[0].Cost; purse < cost {
 			return game.Cmd{}, cost, false // save up
 		}
-		sc := plotScore[kind]
+		sc := balancedScores(kind, towers)
 		var free []int
 		for _, pl := range game.Map.Plots {
 			if _, ok := towers[pl.ID]; !ok {
@@ -266,8 +324,13 @@ func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.C
 			continue
 		}
 		key := float64(t.Lvl)*1000 - plotScore[t.Kind][t.Plot]
-		if t.Kind == "chrono" {
+		switch t.Kind {
+		case "chrono":
 			key += 1500
+		case "rivet": // cheap, hits everything: push the best ones to level 3 early
+			key -= 600
+		case "tesla":
+			key -= 300
 		}
 		cs = append(cs, cand{t.Plot, def.Levels[t.Lvl].Cost, key})
 	}

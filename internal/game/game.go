@@ -31,6 +31,7 @@ type player struct {
 	connSeq         uint64 // order of the current connection (lower = longer connected)
 	purse           float64
 	windBudget      float64
+	actWave         int // wave cycle of the player's last command or connect (see active)
 	st              stats
 }
 
@@ -181,6 +182,31 @@ func (g *Game) connected() []*player {
 // ConnectedCount is the number of connected players.
 func (g *Game) ConnectedCount() int { return len(g.connected()) }
 
+// active reports whether p is taking part: connected, and has sent a game
+// command (build, upgrade, sell, wind, gift or ready) during the current wave
+// cycle or the previous one. A cycle is a build phase plus its wave, so a
+// player who does anything at all once per cycle never flaps. (Re)connecting
+// counts as a command, and everyone starts active for wave 1.
+func (g *Game) active(p *player) bool { return p.connected && p.actWave >= g.wave-1 }
+
+// earners are the players who share bounties and wave bonuses: the active
+// players, or every connected player if nobody is active. An idle player's
+// share thus goes to the teammates who are playing; the team's total income
+// never changes, and enemy HP still scales with connected players, so going
+// idle can never make the game easier.
+func (g *Game) earners() []*player {
+	var out []*player
+	for _, p := range g.players {
+		if g.active(p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		out = g.connected()
+	}
+	return out
+}
+
 // --- players ---------------------------------------------------------------
 
 // SanitizeName trims, strips control characters and validates length.
@@ -288,6 +314,7 @@ func (g *Game) SetConnected(pid string, on bool) {
 	p.connected = on
 	g.slowVer++
 	if on {
+		p.actWave = g.wave
 		g.connSeq++
 		p.connSeq = g.connSeq
 		if h := g.player(g.host); h == nil || !h.connected {
@@ -315,8 +342,15 @@ func (g *Game) SetConnected(pid string, on bool) {
 
 // Apply dispatches a client command. Unknown types are ignored (nil).
 func (g *Game) Apply(pid string, c Cmd) error {
-	if g.player(pid) == nil {
+	p := g.player(pid)
+	if p == nil {
 		return ErrBadRequest
+	}
+	switch c.T {
+	case "build", "upgrade", "sell", "wind", "ready", "gift":
+		if g.Running() {
+			p.actWave = g.wave
+		}
 	}
 	switch c.T {
 	case "start":
@@ -378,6 +412,7 @@ func (g *Game) Start(pid string) error {
 	for _, p := range g.players {
 		p.purse = sp
 		p.ready = false
+		p.actWave = 0 // active for wave 1 only, unless they do something
 		p.windBudget = Defs.MaxTapsPerSec
 	}
 	g.slowVer++

@@ -460,9 +460,13 @@ func TestWaveProgressionWinLose(t *testing.T) {
 	if len(g.RoomState().NextWave) != 0 {
 		t.Fatal("no preview during waves")
 	}
-	// Undefended: enemies leak and cost lives.
+	// Undefended: every enemy of wave 1 leaks and costs lives.
+	leak := 0
+	for _, gr := range Defs.WaveDefs[0].Groups {
+		leak += gr.N * Defs.Enemies[gr.Kind].Lives
+	}
 	steps(g, 60)
-	if g.Lives() != Defs.MaxLives-10 || g.Phase() != PhaseBuild || g.Wave() != 2 {
+	if g.Lives() != Defs.MaxLives-leak || g.Phase() != PhaseBuild || g.Wave() != 2 {
 		t.Fatalf("after wave 1: lives %d phase %s wave %d", g.Lives(), g.Phase(), g.Wave())
 	}
 	// Ready skip: all connected ready → wave starts now.
@@ -605,5 +609,68 @@ func TestDeterminismAndSnapJSON(t *testing.T) {
 		if _, ok := m[k]; !ok {
 			t.Errorf("snap missing %q", k)
 		}
+	}
+}
+
+func TestIdleShareRedistributed(t *testing.T) {
+	g, ids := started(t, 3)
+	a, b, c := ids[0], ids[1], ids[2]
+	pay := func() [3]float64 {
+		var before [3]float64
+		for i, p := range g.players {
+			before[i] = p.purse
+		}
+		g.payAll(30)
+		var got [3]float64
+		for i, p := range g.players {
+			got[i] = math.Round((p.purse-before[i])*100) / 100
+		}
+		return got
+	}
+	// Wave 1: everyone shares, even before doing anything.
+	if got := pay(); got != [3]float64{10, 10, 10} {
+		t.Fatalf("wave 1 split %v", got)
+	}
+	// a taps Ready, b builds; c does nothing all cycle.
+	if err := g.Apply(a, Cmd{T: "ready", Ready: BoolP(true)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Apply(b, Cmd{T: "build", Plot: IntP(0), Kind: "rivet"}); err != nil {
+		t.Fatal(err)
+	}
+	g.wave = 2
+	if got := pay(); got != [3]float64{15, 15, 0} {
+		t.Fatalf("idle player should be left out of the split: %v", got)
+	}
+	// Enemy HP still scales with everyone connected, so idling never helps.
+	enterWave(g)
+	if want := Defs.WaveDefs[1].HPMul * (1 + 2*Defs.HPPerPlayer); math.Abs(g.waveHPMul-want) > 1e-9 {
+		t.Fatalf("hp mul %.3f want %.3f", g.waveHPMul, want)
+	}
+	// Any command brings c straight back (a wind outside its cycle too).
+	if err := g.Apply(c, Cmd{T: "wind", Plot: IntP(0), N: IntP(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pay(); got != [3]float64{10, 10, 10} {
+		t.Fatalf("returning player should share again: %v", got)
+	}
+	// One command keeps a player in for the rest of this cycle and the next,
+	// so nobody flaps between waves: in cycle 3 a and b (last seen in cycle
+	// 1) drop out, c (cycle 2) stays.
+	g.wave = 3
+	if got := pay(); got != [3]float64{0, 0, 30} {
+		t.Fatalf("cycle 3 split %v", got)
+	}
+	// If nobody is active, every connected player shares (and a disconnected
+	// one never does).
+	g.wave = 5
+	g.SetConnected(b, false)
+	if got := pay(); got != [3]float64{15, 0, 15} {
+		t.Fatalf("nobody active: %v", got)
+	}
+	// Reconnecting counts as showing up.
+	g.SetConnected(b, true)
+	if got := pay(); got != [3]float64{0, 30, 0} {
+		t.Fatalf("after reconnect: %v", got)
 	}
 }

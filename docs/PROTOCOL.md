@@ -214,6 +214,14 @@ Additive details; nothing above changed meaning.
 - **Purses** are integers on the wire; split bounties keep fractional cogs
   server-side, so a purse may tick up by one a little later than expected.
   `wave_clear.bonus` is the rounded per-player share.
+- **Idle players**: bounties and wave bonuses are split among *active*
+  players only: connected, and having sent `build`/`upgrade`/`sell`/`wind`/
+  `gift`/`ready` (or (re)connected) during the current or previous wave cycle
+  (a build phase plus its wave); everyone is active for wave 1. If nobody is
+  active, all connected players share. An idle player's purse simply stops
+  growing; `wave_clear.bonus` is the share each active player received. Enemy
+  HP scaling (`hpPerPlayer`) still counts all connected players. No message
+  carries the active flag. See DESIGN.md "Idle players".
 - **`shot`**: `x,y` is the predicted impact point; mortar splash (radius from
   defs) is centred there and only hits ground enemies.
 - **`chain.pts`** has one more point than `ids`: the tower's position first,

@@ -12,7 +12,7 @@ It is one Go binary. There are no accounts, no app to install and no build step 
 
 ![TV lobby with room code, QR code and four engineers](docs/img/tv-lobby.jpg)
 
-**Build phase.** Before each wave there is a 25 second build phase, skipped early if everyone taps Ready. The TV previews what is coming. Everyone spends cogs (the currency) on towers and upgrades. There are about 22 fixed plots on the map.
+**Build phase.** Before each wave there is a 20 second build phase, skipped early if everyone taps Ready. The TV previews what is coming. Everyone spends cogs (the currency) on towers and upgrades. There are about 22 fixed plots on the map.
 
 **Wave.** Enemies walk the streets toward the clock tower. Each one that arrives costs lives; the team shares 20. Building and upgrading carry on during the wave, and so does winding.
 
