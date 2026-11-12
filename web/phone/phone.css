@@ -135,9 +135,9 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
 .chip.sel { border-color: var(--gas-glow); background: var(--soot-600); box-shadow: 0 0 12px rgb(255 182 72 / 0.4); }
 .chip:disabled { opacity: 0.4; }
 .amts .chip { flex: 1; justify-content: center; font-family: var(--font-mono); font-weight: 700; }
-.toast { position: absolute; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 58px); z-index: 30; padding: 10px 14px; border-radius: 10px; text-align: center; font-size: 0.98rem; pointer-events: none; animation: tin 0.2s ease-out; }
-.toast.err { background: rgb(120 30 20 / 0.95); border: 1px solid var(--danger); color: #ffd7cf; }
-.toast.ok { background: rgb(20 60 52 / 0.92); border: 1px solid var(--verdigris); color: #cdf5e9; font-size: 0.9rem; }
+.toast { position: absolute; left: 8px; right: 8px; top: calc(env(safe-area-inset-top) + 8px); height: 50px; box-sizing: border-box; z-index: 30; padding: 0 14px; border-radius: 10px; display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.98rem; pointer-events: none; animation: tin 0.2s ease-out; } /* sits exactly over the status strip (#topbar), never over the map or panel */
+.toast.err { background: #5a1c14; border: 1px solid var(--danger); color: #ffd7cf; }
+.toast.ok { background: #14392f; border: 1px solid var(--verdigris); color: #cdf5e9; font-size: 0.9rem; }
 @keyframes tin { from { transform: translateY(-10px); opacity: 0; } }
 .banner { position: absolute; left: 0; right: 0; top: 0; z-index: 35; padding: calc(env(safe-area-inset-top) + 6px) 12px 6px; background: var(--danger); color: #fff; text-align: center; font-size: 0.9rem; }
 
@@ -229,13 +229,10 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
   .crank { min-height: 56px; max-height: none; font-size: 1.4rem; }
   #panel .hint { font-size: 0.95rem; }
   #under { font-size: 0.85rem; padding: 4px 10px; }
-  .toast { top: 52px; left: 12px; right: 12px; }
+  .toast { top: calc(env(safe-area-inset-top) + 6px); left: 8px; height: 44px; right: calc(14px + max(260px, 0.37 * (100% - 16px))); }
   .game.zoomed #panel { flex: 1; }
   .game.zoomed .cards { grid-auto-rows: minmax(48px, 1fr); }
   .game.zoomed .crank { min-height: 56px; flex: 1 1 auto; }
-}
-@media (orientation: landscape) and (max-height: 560px) {
-  .toast { top: auto; bottom: 12px; right: calc(37% + 24px); left: 16px; }
 }
 @media (orientation: landscape) and (max-height: 560px) {
   .sheet { align-items: center; justify-content: center; }
