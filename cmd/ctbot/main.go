@@ -2,7 +2,9 @@
 // websockets and plays. Without -room it first opens a TV connection to
 // create a room (and acts as that TV, counting what it receives).
 //
-//	ctbot -url http://localhost:8080 -room ABCD -n 4 [-skill good|bad] [-name-prefix Bot] [-no-start] [-loop]
+//	ctbot -url http://localhost:8080 -room ABCD -n 4 [-skill good|bad|casual|idle] [-name-prefix Bot] [-no-start] [-loop]
+//
+// Bots take perks from their offers by sending `perk` like a phone does.
 package main
 
 import (
@@ -30,7 +32,7 @@ var (
 	baseURL    = flag.String("url", "http://localhost:8080", "server base URL")
 	roomCode   = flag.String("room", "", "room code to join (empty: create one via a TV connection)")
 	n          = flag.Int("n", 4, "number of bot players (1-8)")
-	skillName  = flag.String("skill", "good", "good|bad")
+	skillName  = flag.String("skill", "good", "good|bad|casual|idle")
 	namePrefix = flag.String("name-prefix", "Bot", "bot name prefix")
 	names      = flag.String("names", "", "comma-separated bot names (e.g. Ada,Brunel,Tesla,Watt); overrides -name-prefix, extra bots fall back to it")
 	noStart    = flag.Bool("no-start", false, "never press start")
@@ -376,6 +378,9 @@ func (p *player) decide() []game.Cmd {
 		if c.T == "wind" {
 			p.windAcc[*c.Plot] += *c.N
 			continue
+		}
+		if c.T == "perk" {
+			p.logf("takes perk %s", c.ID)
 		}
 		out = append(out, c)
 	}

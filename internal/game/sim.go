@@ -3,6 +3,7 @@ package game
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 )
@@ -19,7 +20,7 @@ func (g *Game) Step(dt float64) {
 	}
 	for _, t := range g.towers {
 		if t != nil {
-			t.tension = math.Max(0, t.tension-Defs.TensionDecay*dt)
+			t.tension = math.Max(0, t.tension-Defs.TensionDecay*decayMul(g.player(t.owner))*dt)
 		}
 	}
 	switch g.phase {
@@ -97,13 +98,14 @@ func (g *Game) stepWave(dt float64) {
 			continue
 		}
 		lv := t.level()
-		r := lv.Range * (1 + Defs.WindRangeBonus*t.tension)
+		r := g.towerRange(t) * (1 + Defs.WindRangeBonus*t.tension)
+		slow := chronoSlow(g.player(t.owner), lv.Slow)
 		pl := Map.Plots[t.plot]
 		t.aim = math.Mod(g.time*1.5, 2*math.Pi) // pendulum swing, cosmetic
 		for _, e := range g.enemies {
 			x, y := g.enemyPos(e)
 			if dist(x, y, pl.X, pl.Y) <= r {
-				s := lv.Slow
+				s := slow
 				if e.def.Boss {
 					s /= 2
 				}
@@ -190,7 +192,9 @@ func (g *Game) sweep() {
 	})
 }
 
-func (g *Game) towerRange(t *tower) float64 { return t.level().Range }
+// towerRange is the tower's base radius including its owner's perks (chrono
+// tension widens it further in stepWave).
+func (g *Game) towerRange(t *tower) float64 { return t.level().Range * rangeMul(g.player(t.owner)) }
 
 // pickTarget returns the enemy in range closest to the clock tower ("first").
 func (g *Game) pickTarget(t *tower) *enemy {
@@ -217,6 +221,8 @@ func (g *Game) pickTarget(t *tower) *enemy {
 func (g *Game) fire(t *tower, target *enemy) {
 	pl := Map.Plots[t.plot]
 	lv := t.level()
+	owner := g.player(t.owner)
+	dmg := lv.Dmg * dmgMul(owner, t.kind)
 	switch t.kind {
 	case "tesla":
 		ids := []int{target.id}
@@ -224,7 +230,7 @@ func (g *Game) fire(t *tower, target *enemy) {
 		pts := []Point{{pl.X, pl.Y}, {round(x, 0.1), round(y, 0.1)}}
 		hit := []*enemy{target}
 		t.aim = math.Atan2(y-pl.Y, x-pl.X)
-		for len(hit) < lv.Chains {
+		for len(hit) < lv.Chains+extraChains(owner) {
 			var next *enemy
 			bd := t.def.ChainRange
 			for _, e := range g.enemies {
@@ -246,7 +252,7 @@ func (g *Game) fire(t *tower, target *enemy) {
 		}
 		g.emit(EvChain{E: "chain", Plot: t.plot, IDs: ids, Pts: pts})
 		for _, e := range hit {
-			g.damage(e, lv.Dmg, true, t.owner)
+			g.damage(e, dmg, true, t.owner)
 		}
 	default: // rivet, mortar: delayed projectile at the predicted position
 		x, y := g.enemyPos(target)
@@ -261,7 +267,7 @@ func (g *Game) fire(t *tower, target *enemy) {
 		travel = round(travel, 0.01)
 		g.emit(EvShot{E: "shot", Plot: t.plot, Kind: t.kind, To: target.id, X: x, Y: y, Travel: travel})
 		g.hits = append(g.hits, pendingHit{at: g.time + travel, towerK: t.kind, owner: t.owner, target: target.id,
-			x: x, y: y, dmg: lv.Dmg, splash: lv.Splash, pierce: t.def.IgnoresArmor, hitsAir: !t.def.GroundOnly})
+			x: x, y: y, dmg: dmg, splash: lv.Splash * splashMul(owner), pierce: t.def.IgnoresArmor, hitsAir: !t.def.GroundOnly})
 	}
 }
 
@@ -306,13 +312,18 @@ func (g *Game) damage(e *enemy, dmg float64, pierce bool, owner string) {
 		o.st.kills++
 	}
 	x, y := g.enemyPos(e)
-	g.payAll(float64(e.def.Bounty))
+	g.pay(float64(e.def.Bounty), true)
 	g.emit(EvDie{E: "die", ID: e.id, Kind: e.kind, X: round(x, 0.1), Y: round(y, 0.1), Bounty: e.def.Bounty})
 }
 
 // payAll splits cogs equally among the earners (active players, see
 // earners); returns each share.
-func (g *Game) payAll(total float64) float64 {
+func (g *Game) payAll(total float64) float64 { return g.pay(total, false) }
+
+// pay splits total among the earners. For kill bounties (salvage), each
+// earner also gets their Salvage Rights bonus on top of their share: new cogs,
+// not taken from teammates.
+func (g *Game) pay(total float64, salvage bool) float64 {
 	conn := g.earners()
 	if len(conn) == 0 {
 		conn = g.players
@@ -323,6 +334,9 @@ func (g *Game) payAll(total float64) float64 {
 	share := total / float64(len(conn))
 	for _, p := range conn {
 		p.purse += share
+		if salvage {
+			p.purse += share * (bountyMul(p) - 1)
+		}
 	}
 	return share
 }
@@ -336,6 +350,7 @@ func (g *Game) waveCleared() {
 		g.finish(true)
 		return
 	}
+	g.makeOffers()
 	g.wave++
 	g.phase = PhaseBuild
 	g.buildLeft = Defs.BuildTime
@@ -355,7 +370,9 @@ func (g *Game) finish(won bool) {
 	g.hits = nil
 	g.end = &End{Won: won, Wave: g.wave, Time: round(g.time, 0.1), Stats: map[string]StatsOut{}, Awards: g.awards()}
 	for _, p := range g.players {
-		g.end.Stats[p.id] = p.st.out()
+		so := p.st.out()
+		so.Perks = maps.Clone(p.perks)
+		g.end.Stats[p.id] = so
 	}
 	g.slowVer++
 }
@@ -390,6 +407,35 @@ func (g *Game) awards() []Award {
 		if best != nil {
 			out = append(out, Award{PID: best.id, Title: a.title, Detail: fmt.Sprintf(a.detail, bv)})
 		}
+	}
+	return append(out, g.perkAwards()...)
+}
+
+// perkAwards: Specialist (most picks of one perk, at least 2) and Bargain
+// Hunter (most cogs saved by discounts and free towers).
+func (g *Game) perkAwards() []Award {
+	var out []Award
+	var spec *player
+	specID, specN := "", 1
+	for _, p := range g.players {
+		for _, id := range Defs.PerkOrder {
+			if n := p.perks[id]; n > specN {
+				spec, specID, specN = p, id, n
+			}
+		}
+	}
+	if spec != nil {
+		out = append(out, Award{PID: spec.id, Title: "Specialist", Detail: fmt.Sprintf("%d× %s", specN, Defs.Perks[specID].Name)})
+	}
+	var thrift *player
+	saved := 0
+	for _, p := range g.players {
+		if p.st.saved > saved {
+			thrift, saved = p, p.st.saved
+		}
+	}
+	if thrift != nil {
+		out = append(out, Award{PID: thrift.id, Title: "Bargain Hunter", Detail: fmt.Sprintf("%d cogs saved", saved)})
 	}
 	return out
 }

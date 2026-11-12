@@ -5,6 +5,7 @@ package game
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -21,6 +22,7 @@ const NameMaxLen = 12
 
 type stats struct {
 	kills, spent, winds, built, gifted int
+	saved                              int // cogs perks took off build and upgrade prices
 	dmg                                float64
 }
 
@@ -33,6 +35,10 @@ type player struct {
 	windBudget      float64
 	actWave         int // wave cycle of the player's last command or connect (see active)
 	st              stats
+
+	perks map[string]int // picked perks (never nil)
+	offer []string       // unpicked choice, nil if none
+	free  int            // Free Sample charges left
 }
 
 type tower struct {
@@ -135,6 +141,7 @@ func (g *Game) reset() {
 	g.end = nil
 	for _, p := range g.players {
 		p.purse, p.ready, p.st = 0, false, stats{}
+		p.perks, p.offer, p.free = map[string]int{}, nil, 0
 	}
 	g.slowVer++
 }
@@ -252,7 +259,7 @@ func (g *Game) AddPlayer(name string) (pid, evicted string, err error) {
 			g.host = ""
 		}
 	}
-	p := &player{id: fmt.Sprintf("p%d", g.nextPID), name: name, windBudget: Defs.MaxTapsPerSec}
+	p := &player{id: fmt.Sprintf("p%d", g.nextPID), name: name, windBudget: Defs.MaxTapsPerSec, perks: map[string]int{}}
 	g.nextPID++
 	used := map[string]bool{}
 	for _, o := range g.players {
@@ -347,7 +354,7 @@ func (g *Game) Apply(pid string, c Cmd) error {
 		return ErrBadRequest
 	}
 	switch c.T {
-	case "build", "upgrade", "sell", "wind", "ready", "gift":
+	case "build", "upgrade", "sell", "wind", "ready", "gift", "perk":
 		if g.Running() {
 			p.actWave = g.wave
 		}
@@ -392,6 +399,8 @@ func (g *Game) Apply(pid string, c Cmd) error {
 			return badReq("Missing amount")
 		}
 		return g.Gift(pid, c.To, *c.Amount)
+	case "perk":
+		return g.Perk(pid, c.ID)
 	}
 	return nil
 }
@@ -458,10 +467,18 @@ func (g *Game) Build(pid string, plot int, kind string) error {
 	if g.towers[plot] != nil {
 		return ErrOccupied
 	}
-	cost := def.Levels[0].Cost
+	cost, free := buildCost(p, def), p.free > 0
+	if free {
+		cost = 0
+	}
 	if !g.spend(p, cost) {
 		return ErrPoor
 	}
+	if free {
+		p.free--
+		g.slowVer++ // the charge count is in the room message
+	}
+	p.st.saved += def.Levels[0].Cost - cost
 	g.towers[plot] = &tower{plot: plot, kind: kind, def: def, lvl: 1, owner: pid, spent: cost, aim: -math.Pi / 2}
 	p.st.built++
 	g.emit(EvBuild{E: "build", Plot: plot, Kind: kind, PID: pid})
@@ -481,10 +498,11 @@ func (g *Game) Upgrade(pid string, plot int) error {
 	if t.lvl >= len(t.def.Levels) {
 		return ErrMaxLevel
 	}
-	cost := t.def.Levels[t.lvl].Cost
+	cost := upgradeCost(p, t.def, t.lvl)
 	if !g.spend(p, cost) {
 		return ErrPoor
 	}
+	p.st.saved += t.def.Levels[t.lvl].Cost - cost
 	t.lvl++
 	t.spent += cost
 	g.emit(EvUpgrade{E: "upgrade", Plot: plot, Lvl: t.lvl, PID: pid})
@@ -529,7 +547,7 @@ func (g *Game) Wind(pid string, plot, n int) error {
 	}
 	p.windBudget -= float64(n)
 	t := g.towers[plot]
-	t.tension = math.Min(1, t.tension+float64(n)*Defs.WindPerTap)
+	t.tension = math.Min(1, t.tension+float64(n)*Defs.WindPerTap*crankMul(p))
 	p.st.winds += n
 	k := windKey{plot, pid}
 	if !g.windSeen[k] {
@@ -606,7 +624,8 @@ func (g *Game) RoomState() *RoomMsg {
 	m := &RoomMsg{T: "room", Phase: g.phase, Host: g.host, Wave: g.wave, NextWave: []WaveEntry{}, End: g.end,
 		Players: make([]PlayerInfo, 0, len(g.players))}
 	for _, p := range g.players {
-		m.Players = append(m.Players, PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected, Ready: p.ready})
+		m.Players = append(m.Players, PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected, Ready: p.ready,
+			Offer: slices.Clone(p.offer), Perks: maps.Clone(p.perks), Costs: costTable(p), Free: p.free})
 	}
 	if g.phase == PhaseBuild && g.wave >= 1 && g.wave <= len(Defs.WaveDefs) {
 		m.NextWave = WavePreview(g.wave)
@@ -657,8 +676,12 @@ func (g *Game) snapshot(drain bool) *Snap {
 	}
 	for _, t := range g.towers {
 		if t != nil {
-			s.Towers = append(s.Towers, TowerSnap{Plot: t.plot, Kind: t.kind, Lvl: t.lvl, Owner: t.owner,
-				Tension: round(t.tension, 0.01), Aim: round(t.aim, 0.01), Spent: t.spent})
+			ts := TowerSnap{Plot: t.plot, Kind: t.kind, Lvl: t.lvl, Owner: t.owner,
+				Tension: round(t.tension, 0.01), Aim: round(t.aim, 0.01), Spent: t.spent}
+			if m := rangeMul(g.player(t.owner)); m != 1 {
+				ts.RangeMul = round(m, 0.01)
+			}
+			s.Towers = append(s.Towers, ts)
 		}
 	}
 	for _, e := range g.enemies {

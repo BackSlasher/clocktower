@@ -24,7 +24,12 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	reg := room.NewRegistry(room.Config{IdleTimeout: time.Minute})
+	return newEnvCfg(t, room.Config{IdleTimeout: time.Minute})
+}
+
+func newEnvCfg(t *testing.T, cfg room.Config) *env {
+	t.Helper()
+	reg := room.NewRegistry(cfg)
 	web := fstest.MapFS{
 		"index.html":     {Data: []byte("<p>phone</p>")},
 		"tv/index.html":  {Data: []byte("<p>tv</p>")},
@@ -411,4 +416,55 @@ func TestRoomExpiry(t *testing.T) {
 	if m := late.next("error"); m["code"] != "no_room" {
 		t.Fatal(m)
 	}
+}
+
+// TestPerkOverWebsocket: after wave 1 a player finds an offer in `room`, takes
+// one with a `perk` message, and everyone sees the pick.
+func TestPerkOverWebsocket(t *testing.T) {
+	e := newEnvCfg(t, room.Config{IdleTimeout: time.Minute, Speed: 40})
+	tv := e.dial(q("role", "tv"))
+	w := tv.next("welcome")
+	code := w["room"].(string)
+	defs := w["defs"].(map[string]any)
+	if len(defs["perkOrder"].([]any)) == 0 || len(defs["perks"].(map[string]any)) == 0 {
+		t.Fatal("defs without perks")
+	}
+	a := e.dial(q("role", "player", "room", code, "name", "Ada"))
+	a.next("welcome")
+	r := a.next("room")
+	p0 := r["players"].([]any)[0].(map[string]any)
+	if p0["offer"] != nil || p0["perks"] == nil {
+		t.Fatalf("lobby player %v", p0)
+	}
+	a.send(map[string]any{"t": "perk", "id": "sights"})
+	if m := a.next("error"); m["code"] != "bad_request" {
+		t.Fatal(m)
+	}
+	a.send(map[string]any{"t": "start"})
+	a.until("room", func(m msg) bool { return m["phase"] == "build" })
+	a.send(map[string]any{"t": "ready", "ready": true})
+	var offer []any
+	a.until("room", func(m msg) bool {
+		p := m["players"].([]any)[0].(map[string]any)
+		offer, _ = p["offer"].([]any)
+		return len(offer) == 3
+	})
+	a.send(map[string]any{"t": "perk", "id": "no_such_perk"})
+	if m := a.next("error"); m["code"] != "bad_request" {
+		t.Fatal(m)
+	}
+	id := offer[1].(string)
+	a.send(map[string]any{"t": "perk", "id": id})
+	a.until("room", func(m msg) bool {
+		p := m["players"].([]any)[0].(map[string]any)
+		return p["offer"] == nil && p["perks"].(map[string]any)[id] == 1.0
+	})
+	tv.until("snap", func(m msg) bool {
+		for _, ev := range m["ev"].([]any) {
+			if ev := ev.(map[string]any); ev["e"] == "perk" && ev["id"] == id && ev["pid"] == "p1" {
+				return true
+			}
+		}
+		return false
+	})
 }

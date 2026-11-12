@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"math/rand/v2"
+	"strings"
 	"testing"
 )
 
@@ -586,7 +587,7 @@ func TestDeterminismAndSnapJSON(t *testing.T) {
 		_ = g.Build(ids[0], 3, "rivet")
 		_ = g.Build(ids[1], 7, "mortar")
 		out := ""
-		for i := 0; i < 30*80; i++ {
+		for i := 0; i < 30*120; i++ {
 			g.Step(dt)
 			if i%3 == 0 {
 				_ = g.Wind(ids[0], 3, 1)
@@ -596,13 +597,21 @@ func TestDeterminismAndSnapJSON(t *testing.T) {
 				}
 				out = string(b)
 			}
+			if off := g.player(ids[1]).offer; off != nil {
+				_ = g.Perk(ids[1], off[0]) // offers come from the game RNG too
+			}
 		}
-		return out
+		if g.Wave() < 2 || len(g.player(ids[1]).perks) == 0 {
+			t.Fatalf("determinism run should clear wave 1 and take a perk (wave %d)", g.Wave())
+		}
+		rs, _ := json.Marshal(g.RoomState())
+		return out + "\n" + string(rs)
 	}
 	a, b := run(), run()
 	if a != b {
 		t.Fatal("simulation is not deterministic")
 	}
+	a = a[:strings.IndexByte(a, '\n')]
 	var m map[string]any
 	if err := json.Unmarshal([]byte(a), &m); err != nil {
 		t.Fatal(err)

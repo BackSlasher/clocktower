@@ -17,6 +17,7 @@ type Scenario struct {
 	TapsPerSec float64 // 0 = default (3)
 	ReadyDelay float64 // seconds into build before readying; <0 never
 	NoWind     bool    // bots never wind (to measure what winding is worth)
+	NoPerks    bool    // bots never pick perks (to measure what perks are worth)
 	Seed       uint64
 }
 
@@ -62,6 +63,7 @@ func Run(sc Scenario) Result {
 		}
 		b.ReadyDelay = sc.ReadyDelay
 		b.NoWind = sc.NoWind
+		b.NoPerks = sc.NoPerks
 		bots = append(bots, b)
 	}
 	if err := g.Start(g.Host()); err != nil {

@@ -48,6 +48,7 @@ func TestBalance(t *testing.T) {
 		{"2 casual", Scenario{Team: team(2, Casual)}},
 		{"8 casual", Scenario{Team: team(8, Casual)}},
 		{"4 casual, no winding", Scenario{Team: team(4, Casual), NoWind: true}},
+		{"4 casual, no perks", Scenario{Team: team(4, Casual), NoPerks: true}},
 		{"4 good (expert)", Scenario{Team: team(4, Good), ReadyDelay: 4}},
 		{"3 good + 1 idle", Scenario{Team: team(3, Good, 1, Idle), ReadyDelay: 4}},
 		{"1 good", Scenario{Team: team(1, Good), ReadyDelay: 4}},
@@ -102,6 +103,7 @@ func TestBalance(t *testing.T) {
 	check("4 good (expert)", 5, 6)
 	check("4 bad (no wind)", 0, 0)
 	check("4 casual, no winding", 0, 4)
+	check("4 casual, no perks", 0, 4)
 	if m, ok := summary["4 bad (no wind)"]; ok && m.AvgLossWave < 8 {
 		t.Errorf("4 bad bots should survive the opening, lost on average at wave %.1f", m.AvgLossWave)
 	}

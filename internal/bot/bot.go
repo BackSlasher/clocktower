@@ -56,6 +56,7 @@ type Bot struct {
 	TapsPerSec float64 // winding speed (Good only; Casual uses its own burst rate)
 	ReadyDelay float64 // seconds into a build phase before readying up; <0 = never ready (not Casual)
 	NoWind     bool    // never wind
+	NoPerks    bool    // never pick a perk
 
 	rng        *rand.Rand
 	nextAct    float64
@@ -73,6 +74,11 @@ type Bot struct {
 	wantKind   string  // tower kind it is saving for
 	readyAt    float64 // when it readies up this build phase (<0 never)
 	pathSeen   []float64
+
+	// Perks.
+	me       *game.PlayerInfo // our entry in the latest room message
+	offerKey string           // the offer we last noticed
+	pickAt   float64          // when we pick from it (<0: not going to)
 }
 
 // New creates a bot for player id.
@@ -104,6 +110,7 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 		b.lastPhase = ""
 		return nil
 	}
+	b.me = b.self(room)
 	switch b.Skill {
 	case Idle:
 		return nil
@@ -111,6 +118,9 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 		return b.actCasual(now, room, s)
 	}
 	var out []game.Cmd
+	if c, ok := b.perkChoice(now, room, s); ok {
+		out = append(out, c)
+	}
 	if room.Phase == game.PhaseBuild && (b.lastPhase != game.PhaseBuild || b.buildWave != room.Wave) {
 		b.buildStart, b.buildWave = now, room.Wave
 		b.nextAct = now + 0.5 + b.rng.Float64()
@@ -155,13 +165,29 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 	return out
 }
 
-func (b *Bot) isReady(room *game.RoomMsg) bool {
-	for _, p := range room.Players {
-		if p.ID == b.ID {
-			return p.Ready
+func (b *Bot) isReady(room *game.RoomMsg) bool { return b.self(room) != nil && b.self(room).Ready }
+
+func (b *Bot) self(room *game.RoomMsg) *game.PlayerInfo {
+	for i := range room.Players {
+		if room.Players[i].ID == b.ID {
+			return &room.Players[i]
 		}
 	}
-	return false
+	return nil
+}
+
+// price is what we pay to build kind (lvl 0) or raise it to level lvl+1,
+// using the per-player prices from the room message (perks) when present.
+func (b *Bot) price(kind string, lvl int) int {
+	if b.me != nil {
+		if lvl == 0 && b.me.Free > 0 {
+			return 0
+		}
+		if c, ok := b.me.Costs[kind]; ok {
+			return c[lvl]
+		}
+	}
+	return game.Defs.Towers[kind].Levels[lvl].Cost
 }
 
 // pickWind chooses a low-tension damage tower, spreading bots out randomly.
@@ -221,7 +247,7 @@ func (b *Bot) pool(purses map[string]int, builders map[string]bool, purse, want 
 
 func (b *Bot) decideBad(purse int, towers map[int]game.TowerSnap) (game.Cmd, bool) {
 	kind := game.Defs.TowerOrder[b.rng.IntN(len(game.Defs.TowerOrder))]
-	cost := game.Defs.Towers[kind].Levels[0].Cost
+	cost := b.price(kind, 0)
 	if purse < cost {
 		return game.Cmd{}, false
 	}
@@ -288,7 +314,7 @@ func (b *Bot) nextKind(wave int, towers map[int]game.TowerSnap) string {
 func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.Cmd, int, bool) {
 	if len(towers) < desiredTowers(wave) {
 		kind := b.nextKind(wave, towers)
-		if cost := game.Defs.Towers[kind].Levels[0].Cost; purse < cost {
+		if cost := b.price(kind, 0); purse < cost {
 			return game.Cmd{}, cost, false // save up
 		}
 		sc := balancedScores(kind, towers)
@@ -332,7 +358,7 @@ func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.C
 		case "tesla":
 			key -= 300
 		}
-		cs = append(cs, cand{t.Plot, def.Levels[t.Lvl].Cost, key})
+		cs = append(cs, cand{t.Plot, b.price(t.Kind, t.Lvl), key})
 	}
 	if len(cs) == 0 {
 		return game.Cmd{}, 0, false

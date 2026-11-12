@@ -246,3 +246,46 @@ Additive details; nothing above changed meaning.
   Websocket upgrades must be same-origin (Origin host = Host, X-Forwarded-Host
   or the configured base URL host); a missing Origin is allowed.
 - **Testing flag**: `clocktower -speed N` runs the simulation N× faster.
+
+## Perks
+
+Additive to everything above; see docs/DESIGN.md "Perks".
+
+- **Defs** gains `perks`: `{ "<id>": { "name": "Hot Rivets", "desc": "Your Rivet
+  Guns deal 20% more damage. …", "rare": false } }` and `perkOrder: ["<id>", …]`
+  (the numbers in this example are illustrative; the real ones are in `desc`).
+  `desc` is complete, player-facing text with the real numbers; clients show
+  it verbatim and never compute perk effects.
+- **`room.players[]`** entries gain:
+  - `offer`: `["<id>","<id>","<id>"]` while that player has an unpicked choice,
+    otherwise `null`.
+  - `perks`: `{ "<id>": count }` — everything the player has picked (may be `{}`).
+  - `costs` (omitted unless the player has a price perk): `{ "<kind>": [build,
+    up2, up3] }`, the cogs this player pays to build that kind and to upgrade
+    any tower of it to level 2 / 3. Use it instead of the `defs` costs when
+    present. (Added: without it a phone could not show prices after Bulk
+    Discount / Master Fitter without computing perk effects.)
+  - `free` (omitted when 0): free builds left (Free Sample); while it is > 0
+    this player's next build of any kind costs 0.
+  A `room` message is sent whenever any of these changes.
+- **Client → server** `{ "t": "perk", "id": "<id>" }` — take one perk from your
+  current offer. Allowed in build and wave phases (`bad_request` otherwise).
+  `bad_request` if the id is unknown, you have no offer, or the id is not in
+  it. The offer is then cleared and the effect applies at once. Like the other
+  game commands it counts as activity for the idle-player rule.
+- **Event** `{ "e": "perk", "pid": "p1", "id": "<id>" }` in the next snap.
+- **Offers** are created for every connected player when a wave other than the
+  last is cleared (after the `wave_clear` event), replacing any unpicked offer.
+  Three distinct perks, never one the player already has at its stack cap.
+  A player not connected at that moment gets no new offer (an older unpicked
+  one stays); late joiners get their first at the next clear.
+  `restart` clears offers and perks.
+- **`snap.towers[]`** entries gain `rangeMul` (number, omitted when 1): the
+  owner's perk multiplier on that tower's range. Clients drawing a range ring
+  use `level.range × rangeMul` (× the tension factor for `wind: "range"` towers).
+  Other perk effects need no client maths.
+- **`End.stats[pid]`** gains `perks`: the same `{id: count}` map.
+- **Sell refunds** stay `sellRefund` × cogs actually spent on the tower
+  (`snap.towers[].spent`), so discounted or free towers refund less.
+- **Awards** may include the perk titles "Specialist" (most picks of one perk)
+  and "Bargain Hunter" (most cogs saved by price perks); same `Award` shape.

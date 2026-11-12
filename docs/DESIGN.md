@@ -58,7 +58,7 @@ listed per level. Sell refunds 60 % of everything spent on the tower.
 | `brute`    | Brass Brute  | slow, lots of HP, armour (flat damage reduction per hit) |
 | `drone`    | Aero-Drone   | flying: mortars cannot target it |
 | `tinker`   | Tinker       | repairs nearby enemies over time; priority target |
-| `baron`    | Iron Baron   | boss; huge HP, armour, costs 10 lives if it arrives |
+| `baron`    | Iron Baron   | boss; huge HP, armour, costs 5 lives if it arrives; walks with a tinker escort |
 
 Slows do not stack (strongest wins). Bosses are slowed at half strength.
 
@@ -66,7 +66,7 @@ Slows do not stack (strongest wins). Bosses are slowed at half strength.
 
 Income is split, so total team income is constant with player count. Extra
 players bring extra hands for winding and more parallel decision making, so
-enemy HP is multiplied by `1 + 0.06 × (connected players − 1)` (`hpPerPlayer`).
+enemy HP is multiplied by `1 + 0.07 × (connected players − 1)` (`hpPerPlayer`).
 The factor is small on purpose: a casual group's extra hands are worth little
 more than that, and split purses make big upgrades slower for larger groups.
 Starting purse is `max(80, 320 / players)`-ish per player, tuned so a team can
@@ -104,6 +104,13 @@ fatter enemies, because a team's strength grows slowly once plots fill and
 towers reach level 3. Wave 8 (one Iron Baron) is the hardest moment of the
 first half and wave 15 (two Barons) of the game.
 
+From wave 9 every wave ends with a few *runners*: very tough Clockroaches or
+Aero-Drones (3–5 per wave) that cost one life each. A team rarely stops all of
+them and can never lose many lives to them, so damage arrives in small, steady
+lumps and won games end close (typically 5–11 lives left) instead of being
+either flawless or a single collapse. The Barons cost 5 lives, not 10, for the
+same reason.
+
 Balance is tuned with the bot harness (`internal/bot`, run with
 `CT_BALANCE_RUNS=100 go test -run Balance -v ./internal/bot`) against
 human-like "casual" bots: they react a second or two late, wind in bursts at
@@ -113,13 +120,14 @@ than optimal plots. Targets:
 
 | team | target |
 |------|--------|
-| 4 casual | wins ~60–75 %, losses mostly on waves 12–15 |
+| 4 casual | wins ~60–75 %, losses mostly on waves 12–15; winners keep ~5–11 lives |
 | 3 casual + 1 idle | wins ~35–55 %, rarely dies at wave 8 |
 | 1, 2 casual | wins ~55–75 % |
 | 8 casual | wins ~60–80 % |
 | 4 casual who never wind | loses more often, but still wins sometimes |
+| 4 casual who never pick a perk | clearly worse (target 30–50 %; see Perks) |
 | 4 expert bots | wins nearly always |
-| builds badly and never winds | loses, from wave 8–9 on |
+| builds badly and never winds | loses, mostly in waves 9–13 |
 
 A won game takes about 17 minutes.
 
@@ -149,3 +157,48 @@ sprites can be swapped in.
 
 Per-player engineer classes with a signature ability, more maps, sound and
 music, difficulty settings, endless mode, generated art.
+
+## Perks (pick one of three)
+
+Clearing a wave earns every connected player a choice: their phone shows three
+random perk cards and they keep one. Perks are personal — they change that
+player's towers, cranking or purse — and they stack. This is the decision of
+each build phase and what makes two games play differently: one player drifts
+into a rivet specialist, another into the team's winder.
+
+- Offered after waves 1–14 (not after the final wave). Three distinct perks,
+  drawn by weight; the rare ones show up seldom.
+- The offer stays open through the build phase and the next wave. If it is
+  still unpicked when the next wave is cleared, it is replaced by the new one.
+- Picking is never required and never blocks the ready check.
+- Perks are public: the TV announces each pick and the end screen lists them.
+- Late joiners get their first offer at the next wave clear.
+
+Starting set (ids in `internal/game/perks.go`; numbers are tuned there):
+
+| perk | effect |
+|------|--------|
+| Overwound Springs | your towers lose tension more slowly |
+| Strong Arm | your crank taps add more tension |
+| Calibrated Sights | your towers gain range |
+| Hot Rivets | your Rivet Guns deal more damage |
+| Bigger Shells | your Steam Mortars get a larger splash |
+| Capacitor Bank | your Tesla Coils chain to one more target |
+| Heavy Pendulum | your Chrono Pendulums slow more |
+| Bulk Discount | your new towers cost less |
+| Master Fitter | your upgrades cost less |
+| Salvage Rights | your share of bounties is larger |
+| Windfall | cogs, right now |
+| Free Sample | your next tower is free |
+| Clock Repair (rare) | the team gets lives back |
+
+Difficulty is tuned with perks in play: bots pick too (casual bots at random,
+after a few seconds, sometimes not at all; good bots to suit what they have
+built; idle players never).
+
+The per-pick numbers are deliberately small (a few per cent). Perks are taken
+fourteen times per player and compound, and the balance harness shows a
+casual team's win rate is very sensitive to total strength: at the tuned
+difficulty, four casual bots win ~65 % with perks, ~7 % without, ~43 % with
+perks at half these numbers and ~92 % at double. Bigger cards would make the
+game much harder for a team that ignores them.

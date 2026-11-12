@@ -33,6 +33,11 @@ var (
 	ErrNoRoom     = &Error{"no_room", "No such room"}
 	ErrRoomFull   = &Error{"room_full", "Room is full"}
 	ErrBadName    = &Error{"bad_name", "Pick a name of 1–12 characters"}
+
+	// Perk refusals (all bad_request on the wire).
+	ErrNoOffer     = &Error{"bad_request", "No perk to choose right now"}
+	ErrNotOffered  = &Error{"bad_request", "That perk is not on offer"}
+	ErrUnknownPerk = &Error{"bad_request", "No such perk"}
 )
 
 func badReq(msg string) *Error { return &Error{"bad_request", msg} }
@@ -46,6 +51,7 @@ type Cmd struct {
 	Ready  *bool  `json:"ready,omitempty"`
 	To     string `json:"to,omitempty"`
 	Amount *int   `json:"amount,omitempty"`
+	ID     string `json:"id,omitempty"` // perk
 }
 
 // Helpers for building commands in Go (bots, tests).
@@ -59,6 +65,12 @@ type PlayerInfo struct {
 	Color     string `json:"color"`
 	Connected bool   `json:"connected"`
 	Ready     bool   `json:"ready"`
+	// Perks (see perks.go). Offer is null while there is no unpicked choice;
+	// Perks is never null. Costs and Free are present only when they apply.
+	Offer []string          `json:"offer"`
+	Perks map[string]int    `json:"perks"`
+	Costs map[string][3]int `json:"costs,omitempty"` // kind → [build, up2, up3] this player pays
+	Free  int               `json:"free,omitempty"`  // free builds left (Free Sample)
 }
 
 // WaveEntry is one line of the next-wave preview.
@@ -69,12 +81,13 @@ type WaveEntry struct {
 
 // StatsOut is one player's end-of-game stats.
 type StatsOut struct {
-	Kills  int `json:"kills"`
-	Dmg    int `json:"dmg"`
-	Spent  int `json:"spent"`
-	Winds  int `json:"winds"`
-	Built  int `json:"built"`
-	Gifted int `json:"gifted"`
+	Kills  int            `json:"kills"`
+	Dmg    int            `json:"dmg"`
+	Spent  int            `json:"spent"`
+	Winds  int            `json:"winds"`
+	Built  int            `json:"built"`
+	Gifted int            `json:"gifted"`
+	Perks  map[string]int `json:"perks"`
 }
 
 // Award is a fun end-of-game title.
@@ -106,13 +119,14 @@ type RoomMsg struct {
 
 // TowerSnap is a tower in a snap.
 type TowerSnap struct {
-	Plot    int     `json:"plot"`
-	Kind    string  `json:"kind"`
-	Lvl     int     `json:"lvl"`
-	Owner   string  `json:"owner"`
-	Tension float64 `json:"tension"`
-	Aim     float64 `json:"aim"`
-	Spent   int     `json:"spent"`
+	Plot     int     `json:"plot"`
+	Kind     string  `json:"kind"`
+	Lvl      int     `json:"lvl"`
+	Owner    string  `json:"owner"`
+	Tension  float64 `json:"tension"`
+	Aim      float64 `json:"aim"`
+	Spent    int     `json:"spent"`
+	RangeMul float64 `json:"rangeMul,omitempty"` // owner's perk range multiplier; omitted when 1
 }
 
 // Enemy tuple indices in Snap.Enemies.
@@ -208,6 +222,11 @@ type (
 	EvWaveStart struct {
 		E    string `json:"e"`
 		Wave int    `json:"wave"`
+	}
+	EvPerk struct {
+		E   string `json:"e"`
+		PID string `json:"pid"`
+		ID  string `json:"id"`
 	}
 	EvWaveClear struct {
 		E     string `json:"e"`

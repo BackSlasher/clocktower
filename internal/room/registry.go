@@ -309,7 +309,7 @@ func (r *Registry) Serve(ws *websocket.Conn, q Query) {
 
 // knownCmds are the client message types forwarded to the game.
 var knownCmds = map[string]bool{"start": true, "build": true, "upgrade": true, "sell": true,
-	"wind": true, "ready": true, "gift": true, "restart": true}
+	"wind": true, "ready": true, "gift": true, "restart": true, "perk": true}
 
 func (r *Registry) readLoop(c *client, rm *Room, pid string) {
 	defer func() {

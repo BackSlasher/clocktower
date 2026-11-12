@@ -81,6 +81,11 @@ func (b *Bot) actCasual(now float64, room *game.RoomMsg, s *game.Snap) []game.Cm
 		return out
 	}
 
+	// Perk cards are picked from the same menu, between other actions.
+	if c, ok := b.perkChoice(now, room, s); ok {
+		b.nextAct = math.Max(b.nextAct, now+casualMenuMin)
+		return append(out, c)
+	}
 	if now >= b.nextAct {
 		b.nextAct = now + casualMenuMin + casualMenuSpan*b.rng.Float64()
 		if b.rng.Float64() >= casualDither {
@@ -165,6 +170,9 @@ func (b *Bot) pickHotTower(s *game.Snap) int {
 		def := game.Defs.Towers[t.Kind]
 		pl := game.Map.Plots[t.Plot]
 		r := def.Levels[t.Lvl-1].Range
+		if t.RangeMul > 0 {
+			r *= t.RangeMul
+		}
 		n := 0.0
 		for _, e := range s.Enemies {
 			ed := game.Defs.Enemies[game.Defs.EnemyOrder[int(e[1])]]
@@ -242,11 +250,11 @@ func (b *Bot) decideCasual(wave, purse int, towers map[int]game.TowerSnap) (game
 	}
 	if b.wantKind != "" {
 		kind := b.wantKind
-		if purse < game.Defs.Towers[kind].Levels[0].Cost {
+		if purse < b.price(kind, 0) {
 			// Can't afford it: now and then settle for a rivet; mostly keep
 			// saving, sometimes spend on an upgrade instead.
 			switch r := b.rng.Float64(); {
-			case purse >= game.Defs.Towers["rivet"].Levels[0].Cost && r < casualSettle:
+			case purse >= b.price("rivet", 0) && r < casualSettle:
 				kind = "rivet"
 			case r < 0.75:
 				return game.Cmd{}, false
@@ -284,7 +292,7 @@ func (b *Bot) decideCasual(wave, purse int, towers map[int]game.TowerSnap) (game
 			continue
 		}
 		upgradable++
-		if def.Levels[t.Lvl].Cost > purse {
+		if b.price(t.Kind, t.Lvl) > purse {
 			continue
 		}
 		key := plotScore[t.Kind][t.Plot] - 300*float64(t.Lvl)

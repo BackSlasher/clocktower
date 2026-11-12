@@ -53,7 +53,7 @@ type Group struct {
 	Paths    []int   `json:"paths"`    // enemy i walks Paths[i % len]
 	Delay    float64 `json:"delay"`    // seconds after wave start
 	Interval float64 `json:"interval"` // seconds between spawns
-	HPMul    float64 `json:"hpMul"`    // overrides the wave's HPMul if > 0 (bosses)
+	HPMul    float64 `json:"hpMul"`    // overrides the wave's HPMul if > 0 (bosses, runners)
 }
 
 // WaveDef is one hand-shaped wave.
@@ -76,12 +76,14 @@ type DefsT struct {
 	WindBonus  float64              `json:"windBonus"`
 
 	// Additive fields (documented in PROTOCOL.md).
-	WindRangeBonus float64 `json:"windRangeBonus"` // chrono radius bonus at full tension
-	TensionDecay   float64 `json:"tensionDecay"`   // tension lost per second
-	MaxTapsPerSec  float64 `json:"maxTapsPerSec"`  // server cap on winding taps per player
-	BuildTime      float64 `json:"buildTime"`      // seconds of build phase
-	MaxPlayers     int     `json:"maxPlayers"`
-	HPPerPlayer    float64 `json:"hpPerPlayer"` // enemy HP × (1 + this × (players − 1))
+	WindRangeBonus float64             `json:"windRangeBonus"` // chrono radius bonus at full tension
+	TensionDecay   float64             `json:"tensionDecay"`   // tension lost per second
+	MaxTapsPerSec  float64             `json:"maxTapsPerSec"`  // server cap on winding taps per player
+	BuildTime      float64             `json:"buildTime"`      // seconds of build phase
+	MaxPlayers     int                 `json:"maxPlayers"`
+	HPPerPlayer    float64             `json:"hpPerPlayer"` // enemy HP × (1 + this × (players − 1))
+	Perks          map[string]*PerkDef `json:"perks"`       // see perks.go
+	PerkOrder      []string            `json:"perkOrder"`   // menu order
 
 	// Server-only knobs.
 	MinDmgFrac      float64   `json:"-"` // armour never reduces a hit below this fraction
@@ -91,7 +93,9 @@ type DefsT struct {
 	WaveDefs        []WaveDef `json:"-"`
 }
 
-// Defs is the single source of balance truth.
+const maxLives = 20
+
+// Defs is the single source of balance truth (perk numbers: perks.go).
 var Defs = &DefsT{
 	Towers: map[string]*TowerDef{
 		"rivet": {
@@ -137,11 +141,11 @@ var Defs = &DefsT{
 		"brute":  {Name: "Brass Brute", Desc: "Slow, tough, armoured.", HP: 240, Speed: 40, Armor: 3, Lives: 2, Bounty: 14, Radius: 20},
 		"drone":  {Name: "Aero-Drone", Desc: "Flies. Mortars cannot hit it.", HP: 60, Speed: 70, Flying: true, Lives: 1, Bounty: 6, Radius: 14},
 		"tinker": {Name: "Tinker", Desc: "Repairs nearby enemies. Kill it first.", HP: 90, Speed: 48, Armor: 2, Lives: 1, Bounty: 10, Radius: 15, Repair: 8, RepairRange: 110},
-		"baron":  {Name: "Iron Baron", Desc: "Boss. Huge, armoured; costs 10 lives.", HP: 1500, Speed: 28, Armor: 3, Lives: 10, Bounty: 150, Radius: 32, Boss: true},
+		"baron":  {Name: "Iron Baron", Desc: "Boss. Huge, armoured; costs 5 lives.", HP: 1500, Speed: 28, Armor: 3, Lives: 5, Bounty: 150, Radius: 32, Boss: true},
 	},
 	TowerOrder: []string{"rivet", "mortar", "tesla", "chrono"},
 	EnemyOrder: []string{"scrap", "roach", "brute", "drone", "tinker", "baron"},
-	MaxLives:   20,
+	MaxLives:   maxLives,
 	Waves:      15,
 	SellRefund: 0.6,
 	WindPerTap: 0.05,
@@ -152,7 +156,9 @@ var Defs = &DefsT{
 	MaxTapsPerSec:  10,
 	BuildTime:      20,
 	MaxPlayers:     8,
-	HPPerPlayer:    0.06,
+	HPPerPlayer:    0.07,
+	Perks:          perkDefs,
+	PerkOrder:      perkOrder,
 
 	MinDmgFrac:      0.2,
 	StartPurseTotal: 320,
@@ -171,6 +177,12 @@ var (
 func p(paths ...int) []int { return paths }
 
 // Paths: 0 = West Road (long), 1 = Gearworks Lane (longest), 2 = Foundry Street (short).
+//
+// From wave 9 each wave ends with a few "runners": very tough roaches or
+// drones (own HPMul) that cost one life each. A team rarely stops them all and
+// can never lose many lives to them, so damage arrives in small, steady lumps
+// and won games end close instead of the outcome hinging on one collapse.
+// Barons cost 5 lives (not a game-ending 10) and walk with a tinker escort.
 var waves = []WaveDef{
 	{HPMul: 1.0, Bonus: 80, Groups: []Group{ // 1
 		{Kind: "scrap", N: 12, Paths: all, Interval: 1.4},
@@ -183,74 +195,83 @@ var waves = []WaveDef{
 		{Kind: "scrap", N: 16, Paths: all, Interval: 1.0},
 		{Kind: "roach", N: 12, Paths: p(0, 1), Delay: 6, Interval: 0.5},
 	}},
-	{HPMul: 1.65, Bonus: 80, Groups: []Group{ // 4: brutes appear
+	{HPMul: 1.7, Bonus: 80, Groups: []Group{ // 4: brutes appear
 		{Kind: "scrap", N: 14, Paths: all, Interval: 1.0},
 		{Kind: "brute", N: 3, Paths: all, Delay: 5, Interval: 5},
 		{Kind: "roach", N: 10, Paths: fndSt, Delay: 14, Interval: 0.4},
 	}},
-	{HPMul: 2.05, Bonus: 90, Groups: []Group{ // 5: roach rush
+	{HPMul: 2.2, Bonus: 90, Groups: []Group{ // 5: roach rush
 		{Kind: "roach", N: 30, Paths: all, Interval: 0.3},
 		{Kind: "scrap", N: 16, Paths: all, Delay: 6, Interval: 0.8},
 		{Kind: "brute", N: 4, Paths: p(0, 2), Delay: 12, Interval: 4},
 	}},
-	{HPMul: 2.45, Bonus: 100, Groups: []Group{ // 6: drones appear
+	{HPMul: 2.68, Bonus: 100, Groups: []Group{ // 6: drones appear
 		{Kind: "scrap", N: 18, Paths: all, Interval: 0.8},
 		{Kind: "drone", N: 8, Paths: p(1, 2), Delay: 6, Interval: 1.5},
 		{Kind: "brute", N: 4, Paths: p(0, 1), Delay: 10, Interval: 4},
 	}},
-	{HPMul: 2.75, Bonus: 110, Groups: []Group{ // 7
+	{HPMul: 3.07, Bonus: 110, Groups: []Group{ // 7
 		{Kind: "scrap", N: 20, Paths: all, Interval: 0.7},
 		{Kind: "roach", N: 30, Paths: all, Delay: 4, Interval: 0.3},
 		{Kind: "drone", N: 10, Paths: all, Delay: 10, Interval: 1.0},
 	}},
-	{HPMul: 3.05, Bonus: 150, Groups: []Group{ // 8: first Iron Baron
+	{HPMul: 3.07, Bonus: 150, Groups: []Group{ // 8: first Iron Baron, with an escort
 		{Kind: "scrap", N: 24, Paths: all, Interval: 0.7},
 		{Kind: "baron", N: 1, Paths: westRd, Delay: 6, Interval: 1, HPMul: 1.8},
+		{Kind: "tinker", N: 2, Paths: westRd, Delay: 8, Interval: 2.5},
 		{Kind: "brute", N: 4, Paths: p(1, 2), Delay: 9, Interval: 4},
 		{Kind: "drone", N: 12, Paths: p(1, 2), Delay: 15, Interval: 0.9},
 	}},
-	{HPMul: 3.4, Bonus: 130, Groups: []Group{ // 9: tinkers appear
+	{HPMul: 3.41, Bonus: 130, Groups: []Group{ // 9: tinkers appear
 		{Kind: "scrap", N: 20, Paths: all, Interval: 0.7},
-		{Kind: "tinker", N: 3, Paths: all, Delay: 4, Interval: 3},
-		{Kind: "brute", N: 8, Paths: all, Delay: 5, Interval: 2.2},
+		{Kind: "tinker", N: 2, Paths: p(0, 1), Delay: 4, Interval: 3},
+		{Kind: "brute", N: 6, Paths: all, Delay: 5, Interval: 2.2},
 		{Kind: "drone", N: 10, Paths: p(0, 2), Delay: 12, Interval: 0.9},
+		{Kind: "roach", N: 3, Paths: fndSt, Delay: 20, Interval: 1.5, HPMul: 43},
 	}},
-	{HPMul: 3.6, Bonus: 140, Groups: []Group{ // 10: swarm
+	{HPMul: 3.61, Bonus: 140, Groups: []Group{ // 10: swarm
 		{Kind: "roach", N: 70, Paths: all, Interval: 0.15},
 		{Kind: "drone", N: 26, Paths: all, Delay: 4, Interval: 0.6},
-		{Kind: "tinker", N: 4, Paths: all, Delay: 8, Interval: 2.5},
-		{Kind: "brute", N: 7, Paths: all, Delay: 6, Interval: 2},
+		{Kind: "tinker", N: 3, Paths: all, Delay: 8, Interval: 2.5},
+		{Kind: "brute", N: 6, Paths: all, Delay: 6, Interval: 2},
+		{Kind: "roach", N: 3, Paths: gearLn, Delay: 24, Interval: 1.5, HPMul: 49},
 	}},
 	{HPMul: 3.75, Bonus: 150, Groups: []Group{ // 11: armour column
-		{Kind: "brute", N: 13, Paths: all, Interval: 1.6},
-		{Kind: "tinker", N: 6, Paths: all, Delay: 3, Interval: 3},
+		{Kind: "brute", N: 10, Paths: all, Interval: 1.8},
+		{Kind: "tinker", N: 3, Paths: all, Delay: 3, Interval: 4},
 		{Kind: "scrap", N: 24, Paths: all, Delay: 6, Interval: 0.6},
+		{Kind: "roach", N: 4, Paths: westRd, Delay: 22, Interval: 1.5, HPMul: 51},
 	}},
 	{HPMul: 3.95, Bonus: 160, Groups: []Group{ // 12: air raid
 		{Kind: "drone", N: 36, Paths: all, Interval: 0.5},
 		{Kind: "roach", N: 50, Paths: all, Delay: 6, Interval: 0.15},
-		{Kind: "tinker", N: 4, Paths: all, Delay: 9, Interval: 3},
-		{Kind: "brute", N: 8, Paths: all, Delay: 8, Interval: 1.8},
+		{Kind: "tinker", N: 3, Paths: all, Delay: 9, Interval: 3},
+		{Kind: "brute", N: 6, Paths: all, Delay: 8, Interval: 1.8},
+		{Kind: "drone", N: 3, Paths: fndSt, Delay: 26, Interval: 1.5, HPMul: 35},
 	}},
-	{HPMul: 4.1, Bonus: 170, Groups: []Group{ // 13
-		{Kind: "brute", N: 14, Paths: all, Interval: 1.5},
-		{Kind: "tinker", N: 6, Paths: all, Delay: 2, Interval: 2.5},
-		{Kind: "roach", N: 30, Paths: all, Delay: 8, Interval: 0.2},
-		{Kind: "drone", N: 12, Paths: all, Delay: 12, Interval: 0.7},
+	{HPMul: 4.09, Bonus: 170, Groups: []Group{ // 13
+		{Kind: "brute", N: 11, Paths: all, Interval: 1.6},
+		{Kind: "tinker", N: 3, Paths: all, Delay: 2, Interval: 3},
+		{Kind: "roach", N: 40, Paths: all, Delay: 8, Interval: 0.2},
+		{Kind: "drone", N: 16, Paths: all, Delay: 12, Interval: 0.7},
+		{Kind: "roach", N: 4, Paths: fndSt, Delay: 26, Interval: 1.5, HPMul: 58},
 	}},
-	{HPMul: 4.25, Bonus: 180, Groups: []Group{ // 14
+	{HPMul: 4.24, Bonus: 180, Groups: []Group{ // 14
 		{Kind: "scrap", N: 24, Paths: all, Interval: 0.5},
-		{Kind: "brute", N: 13, Paths: all, Delay: 3, Interval: 1.5},
-		{Kind: "tinker", N: 6, Paths: all, Delay: 6, Interval: 2.5},
-		{Kind: "drone", N: 14, Paths: all, Delay: 9, Interval: 0.7},
-		{Kind: "roach", N: 30, Paths: all, Delay: 15, Interval: 0.15},
+		{Kind: "brute", N: 10, Paths: all, Delay: 3, Interval: 1.6},
+		{Kind: "tinker", N: 4, Paths: all, Delay: 6, Interval: 3},
+		{Kind: "drone", N: 18, Paths: all, Delay: 9, Interval: 0.7},
+		{Kind: "roach", N: 40, Paths: all, Delay: 15, Interval: 0.15},
+		{Kind: "drone", N: 4, Paths: p(1, 2), Delay: 30, Interval: 1.5, HPMul: 39},
 	}},
-	{HPMul: 4.45, Bonus: 0, Groups: []Group{ // 15: twin Barons
-		{Kind: "brute", N: 12, Paths: all, Interval: 1.6},
+	{HPMul: 4.44, Bonus: 0, Groups: []Group{ // 15: twin Barons, each with an escort
+		{Kind: "brute", N: 10, Paths: all, Interval: 1.8},
 		{Kind: "baron", N: 2, Paths: p(0, 1), Delay: 3, Interval: 10, HPMul: 2.5},
-		{Kind: "tinker", N: 6, Paths: all, Delay: 4, Interval: 3},
+		{Kind: "tinker", N: 4, Paths: p(0, 1), Delay: 5, Interval: 5},
 		{Kind: "drone", N: 16, Paths: all, Delay: 9, Interval: 0.7},
-		{Kind: "roach", N: 36, Paths: all, Delay: 14, Interval: 0.15},
+		{Kind: "roach", N: 50, Paths: all, Delay: 14, Interval: 0.15},
 		{Kind: "scrap", N: 20, Paths: all, Delay: 18, Interval: 0.5},
+		{Kind: "roach", N: 5, Paths: fndSt, Delay: 30, Interval: 1.5, HPMul: 66},
+		{Kind: "roach", N: 3, Paths: westRd, Delay: 34, Interval: 1.5, HPMul: 58},
 	}},
 }
