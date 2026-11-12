@@ -83,7 +83,7 @@ Each tower has three levels. Costs are in cogs: build, then upgrade to level 2, 
 | ![Brass Brute](img/enemies/brute.png) | **Brass Brute** | Slow and tough, and armoured: each hit is reduced by a flat amount, so weak shots do very little. Costs 2 lives. | Tesla Coils (ignore armour); upgraded Rivet Guns and Mortars. |
 | ![Aero-Drone](img/enemies/drone.png) | **Aero-Drone** | Flies, so Steam Mortars cannot target it. | Rivet Guns and Tesla Coils. |
 | ![Tinker](img/enemies/tinker.png) | **Tinker** | Repairs nearby enemies over time. | Kill it first. |
-| ![Iron Baron](img/enemies/baron.png) | **Iron Baron** | Boss. Huge health and armour; costs 10 lives if it arrives. | Everything at once, fully wound, with Chrono Pendulums slowing it. |
+| ![Iron Baron](img/enemies/baron.png) | **Iron Baron** | Boss. Huge health and armour; costs 5 lives if it arrives. | Everything at once, fully wound, with Chrono Pendulums slowing it. |
 
 ## Bosses
 

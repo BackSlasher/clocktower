@@ -247,8 +247,8 @@ func TestPerkClockRepair(t *testing.T) {
 	}
 	g.player(a).offer = []string{"clock_repair", "sights", "overwound"}
 	_ = g.Perk(a, "clock_repair")
-	if g.Lives() != 17 {
-		t.Fatalf("lives %d, want 17", g.Lives())
+	if g.Lives() != 15+clockRepairLives {
+		t.Fatalf("lives %d, want %d", g.Lives(), 15+clockRepairLives)
 	}
 	g.lives = 19
 	g.player(a).offer = []string{"clock_repair", "sights", "overwound"}
@@ -350,7 +350,9 @@ func TestPerkOffersDeterministic(t *testing.T) {
 			for _, p := range g.players {
 				out = append(out, p.offer)
 			}
-			_ = g.Perk("p1", g.players[0].offer[0])
+			if off := g.players[0].offer; off != nil {
+				_ = g.Perk("p1", off[0])
+			}
 		}
 		return out
 	}
@@ -505,5 +507,37 @@ func TestPerkRestartAndEnd(t *testing.T) {
 	}
 	if rm := g.RoomState(); rm.Players[0].Perks == nil || rm.Players[0].Offer != nil {
 		t.Fatal("room perks should be {} and offer null after restart")
+	}
+}
+
+func TestPerkCadence(t *testing.T) {
+	var want []int
+	for w := 1; w <= Defs.Waves; w++ {
+		if offersAfter(w) {
+			want = append(want, w)
+		}
+	}
+	if !slices.Equal(want, []int{1, 3, 5, 7, 9, 11, 13}) {
+		t.Fatalf("offers after waves %v", want)
+	}
+	g, ids := started(t, 1)
+	p := g.player(ids[0])
+	clearWave(g) // wave 1: first offer right away
+	first := slices.Clone(p.offer)
+	if len(first) != 3 {
+		t.Fatal("no offer after wave 1")
+	}
+	clearWave(g) // wave 2: the unpicked offer stays open
+	if !slices.Equal(first, p.offer) {
+		t.Fatal("offer changed after an even wave")
+	}
+	clearWave(g) // wave 3: replaced by a fresh draw
+	if p.offer == nil {
+		t.Fatal("no offer after wave 3")
+	}
+	_ = g.Perk(ids[0], p.offer[0])
+	clearWave(g) // wave 4: nothing new
+	if p.offer != nil {
+		t.Fatal("offer after an even wave")
 	}
 }

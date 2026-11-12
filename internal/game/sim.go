@@ -350,7 +350,9 @@ func (g *Game) waveCleared() {
 		g.finish(true)
 		return
 	}
-	g.makeOffers()
+	if offersAfter(g.wave) {
+		g.makeOffers()
+	}
 	g.wave++
 	g.phase = PhaseBuild
 	g.buildLeft = Defs.BuildTime

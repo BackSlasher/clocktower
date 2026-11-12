@@ -125,7 +125,7 @@ than optimal plots. Targets:
 | 1, 2 casual | wins ~55–75 % |
 | 8 casual | wins ~60–80 % |
 | 4 casual who never wind | loses more often, but still wins sometimes |
-| 4 casual who never pick a perk | clearly worse (target 30–50 %; see Perks) |
+| 4 casual who never pick a perk | clearly worse, ~15 % or more (see Perks) |
 | 4 expert bots | wins nearly always |
 | builds badly and never winds | loses, mostly in waves 9–13 |
 
@@ -166,10 +166,11 @@ player's towers, cranking or purse — and they stack. This is the decision of
 each build phase and what makes two games play differently: one player drifts
 into a rivet specialist, another into the team's winder.
 
-- Offered after waves 1–14 (not after the final wave). Three distinct perks,
-  drawn by weight; the rare ones show up seldom.
-- The offer stays open through the build phase and the next wave. If it is
-  still unpicked when the next wave is cleared, it is replaced by the new one.
+- Offered after the odd waves 1, 3, 5 … 13 (seven picks a game; never after
+  the final wave), so each pick is a treat rather than a chore. Three distinct
+  perks, drawn by weight; the rare ones show up seldom.
+- The offer stays open for two waves. If it is still unpicked when the next
+  offer arrives, it is replaced by the new one.
 - Picking is never required and never blocks the ready check.
 - Perks are public: the TV announces each pick and the end screen lists them.
 - Late joiners get their first offer at the next wave clear.
@@ -196,9 +197,7 @@ Difficulty is tuned with perks in play: bots pick too (casual bots at random,
 after a few seconds, sometimes not at all; good bots to suit what they have
 built; idle players never).
 
-The per-pick numbers are deliberately small (a few per cent). Perks are taken
-fourteen times per player and compound, and the balance harness shows a
-casual team's win rate is very sensitive to total strength: at the tuned
-difficulty, four casual bots win ~65 % with perks, ~7 % without, ~43 % with
-perks at half these numbers and ~92 % at double. Bigger cards would make the
-game much harder for a team that ignores them.
+Each card is a visible step (around +10 %), with low stack caps. Perks
+compound and a casual team's win rate is very sensitive to total strength,
+so a team that ignores them is much worse off: at the tuned difficulty four
+casual bots win ~70 % with perks and ~12 % without.

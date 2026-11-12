@@ -274,8 +274,9 @@ Additive to everything above; see docs/DESIGN.md "Perks".
   it. The offer is then cleared and the effect applies at once. Like the other
   game commands it counts as activity for the idle-player rule.
 - **Event** `{ "e": "perk", "pid": "p1", "id": "<id>" }` in the next snap.
-- **Offers** are created for every connected player when a wave other than the
-  last is cleared (after the `wave_clear` event), replacing any unpicked offer.
+- **Offers** are created for every connected player when an odd-numbered wave
+  other than the last is cleared (waves 1, 3, … 13; after the `wave_clear`
+  event), replacing any unpicked offer, so an offer stays open for two waves.
   Three distinct perks, never one the player already has at its stack cap.
   A player not connected at that moment gets no new offer (an older unpicked
   one stays); late joiners get their first at the next clear.

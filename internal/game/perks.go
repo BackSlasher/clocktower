@@ -25,10 +25,15 @@ type PerkDef struct {
 const (
 	perkOffer        = 3   // perks per offer
 	slowCap          = 0.7 // Heavy Pendulum never takes a slow past this (bosses get half)
-	windfallBase     = 8   // Windfall: cogs...
-	windfallPerWave  = 2   // ...plus this per wave cleared so far
-	clockRepairLives = 2
+	windfallBase     = 16  // Windfall: cogs...
+	windfallPerWave  = 4   // ...plus this per wave cleared so far
+	clockRepairLives = 3
 )
+
+// offersAfter is the perk cadence: an offer follows the clear of every odd
+// wave except the last (1, 3, …, 13 — seven picks a game, the first right
+// after wave 1). An unpicked offer stays open until the next one replaces it.
+func offersAfter(wave int) bool { return wave%2 == 1 && wave < Defs.Waves }
 
 // perkOrder is the display order (and the order offers are drawn in).
 var perkOrder = []string{"overwound", "strong_arm", "sights", "hot_rivets", "big_shells", "capacitor",
@@ -43,16 +48,16 @@ var perkDefs = func() map[string]*PerkDef {
 		return fmt.Sprintf(" Stacks up to %d times.", n)
 	}
 	m := map[string]*PerkDef{
-		"overwound":      {Name: "Overwound Springs", Weight: 10, Max: 3, Amount: 0.08},
-		"strong_arm":     {Name: "Strong Arm", Weight: 9, Max: 3, Amount: 0.1},
-		"sights":         {Name: "Calibrated Sights", Weight: 10, Max: 3, Amount: 0.03},
-		"hot_rivets":     {Name: "Hot Rivets", Weight: 10, Max: 3, Amount: 0.05},
-		"big_shells":     {Name: "Bigger Shells", Weight: 8, Max: 3, Amount: 0.06},
+		"overwound":      {Name: "Overwound Springs", Weight: 10, Max: 2, Amount: 0.15},
+		"strong_arm":     {Name: "Strong Arm", Weight: 9, Max: 2, Amount: 0.2},
+		"sights":         {Name: "Calibrated Sights", Weight: 10, Max: 3, Amount: 0.06},
+		"hot_rivets":     {Name: "Hot Rivets", Weight: 10, Max: 3, Amount: 0.1},
+		"big_shells":     {Name: "Bigger Shells", Weight: 8, Max: 2, Amount: 0.12},
 		"capacitor":      {Name: "Capacitor Bank", Weight: 6, Max: 1, Amount: 1},
-		"heavy_pendulum": {Name: "Heavy Pendulum", Weight: 7, Max: 3, Amount: 0.03},
-		"bulk_discount":  {Name: "Bulk Discount", Weight: 9, Max: 3, Amount: 0.04},
-		"master_fitter":  {Name: "Master Fitter", Weight: 9, Max: 3, Amount: 0.04},
-		"salvage":        {Name: "Salvage Rights", Weight: 8, Max: 3, Amount: 0.05},
+		"heavy_pendulum": {Name: "Heavy Pendulum", Weight: 7, Max: 2, Amount: 0.06},
+		"bulk_discount":  {Name: "Bulk Discount", Weight: 9, Max: 2, Amount: 0.08},
+		"master_fitter":  {Name: "Master Fitter", Weight: 9, Max: 2, Amount: 0.08},
+		"salvage":        {Name: "Salvage Rights", Weight: 8, Max: 2, Amount: 0.1},
 		"windfall":       {Name: "Windfall", Weight: 9},
 		"free_sample":    {Name: "Free Sample", Weight: 2},
 		"clock_repair":   {Name: "Clock Repair", Weight: 3, Rare: true, Amount: clockRepairLives},
@@ -138,7 +143,8 @@ func windfallCogs(cleared int) int { return int(windfallBase + windfallPerWave*f
 
 // --- offers and picks ----------------------------------------------------------
 
-// makeOffers gives every connected player a fresh choice after a wave clear,
+// makeOffers gives every connected player a fresh choice after a wave clear
+// (see offersAfter),
 // replacing any unpicked offer. Players who are not connected get nothing new
 // (an older unpicked offer of theirs stays). Draws come from the game RNG in
 // player order, so they are deterministic for a seed and command sequence.
