@@ -185,7 +185,7 @@ Events:
 { "t": "wind",    "plot": 4, "n": 3 }     // n taps since last send; send at most every 150 ms; server caps at 10 taps/s per player
 { "t": "ready",   "ready": true }         // build phase; every active connected player ready (≥1 ready) → wave starts now
 { "t": "gift",    "to": "p2", "amount": 50 }
-{ "t": "restart" }                        // host, in won/lost → back to lobby, same players
+{ "t": "restart" }                        // host; in won/lost, or mid-game to end it → back to lobby, same players
 { "t": "ping" }                           // optional; server replies { "t": "pong" }
 ```
 

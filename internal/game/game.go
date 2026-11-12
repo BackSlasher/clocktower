@@ -433,8 +433,10 @@ func (g *Game) Restart(pid string) error {
 	if pid != g.host {
 		return ErrNotHost
 	}
-	if g.phase != PhaseWon && g.phase != PhaseLost {
-		return badReq("The game is not over")
+	// Also allowed mid-game: the host ends the game and everyone returns to
+	// the lobby.
+	if g.phase == PhaseLobby {
+		return badReq("No game is running")
 	}
 	g.reset()
 	return nil

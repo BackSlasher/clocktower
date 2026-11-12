@@ -190,12 +190,13 @@ func TestEconomy(t *testing.T) {
 func TestStartRules(t *testing.T) {
 	g, ids := newGame(t, 2)
 	wantCode(t, g.Start(ids[1]), "not_host")
+	wantCode(t, g.Restart(ids[0]), "bad_request") // nothing to end in the lobby
 	wantCode(t, g.Build(ids[0], 0, "rivet"), "bad_request")
 	if err := g.Start(ids[0]); err != nil {
 		t.Fatal(err)
 	}
 	wantCode(t, g.Start(ids[0]), "bad_request")
-	wantCode(t, g.Restart(ids[0]), "bad_request")
+	wantCode(t, g.Restart(ids[1]), "not_host")
 	// Unknown commands are ignored.
 	if err := g.Apply(ids[0], Cmd{T: "dance"}); err != nil {
 		t.Fatal(err)
@@ -745,5 +746,26 @@ func TestReadyIgnoresIdlePlayers(t *testing.T) {
 	ready(a)
 	if g.phase != PhaseWave {
 		t.Fatal("a and b ready, idle c ignored")
+	}
+}
+
+// The host can end a running game: everyone returns to the lobby and the
+// same players can start again.
+func TestHostEndsRunningGame(t *testing.T) {
+	g, ids := newGame(t, 2)
+	if err := g.Start(ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Build(ids[0], 0, "rivet"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Restart(ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if g.Phase() != PhaseLobby {
+		t.Fatalf("phase after ending: %s", g.Phase())
+	}
+	if err := g.Start(ids[0]); err != nil {
+		t.Fatalf("start after ending: %v", err)
 	}
 }
