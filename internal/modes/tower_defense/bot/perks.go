@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"clocktower/internal/game"
+	game "clocktower/internal/modes/tower_defense"
 )
 
 // Perk-picking knobs.

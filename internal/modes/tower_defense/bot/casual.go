@@ -4,7 +4,7 @@ import (
 	"math"
 	"slices"
 
-	"clocktower/internal/game"
+	game "clocktower/internal/modes/tower_defense"
 )
 
 // Casual policy knobs. They describe a first-time player holding a phone in a

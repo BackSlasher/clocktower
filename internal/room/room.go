@@ -7,7 +7,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"clocktower/internal/game"
+	"clocktower/internal/mode"
 )
 
 // Room is one live game. All fields below the channel are owned by the
@@ -19,12 +19,13 @@ type Room struct {
 	inbox   chan any
 	closed  chan struct{}
 
-	game      *game.Game
+	modeID    string
+	game      mode.Game
 	tv        *client
 	players   map[string]*client // pid → current connection
 	tokens    map[string]string  // token → pid
 	lastSlow  uint64
-	lastPhase game.Phase
+	lastPhase mode.Phase
 	idleSince time.Time
 	tick      int
 }
@@ -40,7 +41,7 @@ type joinReq struct {
 
 type joinResp struct {
 	pid string
-	err *game.Error
+	err *mode.Error
 }
 
 type leaveReq struct {
@@ -51,21 +52,37 @@ type leaveReq struct {
 type cmdReq struct {
 	c   *client
 	pid string
-	cmd game.Cmd
+	typ string
+	raw []byte
+}
+
+type modeReq struct {
+	c   *client
+	pid string
+	id  string
 }
 
 func newRoom(reg *Registry, code string) *Room {
+	def := reg.cfg.Modes.List()[0].ID
+	rm := &Room{
+		code: code, tvToken: newToken(), reg: reg,
+		inbox: make(chan any, 256), closed: make(chan struct{}),
+		players: map[string]*client{}, tokens: map[string]string{},
+		idleSince: time.Now(), lastPhase: mode.PhaseLobby,
+	}
+	rm.modeID = def
+	rm.game = rm.newGame(def, nil)
+	return rm
+}
+
+// newGame makes a game of the given (registered) mode with a fresh seed.
+func (rm *Room) newGame(id string, roster []mode.Member) mode.Game {
 	var seed [2]uint64
 	for i := range seed {
 		seed[i] = rand.Uint64()
 	}
-	return &Room{
-		code: code, tvToken: newToken(), reg: reg,
-		inbox: make(chan any, 256), closed: make(chan struct{}),
-		game:    game.New(rand.New(rand.NewPCG(seed[0], seed[1]))),
-		players: map[string]*client{}, tokens: map[string]string{},
-		idleSince: time.Now(), lastPhase: game.PhaseLobby,
-	}
+	m, _ := rm.reg.cfg.Modes.Get(id)
+	return m.New(rand.New(rand.NewPCG(seed[0], seed[1])), roster)
 }
 
 // post delivers a message to the room goroutine; false if the room is gone.
@@ -81,13 +98,13 @@ func (rm *Room) post(m any) bool {
 func (rm *Room) join(j joinReq) joinResp {
 	j.reply = make(chan joinResp, 1)
 	if !rm.post(j) {
-		return joinResp{err: game.ErrNoRoom}
+		return joinResp{err: mode.ErrNoRoom}
 	}
 	select {
 	case r := <-j.reply:
 		return r
 	case <-rm.closed:
-		return joinResp{err: game.ErrNoRoom}
+		return joinResp{err: mode.ErrNoRoom}
 	}
 }
 
@@ -138,7 +155,7 @@ func (rm *Room) step(dt float64) {
 	}
 	rm.tick++
 	ph := g.Phase()
-	ended := ph != rm.lastPhase && (ph == game.PhaseWon || ph == game.PhaseLost)
+	ended := ph != rm.lastPhase && (ph == mode.PhaseWon || ph == mode.PhaseLost)
 	if (g.Running() && rm.tick%rm.reg.cfg.SnapEvery == 0) || ended {
 		rm.broadcastJSON(g.Snapshot())
 	}
@@ -188,14 +205,62 @@ func (rm *Room) handle(m any) {
 		if rm.players[m.pid] != m.c {
 			return // superseded connection
 		}
-		if err := rm.game.Apply(m.pid, m.cmd); err != nil {
-			e, ok := err.(*game.Error)
-			if !ok {
-				e = game.ErrBadRequest
-			}
-			m.c.sendJSON(errorMsg{T: "error", Code: e.Code, Msg: e.Msg})
+		if err := rm.game.Command(m.pid, m.typ, m.raw); err != nil {
+			m.c.sendError(err)
+		}
+	case modeReq:
+		if rm.players[m.pid] != m.c {
+			return
+		}
+		if err := rm.switchMode(m.pid, m.id); err != nil {
+			m.c.sendError(err)
 		}
 	}
+}
+
+type setupMsg struct {
+	T    string          `json:"t"`
+	Mode string          `json:"mode"`
+	Map  json.RawMessage `json:"map"`
+	Defs json.RawMessage `json:"defs"`
+}
+
+// switchMode replaces the game with a fresh one of another mode, carrying the
+// players over, and tells every connection (setup, then room).
+func (rm *Room) switchMode(pid, id string) error {
+	g := rm.game
+	if pid != g.Host() {
+		return mode.ErrNotHost
+	}
+	if g.Phase() != mode.PhaseLobby {
+		return &mode.Error{Code: "bad_request", Msg: "The mode can only change in the lobby"}
+	}
+	if _, ok := rm.reg.cfg.Modes.Get(id); !ok {
+		return &mode.Error{Code: "bad_request", Msg: "No such mode"}
+	}
+	if id == rm.modeID {
+		return nil
+	}
+	ng := rm.newGame(id, g.Roster())
+	rm.game, rm.modeID = ng, id
+	rm.lastPhase = mode.PhaseLobby
+	// Players the new mode could not seat lose their seat.
+	for p, c := range rm.players {
+		if !ng.HasPlayer(p) {
+			delete(rm.players, p)
+			c.kill(websocket.StatusNormalClosure, "no seat in this mode")
+		}
+	}
+	for t, p := range rm.tokens {
+		if !ng.HasPlayer(p) {
+			delete(rm.tokens, t)
+		}
+	}
+	rm.lastSlow = ng.SlowVersion()
+	s := ng.Setup()
+	rm.broadcastJSON(setupMsg{T: "setup", Mode: id, Map: s.Map, Defs: s.Defs})
+	rm.broadcastJSON(ng.RoomState())
+	return nil
 }
 
 type welcomeMsg struct {
@@ -206,21 +271,24 @@ type welcomeMsg struct {
 	You      string          `json:"you,omitempty"`
 	JoinURL  string          `json:"joinUrl"`
 	JoinHost string          `json:"joinHost"`
+	Mode     string          `json:"mode"`
+	Modes    []mode.Info     `json:"modes"`
 	Map      json.RawMessage `json:"map"`
 	Defs     json.RawMessage `json:"defs"`
 }
 
 func (rm *Room) handleJoin(j joinReq) joinResp {
 	g := rm.game
+	s := g.Setup()
 	w := welcomeMsg{T: "welcome", Room: rm.code, JoinHost: j.q.JoinHost,
-		Map: rm.reg.welcome.mapJSON, Defs: rm.reg.welcome.defsJSON}
+		Mode: rm.modeID, Modes: rm.reg.cfg.Modes.List(), Map: s.Map, Defs: s.Defs}
 	if j.q.JoinURL != nil {
 		w.JoinURL = j.q.JoinURL(rm.code)
 	}
 	var pid string
 	if j.tv {
 		if j.token != rm.tvToken {
-			return joinResp{err: game.ErrBadRequest}
+			return joinResp{err: mode.ErrBadRequest}
 		}
 		if rm.tv != nil {
 			rm.tv.kill(websocket.StatusNormalClosure, "replaced")
@@ -239,9 +307,9 @@ func (rm *Room) handleJoin(j joinReq) joinResp {
 			var err error
 			pid, evicted, err = g.AddPlayer(j.name)
 			if err != nil {
-				e, _ := err.(*game.Error)
+				e, _ := err.(*mode.Error)
 				if e == nil {
-					e = game.ErrBadRequest
+					e = mode.ErrBadRequest
 				}
 				return joinResp{err: e}
 			}
@@ -276,7 +344,7 @@ func (rm *Room) handleJoin(j joinReq) joinResp {
 		}
 	}
 	j.c.send(rs)
-	if g.Running() || g.Phase() == game.PhaseWon || g.Phase() == game.PhaseLost {
+	if g.Running() || g.Phase() == mode.PhaseWon || g.Phase() == mode.PhaseLost {
 		j.c.sendJSON(g.View())
 	}
 	return joinResp{pid: pid}

@@ -1,46 +1,44 @@
-package game
+package towerdefense
+
+import "clocktower/internal/mode"
 
 // Wire types shared by the simulation, the room and the bots. Field names
 // follow docs/PROTOCOL.md exactly.
 
-// Phase is the game phase.
-type Phase string
+// Phase is the game phase. The lobby, won and lost phases are shared with the
+// room layer (package mode); build and wave are specific to this mode.
+type Phase = mode.Phase
 
 const (
-	PhaseLobby Phase = "lobby"
+	PhaseLobby       = mode.PhaseLobby
 	PhaseBuild Phase = "build"
 	PhaseWave  Phase = "wave"
-	PhaseWon   Phase = "won"
-	PhaseLost  Phase = "lost"
+	PhaseWon         = mode.PhaseWon
+	PhaseLost        = mode.PhaseLost
 )
 
 // Error is a command refusal; Code is a protocol error code.
-type Error struct {
-	Code string
-	Msg  string
-}
-
-func (e *Error) Error() string { return e.Code + ": " + e.Msg }
+type Error = mode.Error
 
 // Protocol error codes.
 var (
-	ErrPoor       = &Error{"poor", "Not enough cogs"}
-	ErrOccupied   = &Error{"occupied", "That plot is taken"}
-	ErrNotOwner   = &Error{"not_owner", "Only the builder can sell this"}
-	ErrMaxLevel   = &Error{"max_level", "Already at max level"}
-	ErrNotHost    = &Error{"not_host", "Only the host can do that"}
-	ErrBadRequest = &Error{"bad_request", "Can't do that"}
-	ErrNoRoom     = &Error{"no_room", "No such room"}
-	ErrRoomFull   = &Error{"room_full", "Room is full"}
-	ErrBadName    = &Error{"bad_name", "Pick a name of 1–12 characters"}
+	ErrPoor       = &Error{Code: "poor", Msg: "Not enough cogs"}
+	ErrOccupied   = &Error{Code: "occupied", Msg: "That plot is taken"}
+	ErrNotOwner   = &Error{Code: "not_owner", Msg: "Only the builder can sell this"}
+	ErrMaxLevel   = &Error{Code: "max_level", Msg: "Already at max level"}
+	ErrNotHost    = mode.ErrNotHost
+	ErrBadRequest = mode.ErrBadRequest
+	ErrNoRoom     = mode.ErrNoRoom
+	ErrRoomFull   = mode.ErrRoomFull
+	ErrBadName    = mode.ErrBadName
 
 	// Perk refusals (all bad_request on the wire).
-	ErrNoOffer     = &Error{"bad_request", "No perk to choose right now"}
-	ErrNotOffered  = &Error{"bad_request", "That perk is not on offer"}
-	ErrUnknownPerk = &Error{"bad_request", "No such perk"}
+	ErrNoOffer     = &Error{Code: "bad_request", Msg: "No perk to choose right now"}
+	ErrNotOffered  = &Error{Code: "bad_request", Msg: "That perk is not on offer"}
+	ErrUnknownPerk = &Error{Code: "bad_request", Msg: "No such perk"}
 )
 
-func badReq(msg string) *Error { return &Error{"bad_request", msg} }
+func badReq(msg string) *Error { return &Error{Code: "bad_request", Msg: msg} }
 
 // Cmd is a client → server message. Pointer fields distinguish "absent".
 type Cmd struct {
@@ -109,6 +107,7 @@ type End struct {
 // RoomMsg is the `room` message.
 type RoomMsg struct {
 	T        string       `json:"t"`
+	Mode     string       `json:"mode"`
 	Phase    Phase        `json:"phase"`
 	Host     string       `json:"host"`
 	Players  []PlayerInfo `json:"players"`

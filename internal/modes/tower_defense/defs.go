@@ -1,4 +1,4 @@
-package game
+package towerdefense
 
 // All balance numbers live in this file. The exported Defs value is sent to
 // clients verbatim in the `welcome` message (see docs/PROTOCOL.md), so fields

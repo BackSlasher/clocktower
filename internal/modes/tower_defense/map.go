@@ -1,4 +1,4 @@
-package game
+package towerdefense
 
 import (
 	_ "embed"

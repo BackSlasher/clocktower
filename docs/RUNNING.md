@@ -61,10 +61,12 @@ Any browser works: open the `/tv` URL in kiosk or fullscreen mode. Browsers bloc
 ```
 cmd/clocktower/   the server: flags/env, HTTP
 cmd/ctbot/        dev tool: joins a room as bot players and plays
-internal/game/    pure simulation (no networking), unit-tested; balance numbers are in defs.go
-internal/bot/     scripted players and the balance harness
-internal/room/    rooms, codes, sessions, per-room loop, websocket fan-out
-internal/server/  HTTP routes, websocket upgrade, QR endpoint
+internal/mode/    mode registry and the mode.Game interface the room layer uses
+internal/room/    rooms, codes, sessions, per-room loop, websocket fan-out (mode-agnostic)
+internal/server/  HTTP routes, websocket upgrade, QR endpoint (mode-agnostic)
+internal/modes/   game modes, one directory per mode id; all/ registers them
+  tower_defense/      the tower defence game: pure simulation (no networking), unit-tested; balance numbers are in defs.go
+  tower_defense/bot/  scripted players and the balance harness
 web/              embedded front end: phone/ (controller), tv/ (big screen), shared/
 tools/shot.mjs    screenshot helper for headless Chromium
 docs/             DESIGN.md (design rationale), PROTOCOL.md (wire protocol), this page and GAMEPLAY.md
@@ -137,7 +139,7 @@ node tools/shot.mjs http://localhost:8096/tv shot.png --size 1920x1080 --wait 20
 The bot harness plays whole games headlessly against scripted teams and prints win rates and the wave where losses happen:
 
 ```sh
-CT_BALANCE_RUNS=100 go test -count=1 -run Balance -v ./internal/bot
+CT_BALANCE_RUNS=100 go test -count=1 -run Balance -v ./internal/modes/tower_defense/bot
 ```
 
-`CT_BALANCE_RUNS` is seeds per scenario (the default is small; use 20 or more for tuning). `CT_BALANCE_ONLY=<text>` runs only scenarios whose name contains the text. The targets and the reasoning are in the "Difficulty curve" section of [DESIGN.md](DESIGN.md). All balance numbers (tower and enemy stats, waves) live in `internal/game/defs.go` and perk numbers in `internal/game/perks.go`; the server sends them to clients in the `welcome` message, so clients hard-code no stats.
+`CT_BALANCE_RUNS` is seeds per scenario (the default is small; use 20 or more for tuning). `CT_BALANCE_ONLY=<text>` runs only scenarios whose name contains the text. The targets and the reasoning are in the "Difficulty curve" section of [DESIGN.md](DESIGN.md). All balance numbers (tower and enemy stats, waves) live in `internal/modes/tower_defense/defs.go` and perk numbers in `internal/modes/tower_defense/perks.go`; the server sends them to clients in the `welcome` message, so clients hard-code no stats.

@@ -1,5 +1,5 @@
 // Package room owns live rooms: codes, session tokens, one goroutine per
-// room driving its game.Game, and websocket fan-out.
+// room driving its mode.Game, and websocket fan-out.
 package room
 
 import (
@@ -16,25 +16,26 @@ import (
 
 	"github.com/coder/websocket"
 
-	"clocktower/internal/game"
+	"clocktower/internal/mode"
 )
 
 // Config tunes the registry. Zero values get defaults.
 type Config struct {
-	MaxRooms       int           // total rooms (default 200)
-	MaxConns       int           // total websocket connections (default 3000)
-	IdleTimeout    time.Duration // drop a room after this long with nobody connected (10m)
-	TickRate       int           // sim ticks per second (30)
-	SnapEvery      int           // ticks per snap (3 → 10 Hz)
-	Speed          int           // sim steps per tick (1; >1 only for testing)
-	SendQueue      int           // per-connection outbound queue (256 messages)
-	WriteTimeout   time.Duration // per message (5s)
-	PingEvery      time.Duration // ws ping interval (15s)
-	CreatePerMin   float64       // room creations per IP per minute (6)
-	CreateBurst    float64       // (6)
-	MsgRate        float64       // inbound messages per second per connection (20)
-	MsgBurst       float64       // (40)
-	AbuseThreshold float64       // dropped messages (decaying 2/s) before disconnect (60)
+	MaxRooms       int            // total rooms (default 200)
+	MaxConns       int            // total websocket connections (default 3000)
+	IdleTimeout    time.Duration  // drop a room after this long with nobody connected (10m)
+	TickRate       int            // sim ticks per second (30)
+	SnapEvery      int            // ticks per snap (3 → 10 Hz)
+	Speed          int            // sim steps per tick (1; >1 only for testing)
+	SendQueue      int            // per-connection outbound queue (256 messages)
+	WriteTimeout   time.Duration  // per message (5s)
+	PingEvery      time.Duration  // ws ping interval (15s)
+	CreatePerMin   float64        // room creations per IP per minute (6)
+	CreateBurst    float64        // (6)
+	MsgRate        float64        // inbound messages per second per connection (20)
+	MsgBurst       float64        // (40)
+	AbuseThreshold float64        // dropped messages (decaying 2/s) before disconnect (60)
+	Modes          *mode.Registry // available modes (default mode.Default); the first is the default
 	Logger         *slog.Logger
 }
 
@@ -68,6 +69,12 @@ func (c *Config) defaults() {
 	setf(&c.MsgRate, 20)
 	setf(&c.MsgBurst, 40)
 	setf(&c.AbuseThreshold, 60)
+	if c.Modes == nil {
+		c.Modes = mode.Default
+	}
+	if len(c.Modes.List()) == 0 {
+		panic("room: no game modes registered")
+	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
@@ -79,12 +86,11 @@ type Registry struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu      sync.Mutex
-	rooms   map[string]*Room
-	ipLim   map[string]*bucket
-	conns   int
-	wg      sync.WaitGroup
-	welcome struct{ mapJSON, defsJSON json.RawMessage }
+	mu    sync.Mutex
+	rooms map[string]*Room
+	ipLim map[string]*bucket
+	conns int
+	wg    sync.WaitGroup
 }
 
 // NewRegistry creates an empty registry.
@@ -92,8 +98,6 @@ func NewRegistry(cfg Config) *Registry {
 	cfg.defaults()
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Registry{cfg: cfg, ctx: ctx, cancel: cancel, rooms: map[string]*Room{}, ipLim: map[string]*bucket{}}
-	r.welcome.mapJSON, _ = json.Marshal(game.Map)
-	r.welcome.defsJSON, _ = json.Marshal(game.Defs)
 	return r
 }
 
@@ -307,10 +311,6 @@ func (r *Registry) Serve(ws *websocket.Conn, q Query) {
 	}
 }
 
-// knownCmds are the client message types forwarded to the game.
-var knownCmds = map[string]bool{"start": true, "build": true, "upgrade": true, "sell": true,
-	"wind": true, "ready": true, "gift": true, "restart": true, "perk": true}
-
 func (r *Registry) readLoop(c *client, rm *Room, pid string) {
 	defer func() {
 		rm.post(leaveReq{c: c, pid: pid})
@@ -348,15 +348,24 @@ func (r *Registry) readLoop(c *client, rm *Room, pid string) {
 			c.send(pong)
 			continue
 		}
-		if pid == "" || !knownCmds[head.T] {
-			continue // TV sends nothing; unknown types are ignored
+		if pid == "" {
+			continue // TV sends nothing
 		}
-		var cmd game.Cmd
-		if err := json.Unmarshal(data, &cmd); err != nil {
-			c.sendJSON(errorMsg{T: "error", Code: "bad_request", Msg: "Malformed message"})
+		if head.T == "mode" {
+			var req struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(data, &req); err != nil {
+				c.sendJSON(errorMsg{T: "error", Code: "bad_request", Msg: "Malformed message"})
+				continue
+			}
+			if !rm.post(modeReq{c: c, pid: pid, id: req.ID}) {
+				return
+			}
 			continue
 		}
-		if !rm.post(cmdReq{c: c, pid: pid, cmd: cmd}) {
+		// Everything else goes to the game, which ignores types it does not know.
+		if !rm.post(cmdReq{c: c, pid: pid, typ: head.T, raw: data}) {
 			return
 		}
 	}

@@ -9,7 +9,7 @@ import (
 	"slices"
 	"sort"
 
-	"clocktower/internal/game"
+	game "clocktower/internal/modes/tower_defense"
 )
 
 // Skill selects a policy.

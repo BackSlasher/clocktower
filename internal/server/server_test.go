@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"clocktower/internal/modes/all"
 	"clocktower/internal/room"
 )
 
@@ -29,6 +30,7 @@ func newEnv(t *testing.T) *env {
 
 func newEnvCfg(t *testing.T, cfg room.Config) *env {
 	t.Helper()
+	all.Register()
 	reg := room.NewRegistry(cfg)
 	web := fstest.MapFS{
 		"index.html":     {Data: []byte("<p>phone</p>")},

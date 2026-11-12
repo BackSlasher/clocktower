@@ -1,7 +1,8 @@
-// Package game is the pure Clocktower simulation: no goroutines, no clocks,
+// Package towerdefense is the tower_defense mode ("Cobble Crawlers"): the pure
+// Clocktower simulation: no goroutines, no clocks,
 // no networking. Time advances only through Step and all randomness comes
 // from the injected RNG, so a game is fully deterministic.
-package game
+package towerdefense
 
 import (
 	"fmt"
@@ -623,7 +624,7 @@ func (g *Game) emit(ev any) { g.events = append(g.events, ev) }
 
 // RoomState builds the `room` message.
 func (g *Game) RoomState() *RoomMsg {
-	m := &RoomMsg{T: "room", Phase: g.phase, Host: g.host, Wave: g.wave, NextWave: []WaveEntry{}, End: g.end,
+	m := &RoomMsg{T: "room", Mode: ModeID, Phase: g.phase, Host: g.host, Wave: g.wave, NextWave: []WaveEntry{}, End: g.end,
 		Players: make([]PlayerInfo, 0, len(g.players))}
 	for _, p := range g.players {
 		m.Players = append(m.Players, PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected, Ready: p.ready,

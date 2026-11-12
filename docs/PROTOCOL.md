@@ -3,14 +3,22 @@
 This file is the contract between the server, the TV client and the phone
 client. If something must change, change this file first.
 
+The body below describes the `tower_defense` mode (display name "Cobble
+Crawlers"), which is the only mode today. The "Modes" section covers what is
+mode-independent.
+
 ## Layout
 
 ```
 cmd/clocktower/     main: flags/env, starts HTTP server
 cmd/ctbot/          dev tool: joins a room as N bot players and plays
-internal/game/      pure simulation, no networking, unit-tested
-internal/room/      room registry, codes, sessions, per-room loop, ws fan-out
-internal/server/    HTTP routes, websocket upgrade, QR endpoint
+internal/mode/      mode registry and the mode.Game interface (generic)
+internal/room/      room registry, codes, sessions, per-room loop, ws fan-out (generic)
+internal/server/    HTTP routes, websocket upgrade, QR endpoint (generic)
+internal/modes/     one directory per game mode, named by its mode id
+  all/              registers every mode (called from cmd/clocktower)
+  tower_defense/    the tower_defense mode: pure simulation, no networking, unit-tested
+    bot/            scripted players and the balance harness for this mode
 web/                embedded with go:embed (web/embed.go)
   index.html        phone entry: join form, then the controller
   phone/            phone JS/CSS
@@ -77,7 +85,10 @@ snapshots are sent at 10 Hz and clients interpolate.
   "you": "p3",               // player id; absent for TV
   "joinUrl": "https://host/?c=ABCD",
   "joinHost": "host",        // short text for "go to HOST and enter ABCD"
-  "map": Map,
+  "mode": "tower_defense",   // the room's current mode id (see "Modes")
+  "modes": [ { "id": "tower_defense", "name": "Cobble Crawlers",
+               "tagline": "Hold the streets of Brasswick" } ],  // all modes, in order
+  "map": Map,                // map and defs belong to the current mode
   "defs": Defs }
 ```
 
@@ -246,6 +257,31 @@ Additive details; nothing above changed meaning.
   Websocket upgrades must be same-origin (Origin host = Host, X-Forwarded-Host
   or the configured base URL host); a missing Origin is allowed.
 - **Testing flag**: `clocktower -speed N` runs the simulation N× faster.
+
+## Modes
+
+Additive to everything above. A mode is a complete game that plugs into the
+generic room: it has a stable **id** (used in code, package names, paths and
+this protocol) and a separate display **name** and **tagline** (shown to
+players, free to change). `tower_defense` / "Cobble Crawlers" / "Hold the
+streets of Brasswick" is the only mode today. The first registered mode is the
+default for new rooms. Everything else in this file is the `tower_defense`
+protocol.
+
+- `welcome` carries `"mode"` (the room's current mode id) and `"modes"` (every
+  registered mode as `{ id, name, tagline }`, in registration order). `map` and
+  `defs` are those of the current mode.
+- `room` carries `"mode": "<id>"`.
+- Client → server `{ "t": "mode", "id": "<id>" }` (players only). Host only
+  (`not_host`), lobby only, and the id must be registered (both `bad_request`).
+  Selecting the current mode does nothing. Otherwise the room replaces its game
+  with a new one of that mode, keeping the players (ids, names, colours,
+  tokens, connected state, host), and sends **every** connection, TV included,
+  `{ "t": "setup", "mode": "<id>", "map": Map, "defs": Defs }` followed by a
+  `room` message. A client treats `setup` as "the mode-specific part of
+  `welcome` changed" and rebuilds anything derived from `map` and `defs`.
+- Messages other than `ping` and `mode` are handed to the current mode; types it
+  does not know are ignored.
 
 ## Perks
 

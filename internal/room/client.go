@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"clocktower/internal/mode"
 )
 
 // client is one websocket connection. Outbound messages go through a bounded
@@ -153,4 +155,13 @@ type errorMsg struct {
 	T    string `json:"t"`
 	Code string `json:"code"`
 	Msg  string `json:"msg"`
+}
+
+// sendError reports a refused command; only *mode.Error keeps its code.
+func (c *client) sendError(err error) {
+	e, ok := err.(*mode.Error)
+	if !ok {
+		e = mode.ErrBadRequest
+	}
+	c.sendJSON(errorMsg{T: "error", Code: e.Code, Msg: e.Msg})
 }

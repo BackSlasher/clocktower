@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"clocktower/internal/modes/all"
 	"clocktower/internal/room"
 	"clocktower/internal/server"
 	"clocktower/web"
@@ -55,6 +56,7 @@ func main() {
 		log.Error("-speed must be 1..50")
 		os.Exit(2)
 	}
+	all.Register()
 	reg := room.NewRegistry(room.Config{Logger: log, Speed: *speed})
 	h, err := server.New(server.Config{BaseURL: *baseURL, Dev: *dev, Logger: log}, reg, webFS)
 	if err != nil {

@@ -111,8 +111,8 @@ lumps and won games end close (typically 5–11 lives left) instead of being
 either flawless or a single collapse. The Barons cost 5 lives, not 10, for the
 same reason.
 
-Balance is tuned with the bot harness (`internal/bot`, run with
-`CT_BALANCE_RUNS=100 go test -run Balance -v ./internal/bot`) against
+Balance is tuned with the bot harness (`internal/modes/tower_defense/bot`, run with
+`CT_BALANCE_RUNS=100 go test -run Balance -v ./internal/modes/tower_defense/bot`) against
 human-like "casual" bots: they react a second or two late, wind in bursts at
 about 2 taps/s for roughly half of each wave and only on towers with enemies in
 range, never gift, sometimes dither with cogs in hand, and pick decent rather
@@ -131,7 +131,7 @@ than optimal plots. Targets:
 
 A won game takes about 17 minutes.
 
-Balance numbers live in one Go file (`internal/game/defs.go`) and are sent to
+Balance numbers live in one Go file (`internal/modes/tower_defense/defs.go`) and are sent to
 clients in the `welcome` message, so clients never hard-code stats.
 
 ## Sessions
@@ -175,7 +175,7 @@ into a rivet specialist, another into the team's winder.
 - Perks are public: the TV announces each pick and the end screen lists them.
 - Late joiners get their first offer at the next wave clear.
 
-Starting set (ids in `internal/game/perks.go`; numbers are tuned there):
+Starting set (ids in `internal/modes/tower_defense/perks.go`; numbers are tuned there):
 
 | perk | effect |
 |------|--------|

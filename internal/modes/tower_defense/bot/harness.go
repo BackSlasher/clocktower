@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 
-	"clocktower/internal/game"
+	game "clocktower/internal/modes/tower_defense"
 )
 
 // Scenario configures a headless game.

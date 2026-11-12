@@ -24,8 +24,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"clocktower/internal/bot"
-	"clocktower/internal/game"
+	game "clocktower/internal/modes/tower_defense"
+	"clocktower/internal/modes/tower_defense/bot"
 )
 
 var (
