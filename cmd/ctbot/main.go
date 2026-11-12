@@ -32,6 +32,7 @@ var (
 	n          = flag.Int("n", 4, "number of bot players (1-8)")
 	skillName  = flag.String("skill", "good", "good|bad")
 	namePrefix = flag.String("name-prefix", "Bot", "bot name prefix")
+	names      = flag.String("names", "", "comma-separated bot names (e.g. Ada,Brunel,Tesla,Watt); overrides -name-prefix, extra bots fall back to it")
 	noStart    = flag.Bool("no-start", false, "never press start")
 	loop       = flag.Bool("loop", false, "after the game ends, host restarts and plays again")
 	taps       = flag.Float64("taps", 3, "winding taps per second per bot")
@@ -92,7 +93,7 @@ func main() {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			p := &player{idx: i, name: fmt.Sprintf("%s%d", *namePrefix, i+1), room: code,
+			p := &player{idx: i, name: botName(i), room: code,
 				bot: bot.New("", skill, uint64(time.Now().UnixNano())+uint64(i)*7919)}
 			p.bot.TapsPerSec = *taps
 			end, err := p.run(ctx)
@@ -389,4 +390,12 @@ func (p *player) decide() []game.Cmd {
 		p.lastSend = now
 	}
 	return out
+}
+
+// botName returns the i-th name from -names, or prefix+number.
+func botName(i int) string {
+	if list := strings.Split(*names, ","); *names != "" && i < len(list) && strings.TrimSpace(list[i]) != "" {
+		return strings.TrimSpace(list[i])
+	}
+	return fmt.Sprintf("%s%d", *namePrefix, i+1)
 }
