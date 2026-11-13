@@ -1,20 +1,21 @@
 // Board state and resolve playback.
 //
-// A snap always holds the end state. A `resolve` batch (header + stage events) says how the
-// board got there; Playback rebuilds the round as per-entity timelines starting from the board
-// the TV showed before, and sample(t) gives the scene at playback time t (game seconds since
-// the batch). Past `dur` the caller shows the snap's board itself, so the end state is always
-// exactly the server's.
+// A snap always holds the end state. A `resolve` batch (header + slot and machine events)
+// says how the board got there: every player's queue plays slot by slot (each slot in its
+// stages throw, move, grab, fire), then the machines move once. Playback rebuilds the turn as
+// per-entity timelines starting from the board the TV showed before, and sample(t) gives the
+// scene at playback time t (game seconds since the batch). Past `dur` the caller shows the
+// snap's board itself, so the end state is always exactly the server's.
 //
-// Within a stage slot [at, at + dur] everything of that stage happens together; fractions of
-// the slot are named below (e.g. GRAB_HIT: when a picked-up bomb reaches the hands).
+// It also keeps a record of the turn for the queue strip: per player and slot, what came of
+// the action (marks), and which slot is playing at time t.
 
 const THROW_GO = 0.06;
-const THROW_LAND = 0.82;
-const THROW_SETTLE = 0.98;
+const THROW_LAND = 0.8;
+const THROW_SETTLE = 0.97;
 const GRAB_HIT = 0.5;
 const FIRE_GO = 0.06;
-const FIRE_HIT = 0.72;
+const FIRE_HIT = 0.75;
 const MACH_MOVE = 0.62;
 const WALL_HIT = 0.5;
 const SPAWN_AT = 0.5;
@@ -25,6 +26,33 @@ const ARM_TOP = 2.35;
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const ease = (t) => t * t * (3 - 2 * t);
+
+export const FIZZLE_TEXT = {
+  blocked: 'Blocked',
+  no_bomb: 'Nothing there',
+  hands_full: 'Hands full',
+  empty_hands: 'Empty hands',
+  no_target: 'No target',
+  no_catapult: 'No catapult',
+  catapult_full: 'Catapult full',
+  catapult_empty: 'Catapult empty',
+  gone: 'Gone',
+  full: 'Catapult full',
+};
+
+// the same, short enough for a queue slot
+const FIZZLE_SHORT = {
+  blocked: 'Blocked',
+  no_bomb: 'No bomb',
+  hands_full: 'Full hands',
+  empty_hands: 'No bomb',
+  no_target: 'No line',
+  no_catapult: 'No catapult',
+  catapult_full: 'Full',
+  catapult_empty: 'Empty',
+  gone: 'Gone',
+  full: 'Full',
+};
 
 export function boardFromSnap(s) {
   const cats = [];
@@ -61,20 +89,30 @@ function stepAt(list, v0, t) {
 }
 
 export class Playback {
-  // hdr: the `resolve` event; evs: its stage events; before/after: boards; S: scene
+  // hdr: the `resolve` event; evs: its events; before/after: boards; S: scene
   constructor(hdr, evs, before, after, S) {
     this.dur = hdr.dur;
     this.S = S;
     this.before = before;
     this.after = after;
     this.cues = []; // {t, kind, ev, ...}  effects and sounds, fired once as the clock passes
-    this.stages = {};
-    for (const st of hdr.stages || []) this.stages[st.s] = st;
-    const T = (s, f) => {
-      const st = this.stages[s];
+    this.marks = []; // {pid, slot, t, kind: ok|warn|fizzle, text, prio}
+    this.slots = (hdr.slots || []).slice().sort((a, b) => a.at - b.at);
+    this.mstage = hdr.machines || null;
+    const slotBy = new Map(this.slots.map((s) => [s.slot, s]));
+    // time of fraction f through the stage an event belongs to
+    const T = (ev, f, s = ev.s) => {
+      if (s === 'machines') {
+        const m = this.mstage;
+        return m ? m.at + m.dur * f : this.dur * 0.8;
+      }
+      const sl = slotBy.get(ev.slot);
+      const st = sl?.stages?.find((x) => x.s === s) || sl;
       return st ? st.at + st.dur * f : 0;
     };
-    this.T = T;
+    for (const sl of this.slots) this.cues.push({ t: sl.at, kind: 'step', slot: sl.slot });
+    if (this.mstage) this.cues.push({ t: this.mstage.at, kind: 'machines' });
+    const mark = (pid, slot, t, kind, text, prio = 2) => this.marks.push({ pid, slot, t, kind, text, prio });
 
     // ---- engineers
     this.engs = new Map();
@@ -83,7 +121,7 @@ export class Playback {
       if (!e) {
         const b = before.eng.get(pid) || after.eng.get(pid);
         if (!b) return null;
-        e = { pid, x0: b.x, y0: b.y, carry0: before.eng.get(pid)?.carry ?? null, carry: [], move: null, poses: [], appear: !before.eng.has(pid) };
+        e = { pid, x0: b.x, y0: b.y, carry0: before.eng.get(pid)?.carry ?? null, carry: [], moves: [], poses: [], appear: !before.eng.has(pid) };
         this.engs.set(pid, e);
       }
       return e;
@@ -109,32 +147,36 @@ export class Playback {
       }
     };
 
-    // ---- flights: bombs in the air {kind, from:[x,y,z], to:[x,y,z], t0, t1, h, then?}
-    this.flights = [];
-
-    // ---- catapults
+    this.flights = []; // bombs in the air {kind, from:[x,y,z], to:[x,y,z], t0, t1, h}
     this.cats = [];
     const ncat = Math.max(before.cats.length, after.cats.length, S.keep.catapults.length);
     for (let i = 0; i < ncat; i++) this.cats[i] = { kind0: before.cats[i] ?? null, load: [], swings: [] };
-
-    // ---- machines
     this.machs = new Map();
     for (const m of before.mach.values()) this.machs.set(m.id, { id: m.id, kind: m.kind, lane: m.lane, pos0: m.pos, hp0: m.hp, max: m.max, frozen0: m.frozen, hp: [], frozen: [], moves: [], from: -1, until: Infinity, flashes: [], stall: null });
     this.wall = [];
-    this.shots = []; // fired projectiles
+    this.shots = [];
 
     const handZ = (x, y) => S.standZ(x, y) + 0.95;
-    let grabIdx = 0;
     let bombIdx = 0;
+    // events arrive in time order, so an engineer's position at an event's time is known from
+    // the moves recorded so far
     for (const ev of evs) {
       switch (ev.e) {
+        case 'fizzle': {
+          const t = T(ev, 0.5);
+          this.cues.push({ t, kind: 'fizzle', ev, at: ev.at });
+          mark(ev.pid, ev.slot, t, 'fizzle', FIZZLE_SHORT[ev.reason] || 'Fizzle', 3);
+          const e = eng(ev.pid);
+          if (e) e.poses.push({ pose: 'shrug', t0: T(ev, 0.1), t1: T(ev, 0.9) });
+          break;
+        }
         case 'throw': {
           const e = eng(ev.pid);
-          const t0 = T('throw', THROW_GO);
-          const t1 = T('throw', THROW_LAND);
+          const t0 = T(ev, THROW_GO);
+          const t1 = T(ev, THROW_LAND);
           if (e) {
             e.carry.push([t0, null]);
-            e.poses.push({ pose: 'throw', t0: T('throw', 0), t1: T('throw', 0.3) });
+            e.poses.push({ pose: 'throw', t0: T(ev, 0), t1: T(ev, 0.3) });
           }
           const caught = ev.result === 'caught';
           const blocked = ev.result === 'blocked';
@@ -142,90 +184,95 @@ export class Playback {
           const [tx, ty] = ev.to;
           const [fx, fy] = ev.from;
           const dist = Math.abs(tx - fx) + Math.abs(ty - fy);
-          const fl = {
-            kind: ev.kind,
-            from: [fx, fy, handZ(fx, fy)],
-            to: [tx, ty, caught || blocked ? handZ(tx, ty) : S.topZ(tx, ty)],
-            t0,
-            t1,
-            h: 0.9 + dist * 0.35,
-          };
-          this.flights.push(fl);
+          this.flights.push({ kind: ev.kind, from: [fx, fy, handZ(fx, fy)], to: [tx, ty, caught || blocked ? handZ(tx, ty) : S.topZ(tx, ty)], t0, t1, h: 0.9 + dist * 0.3 });
           this.cues.push({ t: t0, kind: 'throw', ev });
+          const [ax, ay] = ev.at;
+          const t2 = T(ev, THROW_SETTLE);
           if (caught) {
             const c = eng(ev.by);
             if (c) {
               c.carry.push([t1, ev.kind]);
-              c.poses.push({ pose: 'reach', t0: t1 - 0.12, t1: t1 + 0.15 });
+              c.poses.push({ pose: 'reach', t0: t1 - 0.1, t1: t1 + 0.15 });
             }
             this.cues.push({ t: t1, kind: 'catch', ev });
+            mark(ev.pid, ev.slot, t1, 'ok', 'Caught');
+            mark(ev.by, ev.slot, t1, 'ok', 'Catch!', 1);
           } else if (blocked) {
             // bounces off the engineer's full hands and drops to the ground
-            const [ax, ay] = ev.at;
-            const t2 = T('throw', THROW_SETTLE);
             this.flights.push({ kind: ev.kind, from: [tx, ty, handZ(tx, ty)], to: [ax, ay, S.topZ(ax, ay)], t0: t1, t1: t2, h: ax !== tx || ay !== ty ? 0.7 : 0.55 });
             groundAdd(ev.bomb, ev.kind, ax, ay, t2);
             this.cues.push({ t: t1, kind: 'blocked', ev });
+            mark(ev.pid, ev.slot, t1, 'warn', 'Blocked');
           } else {
-            const [ax, ay] = ev.at;
-            const t2 = T('throw', THROW_SETTLE);
             if (ax !== tx || ay !== ty) {
               this.flights.push({ kind: ev.kind, from: [tx, ty, S.topZ(tx, ty)], to: [ax, ay, S.topZ(ax, ay)], t0: t1, t1: t2, h: 0.35 });
               groundAdd(ev.bomb, ev.kind, ax, ay, t2);
             } else groundAdd(ev.bomb, ev.kind, ax, ay, t1);
             this.cues.push({ t: t1, kind: 'land', ev });
+            mark(ev.pid, ev.slot, t1, 'ok', 'Landed');
           }
           break;
         }
         case 'move': {
           const e = eng(ev.pid);
-          if (!e) break;
-          const pts = [ev.from, ...(ev.path || [])];
-          e.move = { pts, ok: ev.result === 'ok', t0: T('move', 0), t1: T('move', 1) };
-          if (ev.result !== 'ok') this.cues.push({ t: T('move', 0.45), kind: 'bump', ev });
-          else this.cues.push({ t: T('move', 0.05), kind: 'step', ev });
+          const ok = ev.result === 'ok';
+          const t0 = T(ev, 0);
+          const t1 = T(ev, 1);
+          if (e) e.moves.push({ from: ev.from, to: ev.to, ok, t0, t1 });
+          if (!ok) {
+            this.cues.push({ t: T(ev, 0.45), kind: 'bump', ev });
+            mark(ev.pid, ev.slot, T(ev, 0.45), 'warn', 'Bump!');
+          } else mark(ev.pid, ev.slot, t1, 'ok', '');
           break;
         }
         case 'pickup': {
           const e = eng(ev.pid);
-          const tg = T('grab', GRAB_HIT);
-          const stagger = 0;
-          if (e) e.poses.push({ pose: 'reach', t0: T('grab', 0.05), t1: T('grab', 0.7) });
+          const tg = T(ev, GRAB_HIT);
+          if (e) e.poses.push({ pose: 'reach', t0: T(ev, 0.05), t1: T(ev, 0.7) });
           if (ev.result === 'ok') {
-            groundTake(ev.bomb, T('grab', 0.18) + stagger);
+            groundTake(ev.bomb, T(ev, 0.18));
             const [bx, by] = ev.at;
-            const p = this.engPosAtStart(ev.pid, 'grab');
-            this.flights.push({ kind: ev.kind, from: [bx, by, S.topZ(bx, by)], to: [p[0], p[1], handZ(p[0], p[1])], t0: T('grab', 0.18), t1: tg, h: 0.45 });
+            const p = this.engPos(ev.pid, T(ev, 0));
+            this.flights.push({ kind: ev.kind, from: [bx, by, S.topZ(bx, by)], to: [p[0], p[1], handZ(p[0], p[1])], t0: T(ev, 0.18), t1: tg, h: 0.45 });
             if (e) e.carry.push([tg, ev.kind]);
-            this.cues.push({ t: tg, kind: 'pickup', ev });
-          } else this.cues.push({ t: tg, kind: 'fizzle', ev, at: ev.at });
-          grabIdx++;
+            this.cues.push({ t: tg, kind: 'pickup', ev, p });
+            mark(ev.pid, ev.slot, tg, 'ok', 'Got it');
+          } else {
+            this.cues.push({ t: tg, kind: 'fizzle', ev, at: ev.at });
+            if (ev.result === 'contested') mark(ev.pid, ev.slot, tg, 'warn', 'Clash!');
+            else mark(ev.pid, ev.slot, tg, 'fizzle', FIZZLE_SHORT[ev.result] || 'Fizzle', 3);
+          }
           break;
         }
         case 'load': {
           const e = eng(ev.pid);
-          const tg = T('grab', GRAB_HIT);
+          const tg = T(ev, GRAB_HIT);
           const cat = S.catapult(ev.cat);
-          if (e) e.poses.push({ pose: 'reach', t0: T('grab', 0.05), t1: T('grab', 0.7) });
+          if (e) e.poses.push({ pose: 'reach', t0: T(ev, 0.05), t1: T(ev, 0.7) });
           if (ev.result === 'ok' && cat) {
-            const p = this.engPosAtStart(ev.pid, 'grab');
-            if (e) e.carry.push([T('grab', 0.15), null]);
-            this.flights.push({ kind: ev.kind, from: [p[0], p[1], handZ(p[0], p[1])], to: [cat.x, cat.y, 1.25], t0: T('grab', 0.15), t1: tg, h: 0.5 });
+            const p = this.engPos(ev.pid, T(ev, 0));
+            if (e) e.carry.push([T(ev, 0.15), null]);
+            this.flights.push({ kind: ev.kind, from: [p[0], p[1], handZ(p[0], p[1])], to: [cat.x, cat.y, 1.25], t0: T(ev, 0.15), t1: tg, h: 0.5 });
             if (this.cats[ev.cat]) this.cats[ev.cat].load.push([tg, ev.kind]);
             this.cues.push({ t: tg, kind: 'load', ev });
-          } else this.cues.push({ t: tg, kind: 'fizzle', ev, at: cat ? [cat.x, cat.y] : null, z: 1.3 });
-          grabIdx++;
+            mark(ev.pid, ev.slot, tg, 'ok', 'Loaded');
+          } else {
+            this.cues.push({ t: tg, kind: 'fizzle', ev, at: cat ? [cat.x, cat.y] : null, z: 1.3 });
+            if (ev.result === 'contested') mark(ev.pid, ev.slot, tg, 'warn', 'Clash!');
+            else mark(ev.pid, ev.slot, tg, 'fizzle', FIZZLE_SHORT[ev.result] || 'Fizzle', 3);
+          }
           break;
         }
         case 'fire': {
           const c = this.cats[ev.cat];
-          const tf = T('fire', FIRE_GO);
-          const th = T('fire', FIRE_HIT);
+          const tf = T(ev, FIRE_GO);
+          const th = T(ev, FIRE_HIT);
           const e = eng(ev.pid);
-          if (e) e.poses.push({ pose: 'reach', t0: T('fire', 0), t1: T('fire', 0.35) });
+          if (e) e.poses.push({ pose: 'reach', t0: T(ev, 0), t1: T(ev, 0.35) });
           if (ev.result === 'empty') {
             if (c) c.swings.push([tf, 0.25]);
             this.cues.push({ t: tf, kind: 'fizzle', ev, at: this.catXY(ev.cat), z: 1.4 });
+            mark(ev.pid, ev.slot, tf, 'fizzle', 'Empty', 3);
             break;
           }
           if (c) {
@@ -234,19 +281,19 @@ export class Playback {
           }
           const lane = ev.lane ?? S.laneOfCat(ev.cat)?.id ?? ev.cat;
           const L = S.keep.lanes[lane];
-          // where it comes down: the first hit machine, else the middle / far end of the lane
-          let target = L ? L.len - 1 : 3;
+          let target = L ? L.len - 1 : 2;
           const hits = ev.hits || [];
           if (hits.length) {
             const ps = hits.map((h) => this.machs.get(h.id)?.pos0).filter((v) => v !== undefined);
             if (ps.length) target = ev.kind === 'keg' ? Math.min(...ps) : (Math.min(...ps) + Math.max(...ps)) / 2;
-          } else if (ev.result === 'wasted' && L) target = L.len * 0.6;
+          } else if (ev.result === 'wasted' && L) target = (L.len - 1) * 0.6;
           const cat = S.catapult(ev.cat);
           const [lx, ly] = S.lanePt(lane, target);
-          const shot = { kind: ev.kind, lane, target, from: [cat?.x ?? 0, cat?.y ?? 0, 1.95], to: [lx, ly, -0.1], t0: tf + 0.06, t1: th, h: 1.6 + target * 0.18, ev };
+          const shot = { kind: ev.kind, lane, target, from: [cat?.x ?? 0, cat?.y ?? 0, 1.95], to: [lx, ly, -0.1], t0: tf + 0.04, t1: th, h: 1.3 + target * 0.25, ev };
           this.shots.push(shot);
           this.cues.push({ t: tf, kind: 'fire', ev });
           this.cues.push({ t: th, kind: 'impact', ev, shot });
+          let kills = 0;
           for (const h of hits) {
             const m = this.machs.get(h.id);
             if (!m) continue;
@@ -254,30 +301,35 @@ export class Playback {
             m.hp.push([tt, h.hp]);
             m.frozen.push([tt, h.frozen]);
             m.flashes.push(tt);
-            if (h.killed) m.until = tt;
+            if (h.killed) {
+              m.until = tt;
+              kills++;
+            }
             this.cues.push({ t: tt, kind: h.killed ? 'kill' : 'hit', ev, hit: h, m });
           }
+          if (ev.result === 'wasted') mark(ev.pid, ev.slot, th, 'warn', 'Wasted');
+          else mark(ev.pid, ev.slot, th, 'ok', kills ? (kills > 1 ? `${kills} kills` : 'Kill!') : ev.kind === 'stopwatch' ? 'Frozen' : 'Hit');
           break;
         }
         case 'advance': {
           const m = this.machs.get(ev.id);
-          if (m) m.moves.push({ from: ev.from, to: ev.to, t0: T('machines', 0), t1: T('machines', MACH_MOVE) });
+          if (m) m.moves.push({ from: ev.from, to: ev.to, t0: T(ev, 0), t1: T(ev, MACH_MOVE) });
           break;
         }
         case 'stall': {
           const m = this.machs.get(ev.id);
           if (m) {
-            m.stall = T('machines', 0.1);
-            m.frozen.push([T('machines', 0.35), ev.frozen]);
+            m.stall = T(ev, 0.1);
+            m.frozen.push([T(ev, 0.35), ev.frozen]);
           }
-          this.cues.push({ t: T('machines', 0.2), kind: 'stall', ev });
+          this.cues.push({ t: T(ev, 0.2), kind: 'stall', ev });
           break;
         }
         case 'wall': {
           const m = this.machs.get(ev.id);
-          const tw = T('machines', WALL_HIT);
+          const tw = T(ev, WALL_HIT);
           if (m) {
-            m.moves.push({ from: ev.from, to: -0.75, t0: T('machines', 0), t1: tw });
+            m.moves.push({ from: ev.from, to: -0.75, t0: T(ev, 0), t1: tw });
             m.until = tw;
           }
           this.wall.push([tw, ev.wall]);
@@ -285,14 +337,14 @@ export class Playback {
           break;
         }
         case 'spawn': {
-          const t0 = T('machines', SPAWN_AT);
+          const t0 = T(ev, SPAWN_AT);
           const a = after.mach.get(ev.id);
           this.machs.set(ev.id, { id: ev.id, kind: ev.kind, lane: ev.lane, pos0: ev.pos, hp0: ev.hp, max: a?.max ?? ev.hp, frozen0: 0, hp: [], frozen: [], moves: [], from: t0, until: Infinity, flashes: [], stall: null, spawn: true });
           this.cues.push({ t: t0, kind: 'spawn', ev });
           break;
         }
         case 'bomb': {
-          const t0 = T('machines', BOMB_AT) + bombIdx * 0.05;
+          const t0 = T(ev, BOMB_AT) + bombIdx * 0.05;
           bombIdx++;
           groundAdd(ev.id, ev.kind, ev.x, ev.y, t0, true);
           this.cues.push({ t: t0 + 0.25, kind: 'drop', ev });
@@ -300,15 +352,18 @@ export class Playback {
         }
       }
     }
-    for (const e of this.engs.values()) e.carry.sort((a, b) => a[0] - b[0]);
+    for (const e of this.engs.values()) {
+      e.carry.sort((a, b) => a[0] - b[0]);
+      e.moves.sort((a, b) => a.t0 - b.t0);
+    }
     for (const c of this.cats) c.load.sort((a, b) => a[0] - b[0]);
     for (const m of this.machs.values()) {
       m.hp.sort((a, b) => a[0] - b[0]);
       m.frozen.sort((a, b) => a[0] - b[0]);
     }
     this.cues.sort((a, b) => a.t - b.t);
+    this.marks.sort((a, b) => a.t - b.t);
     this.cueIdx = 0;
-    void grabIdx;
   }
 
   catXY(id) {
@@ -316,12 +371,35 @@ export class Playback {
     return c ? [c.x, c.y] : null;
   }
 
-  // where an engineer stands when stage `s` begins (after moves if s is after the move stage)
-  engPosAtStart(pid, s) {
+  // where an engineer stands at time t (after the moves finished by then)
+  engPos(pid, t) {
     const e = this.engs.get(pid);
     if (!e) return [0, 0];
-    if (e.move && e.move.ok && s !== 'throw' && s !== 'move') return e.move.pts[e.move.pts.length - 1];
-    return [e.x0, e.y0];
+    let p = [e.x0, e.y0];
+    for (const m of e.moves) if (m.ok && m.t1 <= t + 1e-6) p = m.to;
+    return p;
+  }
+
+  // which slot is playing at t: { slot, idx } or { machines: true } or null
+  stepAt(t) {
+    if (this.mstage && t >= this.mstage.at) return { machines: true };
+    let cur = null;
+    this.slots.forEach((s, i) => {
+      if (t >= s.at) cur = { slot: s.slot, idx: i };
+    });
+    return cur;
+  }
+
+  // marks recorded by time t: Map "pid|slot" -> mark (the most telling one)
+  marksAt(t) {
+    const out = new Map();
+    for (const m of this.marks) {
+      if (m.t > t) break;
+      const k = `${m.pid}|${m.slot}`;
+      const o = out.get(k);
+      if (!o || m.prio >= o.prio) out.set(k, m);
+    }
+    return out;
   }
 
   // cues due by time t (each returned once)
@@ -343,35 +421,30 @@ export class Playback {
       let walk = -1;
       let face = 0;
       let key = null;
-      const m = e.move;
-      if (m && t >= m.t0) {
+      for (const m of e.moves) {
+        if (t < m.t0) break;
+        const [ax, ay] = m.from;
+        const [bx, by] = m.to;
         const u = clamp01((t - m.t0) / (m.t1 - m.t0));
-        const pts = m.pts;
-        if (m.ok && pts.length > 1) {
-          const segs = pts.length - 1;
-          const f = ease(u) * segs;
-          const i = Math.min(segs - 1, Math.floor(f));
-          const k = f - i;
-          const [ax, ay] = pts[i];
-          const [bx, by] = pts[i + 1];
+        if (m.ok) {
+          const k = ease(u);
           x = ax + (bx - ax) * k;
           y = ay + (by - ay) * k;
           z = S.standZ(ax, ay) + (S.standZ(bx, by) - S.standZ(ax, ay)) * k;
           if (u < 1) {
-            walk = f;
+            walk = u * 1.5;
             face = bx - ax - (by - ay);
-            // stepping onto something at least as high: draw with the destination's depth
             if (S.standZ(bx, by) >= S.standZ(ax, ay)) key = Math.max(ax + ay, bx + by) + (k > 0.5 ? 0 : -0.5);
           }
-        } else if (!m.ok && pts.length > 1) {
-          // bump: lunge toward the first step and back
-          const [bx, by] = pts[1];
+        } else {
+          // bump: lunge toward the cell and back
           const b = Math.sin(u * Math.PI) * 0.36;
-          x = e.x0 + (bx - e.x0) * b;
-          y = e.y0 + (by - e.y0) * b;
+          x = ax + (bx - ax) * b;
+          y = ay + (by - ay) * b;
+          z = S.standZ(ax, ay);
           if (u < 1) {
             walk = u * 1.5;
-            face = bx - e.x0 - (by - e.y0);
+            face = bx - ax - (by - ay);
           }
         }
       }
@@ -379,7 +452,7 @@ export class Playback {
       let poseK = 0;
       for (const p of e.poses) {
         if (t >= p.t0 && t <= p.t1) {
-          pose = p.pose;
+          pose = p.pose === 'shrug' ? 'reach' : p.pose;
           poseK = (t - p.t0) / (p.t1 - p.t0);
         }
       }
@@ -411,8 +484,6 @@ export class Playback {
         x: f.from[0] + (f.to[0] - f.from[0]) * u,
         y: f.from[1] + (f.to[1] - f.from[1]) * u,
         z: f.from[2] + (f.to[2] - f.from[2]) * u + f.h * 4 * u * (1 - u),
-        gx: f.from[0] + (f.to[0] - f.from[0]) * u,
-        gy: f.from[1] + (f.to[1] - f.from[1]) * u,
         spin: u * 9,
       });
     }
@@ -425,8 +496,8 @@ export class Playback {
         const d = t - ts;
         if (d < 0) continue;
         const top = ARM_REST + (ARM_TOP - ARM_REST) * power;
-        if (d < 0.16) phi = ARM_REST + (top - ARM_REST) * ease(d / 0.16);
-        else if (d < 0.75) phi = top - (top - ARM_REST) * ease((d - 0.16) / 0.59);
+        if (d < 0.14) phi = ARM_REST + (top - ARM_REST) * ease(d / 0.14);
+        else if (d < 0.6) phi = top - (top - ARM_REST) * ease((d - 0.14) / 0.46);
       }
       v.cats.push({ id, kind, phi });
     });

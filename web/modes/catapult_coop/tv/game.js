@@ -5,8 +5,8 @@
 import { TAU, clamp, softSprite } from '../../tower_defense/tv/geom.js';
 import { FX } from '../../tower_defense/tv/fx.js';
 import { Scene, W, H, OUT_Z } from './scene.js';
-import { boardFromSnap, viewOf, Playback } from './board.js';
-import { drawBomb, drawEngineer, drawCatapult, drawMachine, drawMachineShadow, drawStars, drawIcon, MACHINE_CELLS } from './sprites.js';
+import { boardFromSnap, viewOf, Playback, FIZZLE_TEXT } from './board.js';
+import { drawBomb, drawEngineer, drawCatapult, drawMachine, drawMachineShadow, drawStars, MACHINE_CELLS } from './sprites.js';
 
 const ENG_K = 1.15; // engineers are drawn a little larger than the tile scale
 
@@ -29,9 +29,11 @@ export class Game {
   reset() {
     this.board = null;
     this.snap = null;
+    this.plans = new Map(); // pid -> { acts, done } (snap.plans)
     this.snapRecv = 0;
     this.rate = 1; // game seconds per real second (EMA)
     this.pb = null; // running Playback
+    this.lastPb = null; // the last one, for the turn record in the strip
     this.pbStart = 0;
     this.staticView = null;
     this.introAt = -1e9;
@@ -74,15 +76,24 @@ export class Game {
     const keep = this.keep();
     const lay = this.room?.layout;
     if (!keep || !lay || lay.w !== keep.w || lay.h !== keep.h) return;
-    const key = `${keep.id}|${JSON.stringify(lay.cells)}`;
+    const key = `${keep.id}|${this.rows()}|${JSON.stringify(lay.cells)}`;
     if (!force && key === this.sceneKey && this.scene) return;
     this.sceneKey = key;
-    this.scene = new Scene(keep, lay, this.px);
+    this.scene = new Scene(keep, lay, this.px, this.box());
     this.staticView = null;
   }
 
   destroy() {
     clearTimeout(this._rb);
+  }
+
+  // queue strip rows below the scene: 1 for up to 4 players, else 2
+  rows() {
+    return (this.room?.players.length || 0) > 4 ? 2 : 1;
+  }
+
+  box() {
+    return { x0: 34, x1: W - 34, y0: 196, y1: H - (this.rows() === 2 ? 330 : 182) };
   }
 
   color(pid) {
@@ -117,12 +128,15 @@ export class Game {
       const batch = [];
       for (let j = ri + 1; j < evs.length && evs[j].s; j++) batch.push(evs[j]);
       this.pb = new Playback(evs[ri], batch, before, after, this.scene);
+      this.pb.plans = new Map((m.plans || []).map((p) => [p.pid, p]));
       this.pbStart = now;
+      this.lastPb = null;
       this.ui.resolveStart?.(evs[ri]);
     }
     this.board = after;
     this.staticView = null;
     this.snap = m;
+    this.plans = new Map((m.plans || []).map((p) => [p.pid, p]));
     this.snapRecv = now;
     evs.forEach((ev, i) => {
       if (!inBatch.has(i)) this.event(ev, now);
@@ -145,10 +159,6 @@ export class Game {
         this.ui.levelClear?.(ev);
         this.sound?.cue({ kind: 'level_clear', ev }, this);
         break;
-      case 'perk':
-        this.ui.perk?.(ev);
-        this.sound?.cue({ kind: 'perk', ev }, this);
-        break;
     }
   }
 
@@ -160,6 +170,7 @@ export class Game {
       const t = this.freezeT ?? ((now - this.pbStart) / 1000) * this.rate;
       for (const c of this.pb.due(t)) this.cue(c, now);
       if (t < this.pb.dur) return this.pb.sample(t);
+      this.lastPb = this.pb;
       this.pb = null;
     }
     if (!this.board) return null;
@@ -167,8 +178,19 @@ export class Game {
     return this.staticView;
   }
 
+  // what the queue strip shows: whose queues, the slot playing, the outcome marks so far
+  queueState(now) {
+    if (this.pb) {
+      const t = this.playbackT(now);
+      const s = this.pb.stepAt(t);
+      return { plans: this.pb.plans, cur: s && !s.machines ? s.slot : -1, machines: !!s?.machines, marks: this.pb.marksAt(t), resolving: true };
+    }
+    if (this.room?.phase === 'resolve' && this.lastPb) return { plans: this.lastPb.plans, cur: -1, machines: false, marks: this.lastPb.marksAt(Infinity), resolving: true };
+    return { plans: this.plans, cur: -1, machines: false, marks: new Map(), resolving: this.room?.phase === 'resolve' };
+  }
+
   playbackT(now) {
-    return this.pb ? ((now - this.pbStart) / 1000) * this.rate : -1;
+    return this.pb ? this.freezeT ?? ((now - this.pbStart) / 1000) * this.rate : -1;
   }
 
   // effects for one playback cue (sound is mapped in sound.js)
@@ -221,7 +243,7 @@ export class Game {
         break;
       }
       case 'pickup': {
-        const p = this.pb?.engPosAtStart(ev.pid, 'grab') || ev.at;
+        const p = c.p || ev.at;
         const [sx, sy] = at(p[0], p[1], S.standZ(p[0], p[1]) + 1.2);
         fx.burst(sx, sy, 8, { speed: 120, life: 0.35, size: 2.5, color: 'rgba(255,220,150,1)' });
         break;
@@ -240,9 +262,10 @@ export class Game {
         const [x, y] = c.at;
         const [sx, sy] = at(x, y, c.z ?? S.topZ(x, y) + 0.4);
         fx.smoke(sx, sy, 6, { size: 18 * S.k, life: 0.8, speed: 50, color: 'rgba(120,120,120,0.6)' });
-        const msg = ev.result === 'contested' ? 'Clash!' : ev.result === 'empty' ? 'Empty!' : 'Fizzle';
+        const msg = ev.e === 'fizzle' ? FIZZLE_TEXT[ev.reason] || 'Fizzle' : ev.result === 'contested' ? 'Clash!' : ev.result === 'empty' ? 'Already fired' : FIZZLE_TEXT[ev.result] || 'Fizzle';
+        if (ev.e === 'fizzle') fx.text(sx, sy - 20 * S.k, '✗', '#ff6a4a', 44, 0.9);
         if (ev.result === 'contested') fx.burst(sx, sy, 14, { speed: 260, life: 0.35, size: 3, color: 'rgba(255,120,80,1)' });
-        fx.text(sx, sy - 40 * S.k, msg, '#ff8a6a', 32, 1.2);
+        fx.text(sx, sy - 70 * S.k, msg, '#ff8a6a', 34, 1.5);
         break;
       }
       case 'fire': {
@@ -584,7 +607,7 @@ export class Game {
     }
 
     // ---- overlays (never occluded)
-    if (room?.openPlans && planPhase && !this.pb) this.drawGhosts(g, tsec, engScreen);
+    if (planPhase && !this.pb) this.drawFirstSteps(g, tsec, engScreen);
 
     // brass number plates: each catapult and the far end of its lane (lane id + 1)
     for (const c of S.keep.catapults) {
@@ -630,163 +653,48 @@ export class Game {
       const p = this.players.get(pid);
       if (!p) continue;
       const ty = s.sy - (s.carry ? 118 : 90) * k * ENG_K;
-      drawTag(g, s.sx, ty, p.name, p.color, planPhase && p.planned, s.away, k);
+      drawTag(g, s.sx, ty, p.name, p.color, planPhase && !!this.plans.get(pid)?.done, s.away, k);
     }
   }
 
-  // open plans: each player's current plan, drawn as a ghost in their colour
-  drawGhosts(g, tsec, engScreen) {
+  // a subtle marker for each engineer's first queued step (the queue strip is the plan display)
+  drawFirstSteps(g, tsec, engScreen) {
     const S = this.scene;
     const k = S.k;
-    const dash = -tsec * 30;
-    for (const p of this.room.players) {
-      const plan = p.plan;
-      const e = this.board?.eng.get(p.id);
-      if (!plan || !e) continue;
-      const col = p.color;
-      const z0 = S.standZ(e.x, e.y);
+    for (const [pid, plan] of this.plans) {
+      const act = plan.acts?.[0];
+      const e = this.board?.eng.get(pid);
+      if (!act || !e || (act.a !== 'move' && act.a !== 'throw')) continue;
+      const dx = act.dx || 0;
+      const dy = act.dy || 0;
+      const z = S.standZ(e.x, e.y) + 0.02;
+      const a = S.p(e.x + dx * 0.32, e.y + dy * 0.32, z);
+      const b = S.p(e.x + dx * 0.78, e.y + dy * 0.78, z);
+      const an = Math.atan2(b[1] - a[1], b[0] - a[0]);
       g.save();
+      g.globalAlpha = 0.55 + 0.25 * Math.sin(tsec * 4);
       g.lineCap = 'round';
       g.lineJoin = 'round';
-      g.strokeStyle = col;
-      g.globalAlpha = 0.9;
-      switch (plan.a) {
-        case 'move': {
-          const pts = [[e.x, e.y], ...(plan.path || [[plan.x, plan.y]])];
-          const sp = pts.map(([x, y]) => S.p(x, y, S.standZ(x, y) + 0.05));
-          outlined(g, () => {
-            g.beginPath();
-            g.moveTo(sp[0][0], sp[0][1]);
-            for (let i = 1; i < sp.length; i++) g.lineTo(sp[i][0], sp[i][1]);
-          }, col, 6 * k, [14 * k, 10 * k], dash);
-          const n = sp.length;
-          arrowHead(g, sp[n - 2], sp[n - 1], col, k);
-          const [dx, dy] = sp[n - 1];
-          g.globalAlpha = 0.5 + 0.2 * Math.sin(tsec * 5);
-          g.lineWidth = 4 * k;
-          g.setLineDash([]);
-          g.beginPath();
-          g.ellipse(dx, dy, 30 * k, 15 * k, 0, 0, TAU);
-          g.stroke();
-          break;
-        }
-        case 'throw': {
-          // direction only: an open-ended, fading arrow two cells out
-          const dx = plan.dx || 0;
-          const dy = plan.dy || 0;
-          const a = S.p(e.x, e.y, z0 + 1.1);
-          const b = S.p(e.x + 2 * dx, e.y + 2 * dy, z0 + 1.1);
-          const grad = g.createLinearGradient(a[0], a[1], b[0], b[1]);
-          grad.addColorStop(0, col);
-          grad.addColorStop(0.7, col);
-          grad.addColorStop(1, /^#[0-9a-f]{6}$/i.test(col) ? col + '00' : 'rgba(255,255,255,0)');
-          g.setLineDash([12 * k, 9 * k]);
-          g.lineDashOffset = dash;
-          g.lineWidth = 12 * k;
-          g.strokeStyle = 'rgba(10,8,6,0.6)';
-          g.globalAlpha = 0.9;
-          g.beginPath();
-          g.moveTo(a[0], a[1]);
-          g.lineTo(b[0], b[1]);
-          g.stroke();
-          g.lineWidth = 7 * k;
-          g.strokeStyle = grad;
-          g.stroke();
-          g.setLineDash([]);
-          // open chevron head at the fading end
-          const an = Math.atan2(b[1] - a[1], b[0] - a[0]);
-          const m = [a[0] + (b[0] - a[0]) * 0.85, a[1] + (b[1] - a[1]) * 0.85];
-          g.globalAlpha = 0.6;
-          g.lineWidth = 4 * k;
-          g.strokeStyle = col;
-          g.beginPath();
-          g.moveTo(m[0] - Math.cos(an - 0.5) * 20 * k, m[1] - Math.sin(an - 0.5) * 20 * k);
-          g.lineTo(m[0], m[1]);
-          g.lineTo(m[0] - Math.cos(an + 0.5) * 20 * k, m[1] - Math.sin(an + 0.5) * 20 * k);
-          g.stroke();
-          g.globalAlpha = 1;
-          break;
-        }
-        case 'pickup': {
-          const tx = plan.x;
-          const ty = plan.y;
-          const a = S.p(e.x, e.y, z0 + (plan.a === 'throw' ? 1.1 : 0.6));
-          const b = S.p(tx, ty, S.topZ(tx, ty) + (plan.a === 'throw' ? 0.2 : 0.1));
-          const mid = [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - (plan.a === 'throw' ? 70 : 24) * k];
-          outlined(g, () => {
-            g.beginPath();
-            g.moveTo(a[0], a[1]);
-            g.quadraticCurveTo(mid[0], mid[1], b[0], b[1]);
-          }, col, 5 * k, [12 * k, 9 * k], dash);
-          // arrowhead along the curve's end tangent
-          arrowHead(g, [mid[0] * 0.5 + b[0] * 0.5, mid[1] * 0.5 + b[1] * 0.5], b, col, k);
-          g.globalAlpha = 0.55 + 0.2 * Math.sin(tsec * 5);
-          g.setLineDash([]);
-          g.lineWidth = 4 * k;
-          g.beginPath();
-          g.ellipse(b[0], b[1], 28 * k, 14 * k, 0, 0, TAU);
-          g.stroke();
-          g.globalAlpha = 1;
-          if (plan.a === 'pickup') badge(g, b[0], b[1] - 46 * k, 'pickup', col, k);
-          break;
-        }
-        case 'load':
-        case 'fire': {
-          const cat = S.catapult(plan.cat);
-          if (!cat) break;
-          const a = S.p(e.x, e.y, z0 + 0.8);
-          const b = S.p(cat.x, cat.y, 1.6);
-          outlined(g, () => {
-            g.beginPath();
-            g.moveTo(a[0], a[1]);
-            g.lineTo(b[0], b[1]);
-          }, col, 5 * k, [10 * k, 8 * k], dash);
-          const icons = plan.a === 'load' ? (plan.fire ? ['load', 'fire'] : ['load']) : ['fire'];
-          icons.forEach((ic, i) => badge(g, b[0] + (i - (icons.length - 1) / 2) * 52 * k, b[1] - 58 * k, ic, col, k));
-          break;
-        }
-        case 'wait': {
-          const s = engScreen.get(p.id);
-          if (s) badge(g, s.sx + 40 * k, s.sy - 70 * k, 'wait', col, k);
-          break;
-        }
-      }
+      g.lineWidth = 5 * k;
+      g.strokeStyle = this.color(pid);
+      if (act.a === 'throw') g.setLineDash([6 * k, 6 * k]);
+      g.beginPath();
+      g.moveTo(a[0], a[1]);
+      g.lineTo(b[0], b[1]);
+      g.stroke();
+      g.setLineDash([]);
+      g.beginPath();
+      g.moveTo(b[0] - Math.cos(an - 0.6) * 13 * k, b[1] - Math.sin(an - 0.6) * 13 * k);
+      g.lineTo(b[0], b[1]);
+      g.lineTo(b[0] - Math.cos(an + 0.6) * 13 * k, b[1] - Math.sin(an + 0.6) * 13 * k);
+      g.stroke();
       g.restore();
     }
+    void engScreen;
   }
 }
 
 // ---------------------------------------------------------------- small drawing helpers
-
-function outlined(g, path, col, w, dash, off) {
-  g.setLineDash(dash);
-  g.lineDashOffset = off;
-  path();
-  g.lineWidth = w + 5;
-  g.strokeStyle = 'rgba(10,8,6,0.75)';
-  g.stroke();
-  g.lineWidth = w;
-  g.strokeStyle = col;
-  g.stroke();
-  g.setLineDash([]);
-}
-
-function arrowHead(g, a, b, col, k) {
-  if (!a || !b) return;
-  const an = Math.atan2(b[1] - a[1], b[0] - a[0]);
-  const L = 20 * k;
-  g.beginPath();
-  g.moveTo(b[0], b[1]);
-  g.lineTo(b[0] - Math.cos(an - 0.5) * L, b[1] - Math.sin(an - 0.5) * L);
-  g.lineTo(b[0] - Math.cos(an + 0.5) * L, b[1] - Math.sin(an + 0.5) * L);
-  g.closePath();
-  g.globalAlpha = 1;
-  g.lineWidth = 3;
-  g.strokeStyle = 'rgba(10,8,6,0.8)';
-  g.stroke();
-  g.fillStyle = col;
-  g.fill();
-}
 
 function plate(g, x, y, text, k, sc = 1) {
   const r = 17 * k * sc;
@@ -814,19 +722,6 @@ function plate(g, x, y, text, k, sc = 1) {
   g.fillStyle = '#2a1904';
   g.fillText(text, x, y + 1 * k);
   g.restore();
-}
-
-function badge(g, x, y, icon, col, k) {
-  g.globalAlpha = 0.95;
-  g.fillStyle = 'rgba(12,16,18,0.9)';
-  g.beginPath();
-  g.arc(x, y, 22 * k, 0, TAU);
-  g.fill();
-  g.lineWidth = 3.5 * k;
-  g.strokeStyle = col;
-  g.stroke();
-  drawIcon(g, icon, x, y, 1.05 * k, col);
-  g.globalAlpha = 1;
 }
 
 function pipsW(max, k) {

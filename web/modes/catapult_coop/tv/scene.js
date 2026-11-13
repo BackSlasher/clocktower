@@ -28,7 +28,8 @@ const BOX = { x0: 34, x1: W - 34, y0: 40, y1: H - 12 };
 
 export class Scene {
   // keep: map.keeps[i]; layout: room.layout (same w/h)
-  constructor(keep, layout, px) {
+  constructor(keep, layout, px, box) {
+    this.box = box || BOX;
     this.keep = keep;
     this.lay = layout;
     this.w = keep.w;
@@ -65,13 +66,14 @@ export class Scene {
       minY = Math.min(minY, v);
       maxY = Math.max(maxY, v);
     }
-    const tw = Math.min((BOX.x1 - BOX.x0) / (maxX - minX), (BOX.y1 - BOX.y0) / (maxY - minY));
+    const B = this.box;
+    const tw = Math.min((B.x1 - B.x0) / (maxX - minX), (B.y1 - B.y0) / (maxY - minY));
     this.TW = tw;
     this.TH = tw * TH_K;
     this.HZ = tw * HZ_K;
     this.k = tw / 130; // sprite scale (sprites are designed at TW = 130)
-    this.ox = (BOX.x0 + BOX.x1) / 2 - ((minX + maxX) / 2) * tw;
-    this.oy = BOX.y1 - maxY * tw;
+    this.ox = (B.x0 + B.x1) / 2 - ((minX + maxX) / 2) * tw;
+    this.oy = (B.y0 + B.y1) / 2 - ((minY + maxY) / 2) * tw;
   }
 
   // screen point of grid point (x, y) at height z

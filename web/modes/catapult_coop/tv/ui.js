@@ -1,6 +1,7 @@
-// DOM side of the catapult_coop TV: the top plate (level, round, countdown, wall), the player
-// strip, the level title card, banners, the break panel and the end screen. Every element id
-// is prefixed "cc" so nothing collides with the shell or another mode.
+// DOM side of the catapult_coop TV: the top plate (level, turn, countdown, wall), the queue
+// strip (every player's live queue, the slot being played and what came of each action), the
+// step indicator, the level title card, banners, the break panel and the end screen. Every
+// element id is prefixed "cc" so nothing collides with the shell or another mode.
 
 import { fmtTime } from '../../tower_defense/tv/geom.js';
 import { esc, GEAR_SVG, CROWN_SVG } from '/shared/dom.js';
@@ -18,14 +19,73 @@ export const HTML = `
       <div class="cc-phase"><div class="cc-lbl" id="ccPhaseLbl"></div><div class="cc-count" id="ccCount"></div><div class="cc-sub" id="ccRound"></div></div>
       <div class="cc-wall"><div class="cc-lbl">${BRICK_SVG} Wall</div><div class="cc-big"><span id="ccWall">10</span><span class="cc-of" id="ccWallMax">/ 10</span></div><div class="cc-bar"><div id="ccWallBar"></div></div></div>
     </div>
-    <div id="ccPlayersL" class="cc-players"></div>
-    <div id="ccPlayersR" class="cc-players right"></div>
+    <div id="ccStep"></div>
+    <div id="ccQueue"></div>
     <div id="ccPaused">Paused &mdash; waiting for engineers to reconnect</div>
   </section>
   <div id="ccCard"></div>
   <div id="ccBanner"></div>
   <section id="ccBreak"></section>
   <section id="ccEnd"></section>`;
+
+// ---------------------------------------------------------------- action icons
+// Directions are drawn the way the TV shows the grid: +x runs down-right, +y down-left.
+
+function screenAngle(dx, dy) {
+  return (Math.atan2((dx + dy) * 0.5, dx - dy) * 180) / Math.PI;
+}
+
+function arrow(dx, dy, { len = 34, w = 11, head = 17, dash = false, cls = 'ar' } = {}) {
+  const a = screenAngle(dx, dy);
+  return `<g transform="rotate(${a.toFixed(1)})" class="${cls}"><path d="M${-len} 0H${len - head + 2}" stroke-width="${w}" fill="none"${dash ? ` stroke-dasharray="9 7"` : ''}/><path d="M${len - head - 2} ${-head}L${len + 4} 0L${len - head - 2} ${head}Z" stroke-width="3"/></g>`;
+}
+
+const BOMB_G = (x, y, r = 14) =>
+  `<g class="bm"><circle cx="${x}" cy="${y}" r="${r}"/><path d="M${x + r * 0.5} ${y - r * 0.85}q${r * 0.4} ${-r * 0.6} ${r * 0.9} ${-r * 0.5}" fill="none" stroke-width="3"/><circle class="sp" cx="${x + r * 1.45}" cy="${y - r * 1.35}" r="${r * 0.32}"/></g>`;
+
+const HAND_G = `<g class="hd"><path d="M-17 -2q0 22 17 22t17-22" fill="none" stroke-width="7"/><path d="M-12 -2v-20M-3 -2v-24M6 -2v-22M17 -2l5-10" fill="none" stroke-width="6"/></g>`;
+
+export function actIcon(act) {
+  const d = (act.dx || 0) !== 0 || (act.dy || 0) !== 0;
+  let body = '';
+  switch (act.a) {
+    case 'move':
+      body = arrow(act.dx || 0, act.dy || 0, { len: 36, w: 13, head: 19 });
+      break;
+    case 'throw': {
+      const a = (screenAngle(act.dx || 0, act.dy || 0) * Math.PI) / 180;
+      body = `${arrow(act.dx || 0, act.dy || 0, { len: 38, w: 8, head: 16, dash: true, cls: 'ar thr' })}${BOMB_G(-Math.cos(a) * 18, -Math.sin(a) * 18 + 2, 13)}`;
+      break;
+    }
+    case 'pickup':
+      body = d ? `<g transform="translate(-8 4) scale(0.8)">${HAND_G}</g>${arrowSmall(act.dx, act.dy)}` : HAND_G;
+      break;
+    case 'load':
+      body = `<g class="ld"><path d="M0 -36V2M-14 -12L0 2L14 -12" fill="none" stroke-width="8"/><path d="M-26 10l6 22h40l6-22" fill="none" stroke-width="7"/></g>`;
+      break;
+    case 'fire': {
+      let pts = '';
+      for (let i = 0; i < 16; i++) {
+        const an = (i / 16) * Math.PI * 2;
+        const r = i % 2 ? 14 : 34;
+        pts += `${(Math.cos(an) * r).toFixed(1)},${(Math.sin(an) * r).toFixed(1)} `;
+      }
+      body = `<g class="fi"><polygon points="${pts}"/><circle r="9"/></g>`;
+      break;
+    }
+    case 'wait':
+    default:
+      body = `<g class="wt"><path d="M-17 -28h34L-17 28h34Z" fill="none" stroke-width="6" stroke-linejoin="round"/><path d="M-8 22h16l-8-9z"/></g>`;
+  }
+  return `<svg class="cc-ic" viewBox="-50 -50 100 100" aria-hidden="true">${body}</svg>`;
+}
+
+function arrowSmall(dx, dy) {
+  const a = screenAngle(dx, dy);
+  return `<g transform="rotate(${a.toFixed(1)})" class="ar"><path d="M18 0H34" stroke-width="7" fill="none"/><path d="M30 -11L44 0L30 11Z" stroke-width="2"/></g>`;
+}
+
+// ---------------------------------------------------------------- UI
 
 export class UI {
   constructor(root) {
@@ -37,8 +97,6 @@ export class UI {
     this.timers = new Set();
     this.bannerQueue = [];
     this.bannerBusy = false;
-    this.breakBase = null; // perks at the start of the break (to tell who picked what)
-    this.picks = new Map(); // pid -> perk id picked this break
     this._k = {};
   }
 
@@ -59,7 +117,8 @@ export class UI {
   set(id, text) {
     if (this._k[id] === text) return;
     this._k[id] = text;
-    this.$(id).textContent = text;
+    const el = this.$(id);
+    if (el) el.textContent = text;
   }
 
   setSetup(s) {
@@ -70,6 +129,10 @@ export class UI {
     return this.setup?.defs || {};
   }
 
+  get slots() {
+    return this.defs.slots || 4;
+  }
+
   setRoom(room) {
     const prev = this.room;
     this.room = room;
@@ -77,13 +140,7 @@ export class UI {
     this.set('ccLevels', `/ ${room.levels || this.defs.levels?.length || 6}`);
     this.set('ccLevel', String(room.level || 1));
     this.set('ccLevelName', this.defs.levels?.[(room.level || 1) - 1]?.name || '');
-    this.set('ccRound', room.level ? `Round ${room.round}` : '');
-
-    if (phase === 'break' && prev?.phase !== 'break') {
-      this.breakBase = new Map(room.players.map((p) => [p.id, { ...(p.perks || {}) }]));
-      this.picks.clear();
-    }
-    if (phase !== 'break') this.breakBase = null;
+    this.set('ccRound', room.level ? `Turn ${room.round}` : '');
     if (phase === 'lobby') {
       this.show('lobby');
       this.clearBanners();
@@ -100,7 +157,7 @@ export class UI {
         }, 2800);
       } else if (!this.endTimer) this.show('end');
     } else this.show(phase === 'break' ? 'break' : 'game');
-    this.renderPlayers(room);
+    this.$('ccQueue').classList.toggle('two', room.players.length > 4);
     if (phase === 'break') this.renderBreak(room);
     const running = phase !== 'lobby' && phase !== 'won' && phase !== 'lost';
     this.$('ccPaused').classList.toggle('on', running && !room.players.some((p) => p.connected));
@@ -118,49 +175,66 @@ export class UI {
     }
   }
 
-  // ------------------------------------------------------------ players
+  // ------------------------------------------------------------ queue strip
 
-  renderPlayers(room) {
-    const phase = room.phase;
-    const key = JSON.stringify([room.players.map((p) => [p.id, p.name, p.color, p.connected, p.away, p.planned, p.ready, !!p.offer]), room.host, phase]);
-    if (key === this._pk) return;
-    this._pk = key;
-    const L = this.$('ccPlayersL');
-    const R = this.$('ccPlayersR');
-    const old = new Map([...this.root.querySelectorAll('.cc-chip')].map((el) => [el.dataset.pid, el]));
+  // st = { plans: Map pid -> {acts, done}, cur: slot index | -1, machines, marks: Map "pid|slot" -> mark, resolving }
+  renderQueue(st) {
+    const room = this.room;
+    const n = this.slots;
+    const plansKey = [];
+    for (const p of room.players) {
+      const pl = st.plans.get(p.id);
+      plansKey.push([p.id, p.name, p.color, p.away, p.id === room.host, pl?.acts || [], !!pl?.done]);
+    }
+    const marks = [];
+    for (const [k, m] of st.marks) marks.push([k, m.kind, m.text]);
+    const key = JSON.stringify([plansKey, st.cur, st.machines, marks, st.resolving, n]);
+    if (key === this._qk) return;
+    this._qk = key;
+    const box = this.$('ccQueue');
+    const old = new Map([...box.children].map((el) => [el.dataset.pid, el]));
     const els = [];
     for (const p of room.players) {
       let el = old.get(p.id);
       if (!el) {
         el = document.createElement('div');
-        el.className = 'cc-chip';
+        el.className = 'cc-q';
         el.dataset.pid = p.id;
-        el.innerHTML = `<span class="cc-sw">${GEAR_SVG()}</span><span class="cc-nm"></span><span class="cc-host">${CROWN_SVG}</span><span class="cc-st"></span>`;
+        el.innerHTML = `<div class="cc-qh"><span class="cc-sw">${GEAR_SVG()}</span><span class="cc-nm"></span><span class="cc-host">${CROWN_SVG}</span><span class="cc-qst"></span></div><div class="cc-qs"></div>`;
       }
+      const pl = st.plans.get(p.id) || { acts: [], done: false };
       el.style.setProperty('--pc', p.color);
       el.querySelector('.cc-nm').textContent = p.name;
       el.classList.toggle('away', !!p.away);
       el.classList.toggle('isHost', p.id === room.host);
-      let st = '';
-      let done = false;
-      if (phase === 'plan') {
-        done = p.planned;
-        st = p.planned ? TICK_SVG : p.away ? '' : DOTS;
-      } else if (phase === 'break') {
-        done = p.ready;
-        st = p.ready ? TICK_SVG : p.away ? '' : DOTS;
+      el.classList.toggle('done', !!pl.done && !st.resolving);
+      const stHtml = st.resolving ? '' : pl.done ? `<span class="cc-done">${TICK_SVG}Done</span>` : p.away ? '<span class="cc-aw">away</span>' : DOTS;
+      const stEl = el.querySelector('.cc-qst');
+      if (stEl.dataset.k !== stHtml) {
+        stEl.dataset.k = stHtml;
+        stEl.innerHTML = stHtml;
       }
-      el.classList.toggle('done', done);
-      const stEl = el.querySelector('.cc-st');
-      if (stEl.dataset.k !== st) {
-        stEl.dataset.k = st;
-        stEl.innerHTML = st;
+      let slots = '';
+      for (let i = 0; i < n; i++) {
+        const act = pl.acts?.[i];
+        const m = st.marks.get(`${p.id}|${i}`);
+        const cls = ['cc-slot'];
+        if (act) cls.push('filled');
+        if (st.cur === i) cls.push('cur');
+        else if (st.resolving && (st.machines || (st.cur >= 0 && i < st.cur))) cls.push('past');
+        if (m) cls.push(`mk-${m.kind}`);
+        const mk = m ? `<span class="cc-mk">${m.kind === 'ok' ? '✓' : m.kind === 'fizzle' ? '✗' : '!'}</span>${m.text ? `<span class="cc-mt">${esc(m.text)}</span>` : ''}` : '';
+        slots += `<div class="${cls.join(' ')}"><span class="cc-sn">${i + 1}</span>${act ? actIcon(act) : ''}${mk}</div>`;
+      }
+      const qs = el.querySelector('.cc-qs');
+      if (qs.dataset.k !== slots) {
+        qs.dataset.k = slots;
+        qs.innerHTML = slots;
       }
       els.push(el);
     }
-    const split = els.length > 4 ? Math.ceil(els.length / 2) : els.length;
-    L.replaceChildren(...els.slice(0, split));
-    R.replaceChildren(...els.slice(split));
+    box.replaceChildren(...els);
+    box.style.setProperty('--cols', String(Math.min(4, Math.max(1, els.length > 4 ? Math.ceil(els.length / 2) : els.length))));
   }
 
   // ------------------------------------------------------------ per frame
@@ -169,19 +243,26 @@ export class UI {
     const room = this.room;
     if (!room) return;
     const phase = room.phase;
+    const snap = game.snap;
     const left = game.left(now);
     let lbl = '';
     let val = '';
     let hurry = false;
+    const present = room.players.filter((p) => !p.away && p.connected);
+    const doneN = present.filter((p) => game.plans.get(p.id)?.done).length;
     if (phase === 'plan') {
-      const n = room.players.filter((p) => !p.away && p.planned).length;
-      const of = room.players.filter((p) => !p.away).length;
-      lbl = `Plans in: ${n} of ${of}`;
-      val = String(Math.ceil(left));
-      hurry = left <= 3.0;
+      if (snap?.untimed) {
+        lbl = 'First turn — no timer';
+        val = '';
+      } else {
+        lbl = 'Plan your steps';
+        val = String(Math.ceil(left));
+        hurry = left <= 3.0;
+      }
+      this.set('ccRound', `Done: ${doneN} of ${present.length}`);
     } else if (phase === 'resolve') {
       lbl = 'Watch the keep!';
-      val = '';
+      this.set('ccRound', `Turn ${room.round}`);
     } else if (phase === 'break') {
       lbl = 'Next level in';
       val = String(Math.ceil(left));
@@ -192,6 +273,7 @@ export class UI {
     const top = this.$('ccTop');
     if (top.classList.contains('hurry') !== hurry) top.classList.toggle('hurry', hurry);
     if (top.dataset.ph !== phase) top.dataset.ph = phase;
+    top.classList.toggle('untimed', phase === 'plan' && !!snap?.untimed);
     const wall = game.wallNow ?? game.board?.wall;
     const max = game.board?.wallMax || this.defs.wallHP || 10;
     if (wall !== null && wall !== undefined) {
@@ -201,9 +283,32 @@ export class UI {
       if (this._k.bar !== pct) {
         this._k.bar = pct;
         this.$('ccWallBar').style.width = pct;
-        this.$('ccTop').classList.toggle('low', wall / max <= 0.3);
+        top.classList.toggle('low', wall / max <= 0.3);
       }
     }
+
+    // queue strip and step indicator
+    if (phase === 'plan' || phase === 'resolve') {
+      const st = game.queueState(now);
+      this.renderQueue(st);
+      let step = '';
+      if (st.machines) step = 'Machines advance';
+      else if (st.cur >= 0) step = `Step ${st.cur + 1}`;
+      if (step !== this._step) {
+        this._step = step;
+        const el = this.$('ccStep');
+        el.className = '';
+        el.innerHTML = step ? `<span class="cc-stl">${esc(step)}</span>${st.machines ? '' : `<span class="cc-sto">of ${this.slots}</span>`}` : '';
+        if (step) {
+          void el.offsetWidth;
+          el.className = st.machines ? 'on mach' : 'on';
+        }
+      }
+    } else if (this._step) {
+      this._step = '';
+      this.$('ccStep').className = '';
+    }
+    this.$('ccQueue').classList.toggle('on', phase === 'plan' || phase === 'resolve');
   }
 
   wallHit() {
@@ -212,8 +317,6 @@ export class UI {
     void el.offsetWidth;
     el.classList.add('hit');
   }
-
-  resolveStart() {}
 
   // ------------------------------------------------------------ cards and banners
 
@@ -233,19 +336,15 @@ export class UI {
   }
 
   levelClear(ev) {
+    this.lastClear = ev;
     const total = this.room?.levels || this.defs.levels?.length || 6;
     if (ev.level >= total) return; // the end screen says it
-    this.banner(`Level ${ev.level} cleared`, `Wall ${ev.wall} / ${this.defs.wallHP || ''}`.replace(/ \/ $/, ''), 'clear');
+    if (this.room?.phase === 'break') this.renderBreak(this.room);
   }
 
   bossArrives(ev) {
     const nm = this.defs.machines?.[ev.kind]?.name || 'The boss';
     this.banner(`${nm} approaches!`, '', 'boss');
-  }
-
-  perk(ev) {
-    this.picks.set(ev.pid, ev.id);
-    if (this.room?.phase === 'break') this.renderBreak(this.room, ev.pid);
   }
 
   banner(title, sub, kind) {
@@ -281,37 +380,29 @@ export class UI {
 
   // ------------------------------------------------------------ break
 
-  renderBreak(room, flash) {
+  renderBreak(room) {
     const defs = this.defs;
     const total = room.levels || defs.levels?.length || 6;
     const next = defs.levels?.[room.level]; // levels are 1-based; the next one is index room.level
-    const pname = (id) => defs.perks?.[id]?.name || id;
-    const rows = room.players
-      .map((p) => {
-        let pick = this.picks.get(p.id);
-        if (!pick && this.breakBase) {
-          const base = this.breakBase.get(p.id) || {};
-          for (const [id, n] of Object.entries(p.perks || {})) if (n > (base[id] || 0)) pick = id;
-        }
-        let what;
-        if (pick) what = `<span class="cc-pick">${esc(pname(pick))}</span><span class="cc-pd">${esc(defs.perks?.[pick]?.desc || '')}</span>`;
-        else if (p.offer?.length) what = `<span class="cc-choosing">choosing: ${p.offer.map((id) => esc(pname(id))).join(' · ')}</span>`;
-        else what = `<span class="cc-choosing">${p.away ? 'away' : 'no perk this time'}</span>`;
-        return `<div class="cc-brow${p.away ? ' away' : ''}${flash === p.id ? ' flash' : ''}" style="--pc:${esc(p.color)}"><span class="cc-bn">${GEAR_SVG()}${esc(p.name)}</span><span class="cc-bw">${what}</span><span class="cc-br">${p.ready ? TICK_SVG : ''}</span></div>`;
-      })
+    const lc = this.lastClear?.level === room.level ? this.lastClear : null;
+    const wallMax = defs.wallHP || '';
+    const wallLine = lc ? `Wall ${lc.wall} / ${wallMax}${lc.heal ? ` <span class="cc-heal">+${esc(lc.heal)} repaired</span>` : ''}` : '';
+    const chips = room.players
+      .map((p) => `<span class="cc-rchip${p.ready ? ' ready' : ''}${p.away ? ' away' : ''}" style="--pc:${esc(p.color)}">${GEAR_SVG()}${esc(p.name)}${p.ready ? TICK_SVG : ''}</span>`)
       .join('');
-    const key = JSON.stringify([rows, room.level]);
-    if (key === this._bk && !flash) return;
-    this._bk = key;
-    this._k.ccBreakCount = undefined;
-    this.$('ccBreak').innerHTML = `
+    const html = `
       <div class="cc-bwrap">
         <div class="cc-bh">Level ${esc(room.level)} cleared</div>
-        <div class="cc-bsub">Pick a perk on your phone, then press Ready</div>
-        <div class="cc-brows">${rows}</div>
+        ${wallLine ? `<div class="cc-bwall">${BRICK_SVG} ${wallLine}</div>` : ''}
+        <div class="cc-bsub">Press Ready on your phone</div>
+        <div class="cc-rchips">${chips}</div>
         ${next ? `<div class="cc-next"><span class="cc-nl">Next: Level ${esc(room.level + 1)} of ${esc(total)}</span> <b>${esc(next.name)}</b><div class="cc-nd">${esc(next.desc || '')}</div>${bombRow(next, defs)}</div>` : ''}
         <div class="cc-bc">Next level in <b id="ccBreakCount"></b></div>
       </div>`;
+    if (html === this._bk) return;
+    this._bk = html;
+    this._k.ccBreakCount = undefined;
+    this.$('ccBreak').innerHTML = html;
     for (const c of this.$('ccBreak').querySelectorAll('canvas[data-kind]')) paintBomb(c);
   }
 
@@ -334,8 +425,8 @@ export class UI {
     const col = (pid) => byId.get(pid)?.color || '#d9b25a';
     const total = room.levels || defs.levels?.length || 6;
     const sub = won
-      ? `All ${total} levels held · ${end.rounds} rounds · wall ${end.wall} / ${defs.wallHP || ''} · ${fmtTime(end.time)}`
-      : `The wall fell on level ${end.level} of ${total} · ${end.rounds} rounds · ${fmtTime(end.time)}`;
+      ? `All ${total} levels held · ${end.rounds} turns · wall ${end.wall} / ${defs.wallHP || ''} · ${fmtTime(end.time)}`
+      : `The wall fell on level ${end.level} of ${total} · ${end.rounds} turns · ${fmtTime(end.time)}`;
     const awards = (end.awards || [])
       .map((a) => `<div class="cc-award" style="--pc:${esc(col(a.pid))}"><div class="at">${esc(a.title)}</div><div class="an">${esc(name(a.pid))}</div><div class="ad">${esc(a.detail || '')}</div></div>`)
       .join('');
@@ -349,24 +440,18 @@ export class UI {
       ['pickups', 'Pick-ups'],
       ['steps', 'Steps'],
       ['bumps', 'Bumps'],
+      ['fizzles', 'Fizzles'],
     ];
     const ids = Object.keys(end.stats || {});
     ids.sort((a, b) => (end.stats[b].kills || 0) - (end.stats[a].kills || 0) || (end.stats[b].dmg || 0) - (end.stats[a].dmg || 0));
     const best = {};
     for (const [k] of cols) best[k] = Math.max(0, ...ids.map((id) => end.stats[id][k] || 0));
-    const perkText = (id) => {
-      const m = end.stats[id].perks || {};
-      return Object.keys(m)
-        .filter((k) => m[k] > 0)
-        .map((k) => `${defs.perks?.[k]?.name || k}${m[k] > 1 ? ` ×${m[k]}` : ''}`)
-        .join(', ');
-    };
     const rows = ids
       .map((id) => {
         const s = end.stats[id];
         return `<tr style="--pc:${esc(col(id))}"><td class="who">${GEAR_SVG()}${esc(name(id))}</td>${cols
-          .map(([k]) => `<td class="${k === 'bumps' ? '' : s[k] && s[k] === best[k] ? 'best' : ''}">${Math.round(s[k] || 0)}</td>`)
-          .join('')}<td class="pk">${esc(perkText(id)) || '–'}</td></tr>`;
+          .map(([k]) => `<td class="${k === 'bumps' || k === 'fizzles' ? '' : s[k] && s[k] === best[k] ? 'best' : ''}">${Math.round(s[k] || 0)}</td>`)
+          .join('')}</tr>`;
       })
       .join('');
     const host = byId.get(room.host);
@@ -377,9 +462,9 @@ export class UI {
     el.innerHTML = `
       <div class="cc-endwrap ${won ? 'won' : 'lost'}">
         <h1 class="cc-et">${won ? 'Victory' : 'Defeat'}</h1>
-        <div class="cc-es">${esc(sub.replace(/ \/ ·/, ' ·'))}</div>
+        <div class="cc-es">${esc(sub)}</div>
         ${awards ? `<div class="cc-awards">${awards}</div>` : ''}
-        <table class="cc-stats"><thead><tr><th>Engineer</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th class="pk">Perks</th></tr></thead><tbody>${rows}</tbody></table>
+        <table class="cc-stats"><thead><tr><th>Engineer</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
         <div class="cc-ew">${host ? `Waiting for <b style="color:${esc(host.color)}">${esc(host.name)}</b> to start a new game` : 'Waiting for the host'}<span class="cc-dots"></span></div>
       </div>`;
     el.classList.toggle('compact', ids.length > 5);

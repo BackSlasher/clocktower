@@ -52,7 +52,7 @@ export async function createTVSound({ audio, ready }) {
         play('build', { pan: P(catXY(game, ev.cat)), gain: 0.9 });
         break;
       case 'fizzle':
-        play('sell', { pan: P(c.at), gain: 0.5, rate: 0.7 });
+        play('sell', { pan: P(c.at), gain: 0.6, rate: 0.6 });
         break;
       case 'fire':
         play('shot_mortar', { pan: P(catXY(game, ev.cat)) });
@@ -81,8 +81,12 @@ export async function createTVSound({ audio, ready }) {
       case 'level_clear':
         play('wave_clear');
         break;
-      case 'perk':
-        play('upgrade', { gain: 0.8 });
+      case 'step':
+        // one music-box tink per step, rising: step 1, 2, 3, 4
+        play('ready', { gain: 0.7, rate: 0.85 + 0.15 * (c.slot || 0) });
+        break;
+      case 'machines':
+        play('build', { gain: 0.55, rate: 0.6 });
         break;
     }
   };
