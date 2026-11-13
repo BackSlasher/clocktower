@@ -65,14 +65,11 @@
 .ccarrow.se svg { transform: rotate(135deg); }
 .ccarrow.sw svg { transform: rotate(-135deg); }
 .ccarrow:disabled { filter: grayscale(1) brightness(0.38); }
-.ccpad.throwing .ccarrow:not(:disabled), .ccpad.picking .ccarrow:not(:disabled) { background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); box-shadow: 0 0 16px rgb(255 182 72 / 0.65), 0 3px 0 var(--brass-700); }
-.cchub { position: absolute; left: 50%; top: 50%; width: 32%; height: 32%; transform: translate(-50%, -50%); border-radius: 50%; padding: 0; font: inherit; background: var(--c, #999); border: 5px solid var(--soot-900); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.7), 0 4px 14px rgb(0 0 0 / 0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; color: #10181a; line-height: 1; }
-.cchub:disabled { opacity: 1; filter: none; }
+.ccpad.throwing .ccarrow:not(:disabled) { background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); box-shadow: 0 0 16px rgb(255 182 72 / 0.65), 0 3px 0 var(--brass-700); }
+.cchub { position: absolute; left: 50%; top: 50%; width: 32%; height: 32%; transform: translate(-50%, -50%); border-radius: 50%; background: var(--c, #999); border: 5px solid var(--soot-900); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.7), 0 4px 14px rgb(0 0 0 / 0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; color: #10181a; line-height: 1; }
 .cchub b { font-family: var(--font-display); font-weight: 800; font-size: clamp(1rem, calc(var(--pad) * 0.09), 2rem); }
 .cchub small { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; }
-.cchub.tap { pointer-events: auto; background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); box-shadow: 0 0 0 3px #fff, 0 0 20px rgb(255 182 72 / 0.9); animation: ccglow 0.9s ease-in-out infinite alternate; }
 .ccpad.throwing .cchub { box-shadow: 0 0 0 3px var(--gas-glow), 0 0 18px rgb(255 182 72 / 0.8); }
-@keyframes ccglow { to { box-shadow: 0 0 0 3px #fff, 0 0 6px rgb(255 182 72 / 0.5); } }
 
 /* overlays (resolve, away) cover everything under the queue */
 .ccgame > .ccover { grid-row: 3 / -1; grid-column: 1 / -1; z-index: 2; }
@@ -88,19 +85,20 @@
 .ccstate.done { border-color: var(--verdigris); color: #b6f0dc; background: #12302a; }
 .ccstate.picking { border-color: var(--gas-glow); color: #ffe2a8; }
 
-/* actions, with a tall Done on the right */
+/* actions: two big pairs, a quieter Undo under them, a tall Done on the right */
 .ccbtns { grid-area: btns; display: grid; gap: 8px; min-height: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.15fr); grid-template-rows: repeat(2, minmax(50px, 1fr));
-  grid-template-areas: "pickup throw load done" "fire wait undo done"; }
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.05fr); grid-template-rows: minmax(52px, 1fr) minmax(52px, 1fr) minmax(40px, 0.62fr);
+  grid-template-areas: "pickup throw done" "load wait done" "undo undo done"; }
 .ccbtns [data-act="pickup"] { grid-area: pickup; }
 .ccbtns [data-act="throw"] { grid-area: throw; }
 .ccbtns [data-act="load"] { grid-area: load; }
-.ccbtns [data-act="fire"] { grid-area: fire; }
 .ccbtns [data-act="wait"] { grid-area: wait; }
 .ccbtns [data-act="undo"] { grid-area: undo; }
 .ccact, .ccdone { min-height: 0; padding: 0.2em 0.4em; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; gap: 2px; }
-.ccact b { font-size: 1.08rem; }
-.ccact small, .ccdone small { font-family: var(--font-body); font-weight: 400; font-size: 0.7rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ccact b { font-size: 1.25rem; }
+.ccact[data-act="undo"] { flex-direction: row; gap: 10px; }
+.ccact[data-act="undo"] b { font-size: 1.05rem; }
+.ccact small, .ccdone small { font-family: var(--font-body); font-weight: 400; font-size: 0.72rem; opacity: 0.85; text-align: center; line-height: 1.15; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ccact:disabled, .ccdone:disabled { filter: grayscale(0.9) brightness(0.5); }
 .ccact.armed { background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); box-shadow: 0 0 14px rgb(255 182 72 / 0.7), 0 3px 0 var(--brass-700); }
 .ccdone { grid-area: done; background: linear-gradient(180deg, #8be0c8, var(--verdigris)); color: #06261d; border-color: #2a6e5c; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 3px 0 #2a6e5c; }
@@ -144,7 +142,7 @@ body:has(#ccGame:not([hidden])) .toast { left: 10px; right: 10px; top: auto; bot
   .cctop { padding-top: 1px; padding-bottom: 4px; }
   .menubtn { height: 34px; }
   .ccslot { height: 46px; }
-  .ccact b { font-size: 0.98rem; }
+  .ccact b { font-size: 1.1rem; }
   .ccact small, .ccdone small { font-size: 0.62rem; }
   .ccdone b { font-size: 1.3rem; }
   .ccstate { min-height: 38px; font-size: 0.85rem; }

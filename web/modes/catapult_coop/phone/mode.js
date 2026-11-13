@@ -21,7 +21,7 @@ const PAD = [
 const glyph = (dx, dy) => PAD.find((p) => p.d[0] === dx && p.d[1] === dy)?.g || '';
 const BOMB_COLORS = { keg: '#b5743a', grapeshot: '#9aa6aa', stopwatch: '#7fd4ff' };
 const bombColor = (kind) => BOMB_COLORS[kind] || '#ccc';
-const ACT_NAME = { move: 'Move', throw: 'Throw', pickup: 'Pick up', load: 'Load', fire: 'Fire', wait: 'Wait' };
+const ACT_NAME = { move: 'Move', throw: 'Throw', pickup: 'Pick up', load: 'Load', wait: 'Wait' };
 const PLAN_ERR = new Set(['bad_request', 'too_late', 'paused']);
 const ARROW_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 22 13h-6v8.5H8V13H2z"/></svg>';
 
@@ -40,7 +40,7 @@ const HTML = `
     <div id="ccQueue" class="ccqueue"></div>
     <div id="ccPad" class="ccpad">
       ${PAD.map((p) => `<button class="btn ccarrow ${p.id}" type="button" data-dir="${p.id}" aria-label="${p.g}"><span class="arw">${ARROW_SVG}</span></button>`).join('')}
-      <button id="ccHub" class="cchub" type="button" disabled><b></b><small></small></button>
+      <div id="ccHub" class="cchub"><b></b><small></small></div>
     </div>
     <div id="ccResolve" class="ccover" hidden><div class="gear spin">&#9881;</div><b class="display">Watch the TV</b><span id="ccResolveSub">Everyone's queues are playing out</span></div>
     <button id="ccAway" class="ccover away" type="button" hidden><b class="display">You sat down</b><span>Tap to rejoin. Filing any action stands you back up.</span></button>
@@ -50,10 +50,9 @@ const HTML = `
       <button id="ccClear" class="btn sm ghost" type="button">Clear</button>
     </div>
     <div id="ccBtns" class="ccbtns">
-      <button class="btn ccact" type="button" data-act="pickup"><b>Pick up</b><small>then an arrow</small></button>
+      <button class="btn ccact" type="button" data-act="pickup"><b>Pick up</b><small>what's under you</small></button>
       <button class="btn ccact" type="button" data-act="throw"><b>Throw</b><small>then an arrow</small></button>
-      <button class="btn ccact" type="button" data-act="load"><b>Load</b><small>next catapult</small></button>
-      <button class="btn ccact" type="button" data-act="fire"><b>Fire</b><small>next catapult</small></button>
+      <button class="btn ccact" type="button" data-act="load"><b>Load</b><small>next to a catapult — it fires itself</small></button>
       <button class="btn ccact ghost" type="button" data-act="wait"><b>Wait</b><small>one step</small></button>
       <button class="btn ccact ghost" type="button" data-act="undo"><b>Undo</b><small>last step</small></button>
       <button id="ccDone" class="btn ccdone" type="button"><b>Done</b><small></small></button>
@@ -105,12 +104,13 @@ export async function mount(ctx) {
   // My queue as last sent. The server echoes it in snap.plans; until the echo arrives (or if it
   // is refused) the phone shows what it sent. key = the turn it belongs to.
   let mine = { key: '', acts: [], done: false, at: 0, prev: null };
-  let mode = null; // 'throw' | 'pickup': waiting for an arrow (pickup: or the hub)
+  let mode = null; // 'throw': waiting for an arrow
   let screen = '';
   let awayDismissed = false;
   let undoneAt = 0; // an edit cleared Done: say so for a moment
   let feedback = []; // what happened to me in the last resolve, shown when it ends
   let res = null; // { ev, t0 } the resolve being played, to light up its slots
+  const loads = new Map(); // bomb id -> my feedback line for loading it, this resolve
   const timers = [];
 
   const me = () => st.players.get(ctx.you);
@@ -169,20 +169,16 @@ export async function mount(ctx) {
     if (awayShown()) dismissAway();
     const [dx, dy] = PAD.find((p) => p.id === id).d;
     if (mode === 'throw') append({ a: 'throw', dx, dy });
-    else if (mode === 'pickup') append({ a: 'pickup', dx, dy });
     else append({ a: 'move', dx, dy });
   }
   for (const b of $('ccPad').querySelectorAll('[data-dir]')) b.onclick = () => onArrow(b.dataset.dir);
-  // the hub: with Pick up armed, the undirected pick-up (underfoot, else the nearest)
-  $('ccHub').onclick = () => { if (mode === 'pickup') append({ a: 'pickup' }); };
 
   function onAction(act) {
     if (!canEdit()) return;
     if (awayShown()) dismissAway();
     switch (act) {
-      case 'pickup': if (mode === 'pickup') append({ a: 'pickup' }); else arm('pickup'); break; // twice = undirected
       case 'throw': arm('throw'); break;
-      case 'load': case 'fire': case 'wait': append({ a: act }); break;
+      case 'pickup': case 'load': case 'wait': append({ a: act }); break;
       case 'undo': mode = null; truncate(queue().acts.length - 1); break;
     }
   }
@@ -280,13 +276,12 @@ export async function mount(ctx) {
 
   const FIZZLE = {
     blocked: () => "can't step that way",
-    no_bomb: () => 'nothing to pick up',
+    no_bomb: () => 'no bomb under you',
     hands_full: () => 'hands already full',
     empty_hands: (a) => (a === 'load' ? 'nothing to load' : 'nothing to throw'),
     no_target: () => 'nowhere to throw',
     no_catapult: () => 'not next to a catapult',
     catapult_full: () => 'the catapult was already loaded',
-    catapult_empty: () => 'the catapult was empty',
   };
   function onEvent(e) {
     const you = ctx.you;
@@ -294,6 +289,7 @@ export async function mount(ctx) {
     switch (e.e) {
       case 'resolve':
         res = { ev: e, t0: performance.now() };
+        loads.clear();
         feedback = feedback.filter((f) => f.keep);
         break;
       case 'fizzle':
@@ -321,24 +317,24 @@ export async function mount(ctx) {
       case 'pickup':
         if (e.pid !== you) break;
         if (e.result === 'ok') say(step + `picked up a ${bombName(e.kind)}`);
-        else if (e.result === 'contested') say(step + 'someone grabbed for it too: nobody got it', true);
-        else if (e.result === 'hands_full') say(step + 'hands full: no pick-up', true);
-        else say(step + 'the bomb was gone', true);
+        else say(step + 'hands full: no pick-up', true);
         break;
       case 'load':
         if (e.pid !== you) break;
-        if (e.result === 'ok') say(step + `loaded a ${bombName(e.kind)}`);
-        else if (e.result === 'contested') say(step + 'two loaders, one catapult: neither loaded', true);
-        else say(step + 'load fizzled', true);
+        if (e.result === 'ok') { say(step + `loaded catapult ${e.cat + 1}`); loads.set(e.bomb, feedback.at(-1)); }
+        else say(step + 'two loaders, one catapult: neither loaded', true);
         break;
-      case 'fire':
+      case 'fire': { // catapults fire by themselves; pid = whoever loaded that bomb
         if (e.pid !== you) break;
-        if (e.result === 'ok') {
-          const kills = e.hits.filter((x) => x.killed).length;
-          say(step + (kills ? `boom! ${kills} machine${kills > 1 ? 's' : ''} destroyed` : e.hits.length ? `hit ${e.hits.length} machine${e.hits.length > 1 ? 's' : ''}` : 'fired'));
-        } else if (e.result === 'wasted') say(step + 'fired into an empty lane', true);
-        else say(step + 'someone fired it first', true);
+        const hits = e.hits || [];
+        const kills = hits.filter((x) => x.killed).length;
+        const what = e.kind === 'stopwatch' && !kills ? `froze ${hits.length} machine${hits.length > 1 ? 's' : ''}`
+          : kills ? `${kills} machine${kills > 1 ? 's' : ''} destroyed` : `hit ${hits.length} machine${hits.length > 1 ? 's' : ''}`;
+        const mine = loads.get(e.bomb); // loaded in this same resolve
+        if (mine) mine.msg += ` — it fired! ${what}`;
+        else say(`Your ${bombName(e.kind)} in catapult ${e.cat + 1} fired: ${what}`);
         break;
+      }
       case 'wall': { // one line for all the wall hits of a resolve
         const w = feedback.find((f) => f.wall != null);
         if (w) { w.wall += e.dmg; w.msg = `The wall took ${w.wall} damage`; } else feedback.push({ msg: `The wall took ${e.dmg} damage`, bad: true, wall: e.dmg });
@@ -413,8 +409,7 @@ export async function mount(ctx) {
       if (a) {
         main = ACT_NAME[a.a] || a.a;
         if (a.dx != null && (a.dx || a.dy)) sub = glyph(a.dx, a.dy);
-        else if (a.a === 'pickup') sub = 'here / nearest';
-      } else if (i === next) main = mode === 'throw' ? 'Throw…' : mode === 'pickup' ? 'Pick up…' : 'next';
+      } else if (i === next) main = mode === 'throw' ? 'Throw…' : 'next';
       cells.push(h('button', { class: cls.join(' '), type: 'button', 'data-slot': i, 'aria-label': `Step ${i + 1}` },
         h('em', {}, String(i + 1)), h('b', {}, main), sub ? h('span', { class: sub.length === 1 ? 'gl' : 'sb' }, sub) : null));
     }
@@ -456,7 +451,6 @@ export async function mount(ctx) {
     else if (!e) txt = 'No engineer yet: you join at the next free spot';
     else if (awayShown()) txt = 'You sat down';
     else if (mode === 'throw') txt = 'Throw which way? Tap an arrow';
-    else if (mode === 'pickup') txt = 'Pick up which way? An arrow, or the middle for underfoot / nearest';
     else if (q.done) txt = q.acts.length ? 'Done ✓ waiting for the others · any change un-does it' : 'Done ✓ doing nothing this turn';
     else if (performance.now() - undoneAt < 3000) txt = 'Changed: not done any more. Tap Done again';
     else if (full) txt = 'Queue full: tap Done';
@@ -470,20 +464,16 @@ export async function mount(ctx) {
 
     // arrows and the hub: never greyed for legality, only when nothing can be added
     $('ccPad').classList.toggle('throwing', mode === 'throw');
-    $('ccPad').classList.toggle('picking', mode === 'pickup');
     for (const b of $('ccPad').querySelectorAll('[data-dir]')) b.disabled = !live || full;
     const hub = $('ccHub');
     hub.style.setProperty('--c', p?.color || '#999');
-    hub.disabled = !(live && mode === 'pickup' && !full);
-    hub.classList.toggle('tap', !hub.disabled);
-    hub.querySelector('b').textContent = mode === 'pickup' ? 'HERE' : st.initials.get(ctx.you) || '';
-    hub.querySelector('small').textContent = mode === 'pickup' ? 'or nearest' : mode === 'throw' ? 'throw' : live ? 'move' : '';
+    hub.querySelector('b').textContent = st.initials.get(ctx.you) || '';
+    hub.querySelector('small').textContent = mode === 'throw' ? 'throw' : live ? 'move' : '';
 
     for (const b of $('ccBtns').querySelectorAll('[data-act]')) {
       const act = b.dataset.act;
       b.disabled = !live || (act === 'undo' ? !q.acts.length : full);
       b.classList.toggle('armed', mode === act);
-      if (act === 'pickup') b.querySelector('small').textContent = mode === 'pickup' ? 'again: here / nearest' : 'then an arrow';
     }
     const done = $('ccDone');
     done.disabled = !live;
@@ -537,7 +527,7 @@ export async function mount(ctx) {
     const secs = Math.round(end?.time || 0);
     $('ccEndSub').textContent = `Level ${end?.level ?? r.level}/${r.levels} · ${end?.rounds ?? 0} turns · wall ${end?.wall ?? 0} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     const s = end?.stats?.[ctx.you] || {};
-    const tiles = [['kills', 'Kills'], ['dmg', 'Damage'], ['fires', 'Fires'], ['loads', 'Loads'], ['throws', 'Throws'], ['catches', 'Catches'], ['pickups', 'Pick-ups'], ['steps', 'Steps'], ['bumps', 'Bumps'], ['fizzles', 'Fizzles']];
+    const tiles = [['kills', 'Kills'], ['dmg', 'Damage'], ['loads', 'Loads'], ['throws', 'Throws'], ['catches', 'Catches'], ['pickups', 'Pick-ups'], ['steps', 'Steps'], ['bumps', 'Bumps'], ['fizzles', 'Fizzles']];
     $('ccEndMine').replaceChildren(...tiles.map(([k, l]) => h('div', {}, h('b', {}, Math.round(s[k] || 0)), h('span', {}, l))));
     $('ccEndAwards').replaceChildren(...(end?.awards || []).map((a) => h('div', { class: 'award' + (a.pid === ctx.you ? ' me' : '') },
       h('i', { class: 'dot', style: `background:${st.players.get(a.pid)?.color || '#999'}` }),
@@ -584,7 +574,8 @@ export async function mount(ctx) {
     items.push(confirmItem('leave', 'Leave game', 'Leave this game?', () => { $('ccMenu').hidden = true; ctx.leave(); }));
     $('ccMenuBody').replaceChildren(
       h('div', { class: 'ttl' }, 'How a turn works'),
-      h('p', { class: 'cchelp' }, `File up to ${SLOTS} steps, then Done. Everyone's step 1 plays at once, then step 2, and so on. Each step is judged when it comes up: one that can't happen just fizzles.`),
+      h('p', { class: 'cchelp' }, `Walk onto a bomb and pick it up. Get it to a catapult on the ramparts: carry it, or throw it in a straight line to a teammate (the first engineer on the line catches it if their hands are free). Load it from the walkway next to the catapult: a loaded catapult fires by itself as soon as its lane has a machine.`),
+      h('p', { class: 'cchelp' }, `Each turn, file up to ${SLOTS} steps, then Done. Everyone's step 1 plays at once, then step 2, and so on. A step that can't happen when it comes up just fizzles.`),
       ...(kick ? [kick] : []), h('div', { class: 'mrow' }, items));
   }
 
