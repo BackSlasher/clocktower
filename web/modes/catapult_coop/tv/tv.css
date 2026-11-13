@@ -1053,10 +1053,6 @@
 .cc-slot.mk-fizzle .cc-ic { opacity: 0.35; }
 .cc-slot[class*='mk-'] .cc-ic { transform: translateY(-9px) scale(0.86); }
 
-#ccQueue.two .cc-slot { height: 86px; }
-#ccQueue.two .cc-ic { width: 68px; height: 68px; }
-#ccQueue.two .cc-qh { height: 38px; font-size: 28px; }
-
 /* ------------------------------------------------------------------ step indicator */
 
 #ccStep {

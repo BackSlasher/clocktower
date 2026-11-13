@@ -346,11 +346,16 @@ function renderModes() {
   if (!multi()) return;
   const cur = setup?.mode || room?.mode;
   const host = isHost();
+  const n = room?.players?.length || 0;
   const card = (info) => {
     const on = info.id === cur;
-    const kids = [h('b', { class: 'mn display' }, info.name), h('span', { class: 'mt' }, info.tagline || '')];
+    // too many seated players for this mode: the host must remove someone first (the lobby ×)
+    const full = !on && info.maxPlayers > 0 && n > info.maxPlayers;
+    const range = info.maxPlayers ? (info.minPlayers === info.maxPlayers ? `${info.maxPlayers} players` : `${info.minPlayers || 1}–${info.maxPlayers} players`) : '';
+    const kids = [h('b', { class: 'mn display' }, info.name), h('span', { class: 'mt' }, info.tagline || ''),
+      range ? h('span', { class: 'mr' }, full ? `${range} · too many players` : range) : null];
     return host
-      ? h('button', { class: 'mcard' + (on ? ' on' : ''), type: 'button', 'aria-pressed': on ? 'true' : 'false', 'data-mode': info.id, onclick: () => { if (!on) send({ t: 'mode', id: info.id }); } }, kids)
+      ? h('button', { class: 'mcard' + (on ? ' on' : '') + (full ? ' full' : ''), type: 'button', disabled: full, 'aria-pressed': on ? 'true' : 'false', 'data-mode': info.id, onclick: () => { if (!on && !full) send({ t: 'mode', id: info.id }); } }, kids)
       : h('div', { class: 'mcard static on', 'data-mode': info.id }, kids);
   };
   const list = host ? welcome.modes : welcome.modes.filter((i) => i.id === cur);

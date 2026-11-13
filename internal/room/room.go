@@ -2,6 +2,7 @@ package room
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand/v2"
 	"time"
 
@@ -30,6 +31,7 @@ type Room struct {
 	idleSince time.Time
 	tick      int
 	pausedBy  string // pid of the host who paused the game; "" = not paused
+	nextPID   int    // one above the highest player id number ever seated here
 }
 
 type joinReq struct {
@@ -363,13 +365,19 @@ func (rm *Room) switchMode(pid, id string) error {
 	if g.Phase() != mode.PhaseLobby {
 		return &mode.Error{Code: "bad_request", Msg: "The mode can only change in the lobby"}
 	}
-	if _, ok := rm.reg.cfg.Modes.Get(id); !ok {
+	m, ok := rm.reg.cfg.Modes.Get(id)
+	if !ok {
 		return &mode.Error{Code: "bad_request", Msg: "No such mode"}
 	}
 	if id == rm.modeID {
 		return nil
 	}
+	// Every seated player counts, connected or not; nobody is dropped silently.
+	if len(g.Roster()) > m.MaxPlayers {
+		return mode.ErrTooManyPlayers(m.Info)
+	}
 	ng := rm.newGame(id, g.Roster())
+	ng.ReservePIDs(rm.nextPID) // ids of removed players are never handed out again
 	rm.game, rm.modeID = ng, id
 	rm.lastPhase = mode.PhaseLobby
 	// Players the new mode could not seat lose their seat.
@@ -453,6 +461,10 @@ func (rm *Room) handleJoin(j joinReq) joinResp {
 			}
 			token = newToken()
 			rm.tokens[token] = pid
+			var n int
+			if _, err := fmt.Sscanf(pid, "p%d", &n); err == nil && n >= rm.nextPID {
+				rm.nextPID = n + 1
+			}
 		}
 		if old := rm.players[pid]; old != nil {
 			old.kill(websocket.StatusNormalClosure, "replaced")

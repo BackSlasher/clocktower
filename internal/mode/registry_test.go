@@ -64,3 +64,21 @@ func TestDefault(t *testing.T) {
 		t.Fatal("not listed")
 	}
 }
+
+func TestRegisterPlayerLimits(t *testing.T) {
+	r := NewRegistry()
+	r.Register(Info{ID: "a"}, func(*rand.Rand, []Member) Game { return nil })
+	if i := r.List()[0]; i.MinPlayers != 1 || i.MaxPlayers != 8 {
+		t.Fatalf("defaults %+v", i)
+	}
+	r.Register(Info{ID: "b", MinPlayers: 2, MaxPlayers: 4}, func(*rand.Rand, []Member) Game { return nil })
+	if e := ErrTooManyPlayers(Info{Name: "B", MaxPlayers: 4}); e.Code != "too_many_players" || e.Msg != "B takes up to 4 players — remove someone first" {
+		t.Fatalf("%+v", e)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("bad limits should panic")
+		}
+	}()
+	r.Register(Info{ID: "c", MinPlayers: 3, MaxPlayers: 2}, func(*rand.Rand, []Member) Game { return nil })
+}

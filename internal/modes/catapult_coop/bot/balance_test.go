@@ -13,7 +13,7 @@ import (
 // TestBotsPlay is a quick smoke test: a handful of games, every plan the bots
 // send is accepted (Run panics otherwise) and games finish.
 func TestBotsPlay(t *testing.T) {
-	for _, n := range []int{1, 3, 6} {
+	for _, n := range []int{1, 3, 4} {
 		r := Run(Scenario{Players: n, Seed: 5})
 		if r.End == nil || r.Rounds == 0 {
 			t.Fatalf("%d bots: %v", n, r)
@@ -25,7 +25,7 @@ func TestBotsPlay(t *testing.T) {
 // TestTutorialTrivial: any team clears the tutorial with the wall intact or
 // nearly so.
 func TestTutorialTrivial(t *testing.T) {
-	for _, n := range []int{1, 2, 4, 8} {
+	for _, n := range []int{1, 2, 3, 4} {
 		for seed := uint64(1); seed <= 3; seed++ {
 			r := Run(Scenario{Players: n, Seed: seed})
 			if r.Level < 2 && !r.Won {
@@ -61,13 +61,9 @@ func TestBalance(t *testing.T) {
 		{"1 sloppy", sloppy(1)},
 		{"2 sloppy", sloppy(2)},
 		{"3 sloppy", sloppy(3)},
-		{"5 sloppy", sloppy(5)},
-		{"6 sloppy", sloppy(6)},
-		{"7 sloppy", sloppy(7)},
-		{"8 sloppy", sloppy(8)},
 		{"3 sloppy + 1 idle", Scenario{Players: 3, Idle: 1, Mistake: 0.25}},
 		{"1 perfect", Scenario{Players: 1}},
-		{"8 perfect", Scenario{Players: 8}},
+		{"2 perfect", Scenario{Players: 2}},
 	}
 	if f := os.Getenv("CT_BALANCE_ONLY"); f != "" {
 		var keep []scen

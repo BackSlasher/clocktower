@@ -1,7 +1,7 @@
 # `catapult_coop` — design
 
 Second mode for Clocktower. Internal id `catapult_coop`; display name
-"Bomb Voyage" (kept in one place, free to change). Status: server built
+"Hold the Keep" (kept in one place, free to change). Status: server built
 (`internal/modes/catapult_coop`, behind the server flag `-wip-modes`); web
 clients to come. Wire contract: docs/PROTOCOL.md, "Mode `catapult_coop`".
 
@@ -19,7 +19,8 @@ way breaks the chain. The fun is the shouting during planning ("no, throw it
 *left*, I'm on the rampart!") and the groan when two people both went for the
 same bomb.
 
-1–8 players, best at 3–5.
+1–4 players, best at 3–4 (the mode's `maxPlayers`; the lobby refuses to switch
+to it with more players seated).
 
 ## The keep
 
@@ -35,10 +36,10 @@ corner.
   wall, 3 cells long. Four catapults, four lanes. Machines appear at the far
   end of a lane and step toward the wall, one step a turn.
 
-The keep is larger for big groups (9 × 9 cells with a 7 × 7 courtyard for
-1–5 players, 11 × 11 for 6–8). Its outer shape (size, wall, the four
-catapults and their lanes) is fixed for the whole game, so the TV camera
-never moves.
+There is one keep (id `small`): 9 × 9 cells with a 7 × 7 courtyard. Its
+outer shape (size, wall, the four catapults and their lanes) never changes,
+so the TV camera never moves, and with at most four players the TV's queue
+strip is always a single row under it.
 
 **The interior belongs to the level.** Each level brings its own layout of
 the keep: which courtyard cells are crates, which are raised platforms
@@ -50,7 +51,7 @@ and the board is cleared of
 bombs (in hands, in catapults, on the ground) before the level's own bombs are
 placed. Layouts are ASCII drawings in the code; a test checks every one (all
 catapults reachable from every start cell, every bomb reachable, no
-walled-off pockets). Today each keep has four layouts: *open* (flat, the
+walled-off pockets). The keep has four layouts: *open* (flat, the
 tutorial), *crates*, *platform* (a raised platform with a bomb on it) and
 *split* (a line of crates splitting the courtyard, two platforms).
 
@@ -264,7 +265,6 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
   until they return.
 - **Restart** (host) works in any phase but the lobby. The next game's first
   turn is untimed again.
-- **Keep size** is chosen at the start by the number of players in the room.
 
 ## Balance notes
 
@@ -280,24 +280,23 @@ Current knobs: wall 16 HP, lanes 3 cells, every machine moving one step a
 turn (Clockroaches two), each level one wave at its start, bombs on the ground
 players + 2, three start seats on the ramparts, machine counts and Iron Baron
 HP per team size in each level's data (tuned by searching a ladder of
-single-machine steps per team size), no heal at breaks. Results, 100 games
+single-machine steps per team size), no heal at breaks. Results, 200 games
 per row:
 
 | team | wins | wall left when won (of 16) | turns per game | losses |
 |------|------|----------------------------|----------------|--------|
-| 4 perfect bots | 100% | 7.7 | 18 | — |
-| 4 bots, 15% wasted | 93% | 3.6 | 18 | level 6 |
-| **4 sloppy (25% wasted)** | **53%** | 2.3 | 18 | level 6 |
-| 4 sloppy, 10% pointless moves on top | 9% | 1.2 | 18 | levels 5–6 |
-| 1 / 2 / 3 sloppy | 51% / 67% / 68% | 1.5 / 1.7 / 2.4 | 18 / 18 / 18 | level 6 |
-| 5 / 6 / 7 / 8 sloppy | 68% / 60% / 65% / 67% | 2.2 / 2.0 / 2.1 / 2.1 | 18 / 19 / 18 / 18 | level 6 |
-| 3 sloppy + 1 idle | 66% | 2.4 | 18 | level 6 |
-| 1 / 8 perfect | 100% / 100% | 3.2 / 8.1 | 17 / 17 | — |
+| 4 perfect bots | 100% | 7.8 | 18 | — |
+| 4 bots, 15% wasted | 93% | 3.5 | 18 | level 6 |
+| **4 sloppy (25% wasted)** | **52%** | 2.0 | 18 | levels 5–6 |
+| 4 sloppy, 10% pointless moves on top | 10% | 1.3 | 18 | levels 5–6 |
+| 1 / 2 / 3 sloppy | 51% / 61% / 67% | 1.6 / 1.6 / 2.1 | 18 / 18 / 18 | level 6 |
+| 3 sloppy + 1 idle | 64% | 2.2 | 18 | level 6 |
+| 1 / 2 perfect | 100% / 100% | 3.3 / 3.5 | 17 / 17 | — |
 
 Turns per level in a won 4-player game: about 2.5, 3, 3, 3, 3, 3. The
 tutorial and levels 2–5 are (almost) never lost; losses are on level 6.
 Wins end with a few hit points left.
 
-The outcome is steep in wasted actions (15% wasted wins 93%, 25% wins 53%),
+The outcome is steep in wasted actions (15% wasted wins 93%, 25% wins 52%),
 and pointless moves (bumps, walking out of a catcher's line) hurt much more
 than plain waiting.

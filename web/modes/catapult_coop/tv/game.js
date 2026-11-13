@@ -76,7 +76,7 @@ export class Game {
     const keep = this.keep();
     const lay = this.room?.layout;
     if (!keep || !lay || lay.w !== keep.w || lay.h !== keep.h) return;
-    const key = `${keep.id}|${this.rows()}|${JSON.stringify(lay.cells)}`;
+    const key = `${keep.id}|${JSON.stringify(lay.cells)}`;
     if (!force && key === this.sceneKey && this.scene) return;
     this.sceneKey = key;
     this.scene = new Scene(keep, lay, this.px, this.box());
@@ -87,13 +87,9 @@ export class Game {
     clearTimeout(this._rb);
   }
 
-  // queue strip rows below the scene: 1 for up to 4 players, else 2
-  rows() {
-    return (this.room?.players.length || 0) > 4 ? 2 : 1;
-  }
-
+  // the scene's box: below the top bar, above the one-row queue strip (at most 4 players)
   box() {
-    return { x0: 34, x1: W - 34, y0: 196, y1: H - (this.rows() === 2 ? 330 : 182) };
+    return { x0: 34, x1: W - 34, y0: 196, y1: H - 182 };
   }
 
   color(pid) {

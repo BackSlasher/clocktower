@@ -144,6 +144,9 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
 .mcard.on { border-color: var(--gas-glow); background: linear-gradient(170deg, var(--soot-600), var(--soot-800)); box-shadow: 0 0 12px rgb(255 182 72 / 0.3); }
 .mcard.on .mn { color: var(--brass-300); }
 .mcard.static { min-height: 0; }
+.mcard .mr { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); }
+.mcard.full { opacity: 0.55; }
+.mcard.full .mr { color: var(--danger); }
 button.mcard:active { transform: scale(0.98); }
 #mode { position: absolute; inset: 0; }
 .modeopts { display: flex; flex-direction: column; gap: 6px; flex: none; }

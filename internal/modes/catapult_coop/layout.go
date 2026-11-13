@@ -81,7 +81,7 @@ const laneLen = 3
 //	W outer wall (block, h1)   C catapult (h1)    = floor h1 (rampart, platform)
 //	. floor h0                 # crate (block h0) S stairs
 //	o bomb (floor h0)          * bomb (floor h1)  (space) void
-//	1–8 engineer start n (floor h0)   a–h engineer start 1–8 (floor h1)
+//	1–4 engineer start n (floor h0)   a–d engineer start 1–4 (floor h1)
 //
 // Engineers are seated in start order: player 1 on start 1, and so on.
 var keepArt = []struct {
@@ -89,15 +89,15 @@ var keepArt = []struct {
 	min, max int
 	layouts  map[string][]string
 }{
-	{"small", 1, 5, map[string][]string{
+	{"small", 1, 4, map[string][]string{
 		"open": {
 			"WWWCWWCWW",
 			"W====ba=S",
 			"W=.....o.",
 			"C=.......",
 			"W=...4...",
-			"Wc..56...",
-			"C=..78...",
+			"Wc.......",
+			"C=.......",
 			"W=.......",
 			"WS.......",
 		},
@@ -107,8 +107,8 @@ var keepArt = []struct {
 			"W=..o..#.",
 			"C=.#....o",
 			"W=...4.#.",
-			"Wco.56...",
-			"C=..78.o.",
+			"Wco......",
+			"C=.....o.",
 			"W=.#.....",
 			"WS...o...",
 		},
@@ -119,8 +119,8 @@ var keepArt = []struct {
 			"C=...==*.",
 			"W=...=S.o",
 			"Wc.4.....",
-			"C=56..#..",
-			"W=78..o..",
+			"C=....#..",
+			"W=....o..",
 			"WS.......",
 		},
 		"split": {
@@ -131,62 +131,8 @@ var keepArt = []struct {
 			"W=.==S...",
 			"Wc.*=#...",
 			"C=...#.4.",
-			"W=o...567",
-			"WS....8..",
-		},
-	}},
-	{"large", 6, 8, map[string][]string{
-		"open": {
-			"WWWCWWWWCWW",
-			"W==a=Sb=f=S",
-			"W=...o.....",
-			"Cg.........",
-			"W=.........",
-			"Wc...45....",
-			"WS...8.....",
-			"W=.........",
-			"C=.........",
-			"W=.........",
-			"WS.........",
-		},
-		"crates": {
-			"WWWCWWWWCWW",
-			"W==a=Sb=f=S",
-			"W=..o...#..",
-			"C=.#....o..",
-			"W=....#....",
-			"Wc.o.45..#.",
-			"WS...8....o",
-			"W=.#...o...",
-			"Cg......#..",
-			"W=..o......",
-			"WS.....#...",
-		},
-		"platform": {
-			"WWWCWWWWCWW",
-			"W==a=Sb=f=S",
-			"W=.o.......",
-			"C=...===*..",
-			"W=...=S=..o",
-			"Wc.......#.",
-			"WS...45....",
-			"W=...8...o.",
-			"Cg.#.......",
-			"W=...o.....",
-			"WS.........",
-		},
-		"split": {
-			"WWWCWWWWCWW",
-			"W==a=Sb=f=S",
-			"W=.o..#....",
-			"C=....#.o..",
-			"W=.==S#....",
-			"Wc.*=.#..o.",
-			"WS....S==..",
-			"W=.o..#=*..",
-			"Cg....#....",
-			"W=...45....",
-			"WS...8.....",
+			"W=o......",
+			"WS.......",
 		},
 	}},
 }
@@ -257,9 +203,9 @@ func parseLayout(id string, rows []string) *Layout {
 				c.Kind = KBlock
 			case 'S':
 				c.Kind = KStairs
-			case '1', '2', '3', '4', '5', '6', '7', '8':
+			case '1', '2', '3', '4':
 				starts[int(ch-'0')] = [2]int{x, y}
-			case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h':
+			case 'a', 'b', 'c', 'd':
 				c.H = 1
 				starts[int(ch-'a')+1] = [2]int{x, y}
 			case 'o':

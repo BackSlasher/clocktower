@@ -39,8 +39,11 @@ is imported from `/shared/` (`dom.js` has `$`, `esc`, `h`, `GEAR_SVG`, `CROWN_SV
 * The shell shows its lobby while `room.phase === "lobby"`. **Any other phase belongs to the
   mode**: its container is shown instead, so the mode draws the running game and its own end
   screen. A mode returns to the lobby by having the server move the room to phase `lobby`.
-* `defs.maxPlayers` (a number, optional) is the one thing the TV lobby reads from the mode's
-  defs (the "n / 8" counter, default 8).
+* Player limits come from the server's `mode.Info` and reach the pages in
+  `welcome.modes[i].minPlayers` / `maxPlayers`; the shells read them there (the TV's "n / max"
+  counter and range line, the phone's mode cards, disabled with "too many players" when the room
+  has more seated players than a mode's max). A module never needs them for the lobby; a mode's
+  `defs.maxPlayers`, if it sends one, must match and is only a fallback.
 
 ## The contract
 

@@ -52,7 +52,7 @@ func board(t *testing.T, n int) (*Game, []string) {
 	t.Helper()
 	g, ids := started(t, n)
 	l := parseLayout("test", flatArt)
-	k := &Keep{ID: "test", MinPlayers: 1, MaxPlayers: 8, W: l.W, H: l.H, Layouts: map[string]*Layout{"test": l}}
+	k := &Keep{ID: "test", MinPlayers: 1, MaxPlayers: 4, W: l.W, H: l.H, Layouts: map[string]*Layout{"test": l}}
 	k.Catapults, k.Lanes = shellOf(l)
 	g.keep, g.lay = k, l
 	g.cats = make([]*BombRef, len(k.Catapults))

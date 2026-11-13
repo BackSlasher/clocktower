@@ -36,9 +36,9 @@ func TestStartSeatsEngineers(t *testing.T) {
 	if !strings.HasPrefix(strings.Join(names, ","), "level_start,place,place,place,bomb") {
 		t.Fatalf("events %v", names)
 	}
-	g6, _ := started(t, 6)
-	if g6.keep.ID != "large" {
-		t.Fatal("6 players should get the large keep")
+	g4, _ := started(t, 4)
+	if g4.keep.ID != "small" || len(g4.lay.Spawns) < 4 {
+		t.Fatal("4 players use the one keep")
 	}
 }
 
@@ -372,17 +372,17 @@ func TestReconnectAndLateJoin(t *testing.T) {
 }
 
 func TestHostMigrationAndFullRoom(t *testing.T) {
-	g, ids := newGame(t, 8)
+	g, ids := newGame(t, Defs.MaxPlayers)
 	g.SetConnected(ids[0], false)
 	if g.Host() != ids[1] {
 		t.Fatalf("host %s", g.Host())
 	}
-	_, ev, err := g.AddPlayer("Ninth")
+	_, ev, err := g.AddPlayer("Fifth")
 	if err != nil || ev != ids[0] {
 		t.Fatalf("%v %s", err, ev)
 	}
 	_ = g.Start(g.Host())
-	if _, _, err := g.AddPlayer("Tenth"); err == nil {
+	if _, _, err := g.AddPlayer("Sixth"); err == nil {
 		t.Fatal("room should be full")
 	}
 }
@@ -412,11 +412,11 @@ func TestModeAdapter(t *testing.T) {
 	}
 	s := gm.Setup()
 	var mp MapT
-	if err := json.Unmarshal(s.Map, &mp); err != nil || len(mp.Keeps) != 2 || len(mp.Keeps[0].Lanes) != 4 {
+	if err := json.Unmarshal(s.Map, &mp); err != nil || len(mp.Keeps) != 1 || len(mp.Keeps[0].Lanes) != 4 {
 		t.Fatalf("map %s", s.Map)
 	}
 	var d map[string]any
-	if err := json.Unmarshal(s.Defs, &d); err != nil || d["maxPlayers"].(float64) != 8 || d["slots"].(float64) != 4 || d["perks"] != nil {
+	if err := json.Unmarshal(s.Defs, &d); err != nil || d["maxPlayers"].(float64) != 4 || d["slots"].(float64) != 4 || d["perks"] != nil {
 		t.Fatalf("defs %s", s.Defs)
 	}
 	b, _ := json.Marshal(gm.RoomState())

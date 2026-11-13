@@ -45,7 +45,7 @@ no external network requests** (no CDNs, no web fonts).
 | `CLOCKTOWER_BASE_URL` / `-base-url` | (unset) | public base URL used in the QR/join link, e.g. `https://ct.example.com`. If unset, derived from the TV's request: `X-Forwarded-Proto`/`X-Forwarded-Host` if present, else scheme + `Host`. |
 | `-dev`                          | off      | serve `web/` from disk instead of the embedded copy |
 | `-stub-mode`                    | off      | also register the dev-only `stub` mode (id `stub`, "Stub"), so the lobby has something to choose; testing only |
-| `-wip-modes`                    | off      | also register the work-in-progress modes, after the product modes and before `stub`: today `catapult_coop` ("Bomb Voyage"). Without it the binary serves exactly one mode (no picker). |
+| `-wip-modes`                    | off      | also register the work-in-progress modes, after the product modes and before `stub`: today `catapult_coop` ("Hold the Keep"). Without it the binary serves exactly one mode (no picker). |
 
 ## HTTP
 
@@ -97,7 +97,8 @@ snapshots are sent at 10 Hz and clients interpolate.
   "joinHost": "host",        // short text for "go to HOST and enter ABCD"
   "mode": "tower_defense",   // the room's current mode id (see "Modes")
   "modes": [ { "id": "tower_defense", "name": "Cobble Crawlers",
-               "tagline": "Hold the streets of Brasswick" } ],  // all modes, in order
+               "tagline": "Hold the streets of Brasswick",
+               "minPlayers": 1, "maxPlayers": 8 } ],  // all modes, in order
   "map": Map,                // map and defs belong to the current mode
   "defs": Defs }
 ```
@@ -193,7 +194,7 @@ Events:
 ```jsonc
 { "t": "error", "code": "poor" | "occupied" | "not_owner" | "max_level" | "not_host"
                       | "bad_request" | "no_room" | "room_full" | "bad_name"
-                      | "paused" | "kicked",
+                      | "paused" | "kicked" | "too_many_players",
   "msg": "Not enough cogs" }     // human-readable, phones show it as a toast
 ```
 
@@ -230,7 +231,7 @@ Additive details; nothing above changed meaning.
 - **Joining**: the joiner always gets `welcome`, then `room`, then (if the game
   is running or finished) one `snap` with `ev: []`. A TV gets the same.
 - **`room.host`** is `""` only while the room has no players. Player ids are
-  `p1`, `p2`, … and are never reused within a room.
+  `p1`, `p2`, … and are never reused within a room (not after a kick, a leave, a lobby eviction or a mode switch either).
 - **Pausing**: the simulation (including the build countdown) stops while no
   player is connected.
 - **Purses** are integers on the wire; split bounties keep fractional cogs
@@ -287,7 +288,11 @@ protocol.
 - `room` carries `"mode": "<id>"`.
 - Client → server `{ "t": "mode", "id": "<id>" }` (players only). Host only
   (`not_host`), lobby only, and the id must be registered (both `bad_request`).
-  Selecting the current mode does nothing. Otherwise the room replaces its game
+  Selecting the current mode does nothing. If the room has more players seated
+  (connected or not) than the new mode's `maxPlayers`, the switch is refused
+  with `error` `too_many_players` ("Hold the Keep takes up to 4 players —
+  remove someone first", built from that mode's info); the host removes
+  someone (`kick`) and tries again. Otherwise the room replaces its game
   with a new one of that mode, keeping the players (ids, names, colours,
   tokens, connected state, host), and sends **every** connection, TV included,
   `{ "t": "setup", "mode": "<id>", "map": Map, "defs": Defs }` followed by a
@@ -300,8 +305,15 @@ protocol.
   selection and no mode name. With two or more, the host's phone shows one card
   (name + tagline) per mode and sends `mode`; other phones and the TV show the
   current mode's name and tagline. Display names come only from `welcome.modes`.
-- The generic lobby reads one optional field of the mode's `defs`:
-  `maxPlayers` (number, default 8), for the "n / max" counter.
+- **Player limits** live in each mode's info: `welcome.modes[i].minPlayers` /
+  `maxPlayers` (`tower_defense` 1–8, `catapult_coop` 1–4, `stub` 1–8). A
+  mode refuses joins beyond its max with `room_full` (in the lobby a
+  disconnected player is evicted first, as before). The lobbies read the
+  limits from `welcome.modes` only: the TV's "n / max" counter (and, with 2+
+  modes, the range under the mode name), the phone's mode cards ("1–4
+  players"; a card is disabled with "too many players" while the room has
+  more seated players than its max). Modes still send `defs.maxPlayers` with
+  the same value, as a fallback.
 - The server's `-stub-mode` flag registers a second, do-nothing mode
   (`stub`: lobby, host `start`, a "running" phase whose snaps carry `seconds`,
   host `restart` back to the lobby) so this path can be tested.
@@ -440,7 +452,7 @@ Additive to everything above; see docs/DESIGN.md "Perks".
 
 Work in progress; registered only with the server flag `-wip-modes`. Id
 `catapult_coop`; the display name and tagline come only from `welcome.modes`
-(today "Bomb Voyage" / "Bombs up, machines down"). Game design:
+(today "Hold the Keep" / "Pass the powder, man the catapults"). Game design:
 docs/CATAPULT_COOP.md. Server code: `internal/modes/catapult_coop`.
 
 Everything in "Websocket", "Modes" and the generic parts of `welcome`/`room`
@@ -481,9 +493,9 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
   left, `(0,1)` down, `(0,-1)` up.
 - A **keep** is the fixed outer shell for a whole game: size, the outer wall
   (row `y = 0` and column `x = 0`), four catapults in that wall (two per
-  side) and their lanes. It is chosen when the game starts, by the number of
-  players in the room then (`small`: 1–5 players, 9 × 9; `large`: 6–8, 11 × 11),
-  and never changes during the game. In the TV's isometric view the row
+  side) and their lanes. There is one keep today (`small`: 1–4 players,
+  9 × 9); `map.keeps` stays a list and `room.keep` names the one in use. It
+  never changes during the game. In the TV's isometric view the row
   `y = 0` and the column `x = 0` are the two far sides, seen from the
   `(w, h)` corner.
 - A **layout** is one level's interior of that keep: every cell's kind and
@@ -518,9 +530,9 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
 ### `welcome` / `setup`: `map`
 
 ```jsonc
-Map = { "keeps": [ Keep, … ] }      // smallest first
+Map = { "keeps": [ Keep ] }         // one keep today
 Keep = {
-  "id": "small", "minPlayers": 1, "maxPlayers": 5, "w": 9, "h": 9,
+  "id": "small", "minPlayers": 1, "maxPlayers": 4, "w": 9, "h": 9,
   "catapults": [ { "id": 0, "x": 3, "y": 0, "lane": 0 }, … ],   // 4, ids 0..3
   "lanes": [ { "id": 0, "cat": 0, "len": 3, "dir": [0,-1], "x": 3, "y": -1 }, … ] }
 ```
@@ -532,7 +544,7 @@ because it changes from level to level.
 
 ```jsonc
 Defs = {
-  "maxPlayers": 8,
+  "maxPlayers": 4,              // same as welcome.modes[…].maxPlayers
   "wallHP": 16,                 // wall hit points at the start (and maximum)
   "slots": 4,                   // actions per player per turn
   "planTime": 20,               // seconds of a plan phase; the game's first turn has no timer
@@ -836,7 +848,7 @@ Their engineer stays on the board (keeping what it carries).
 
 ### Joining, leaving, host
 
-- 1–8 players. Joining is allowed in every phase while there is a free seat
+- 1–4 players. Joining is allowed in every phase while there is a free seat
   (in the lobby a full room evicts a disconnected player, as in the other
   modes). A player who connects while a game runs gets an engineer at once on
   the first free start cell of the current layout (`place` event), with no

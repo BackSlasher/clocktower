@@ -501,7 +501,6 @@ export async function mount(ctx) {
     const key = r.players.map((p) => [p.id, ok(p), p.away, p.connected].join()).join('|') + what;
     if (box.dataset.key === key) return;
     box.dataset.key = key;
-    box.classList.toggle('many', r.players.length > 4);
     box.replaceChildren(...r.players.map((p) => {
       const cls = 'who' + (ok(p) ? ' ok' : '') + (p.away ? ' away' : '') + (p.id === ctx.you ? ' me' : '');
       return h('span', { class: cls, title: p.name },

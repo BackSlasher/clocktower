@@ -9,14 +9,17 @@ package mode
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand/v2"
 )
 
 // Info describes a registered mode. It is sent to clients in `welcome.modes`.
 type Info struct {
-	ID      string `json:"id"`      // stable: code, package, wire protocol
-	Name    string `json:"name"`    // display name, free to change
-	Tagline string `json:"tagline"` // one line under the name
+	ID         string `json:"id"`         // stable: code, package, wire protocol
+	Name       string `json:"name"`       // display name, free to change
+	Tagline    string `json:"tagline"`    // one line under the name
+	MinPlayers int    `json:"minPlayers"` // players needed to start (Register defaults 0 to 1)
+	MaxPlayers int    `json:"maxPlayers"` // seats; the game refuses more (Register defaults 0 to 8)
 }
 
 // Phase is a game phase. Modes may define their own phases; the room layer
@@ -47,6 +50,13 @@ var (
 	ErrBadName    = &Error{Code: "bad_name", Msg: "Pick a name of 1–12 characters"}
 )
 
+// ErrTooManyPlayers refuses switching to a mode with fewer seats than the
+// room has players.
+func ErrTooManyPlayers(info Info) *Error {
+	return &Error{Code: "too_many_players",
+		Msg: fmt.Sprintf("%s takes up to %d players — remove someone first", info.Name, info.MaxPlayers)}
+}
+
 // Member is one player as carried across a mode switch.
 type Member struct {
 	ID        string
@@ -75,6 +85,11 @@ type Game interface {
 	// (as on a disconnect; "" once nobody is left) and bumps SlowVersion.
 	// An unknown pid is a no-op.
 	RemovePlayer(pid string)
+	// ReservePIDs tells a game that ids p1 … p(next−1) have been used in
+	// this room (possibly by players no longer in the roster it adopted), so
+	// its own numbering must continue at next or later: ids are never reused
+	// within a room. The room calls it right after the factory.
+	ReservePIDs(next int)
 	Host() string
 	// Roster lists the players in join order, for carrying over to another
 	// mode's factory.
@@ -101,5 +116,7 @@ type Game interface {
 
 // Factory makes a game for a room. A non-empty roster is the player list of
 // the mode being replaced; the new game must adopt it (ids, names, colours,
-// connected state, host), dropping players it cannot seat.
+// connected state, host). The room never hands a factory more players than
+// its Info.MaxPlayers (the switch is refused instead), and the game must
+// itself refuse joins beyond that number (room_full).
 type Factory func(rng *rand.Rand, roster []Member) Game

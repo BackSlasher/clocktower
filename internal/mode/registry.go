@@ -28,6 +28,15 @@ func (r *Registry) Register(info Info, f Factory) {
 	if info.ID == "" || f == nil {
 		panic("mode: Register needs an id and a factory")
 	}
+	if info.MinPlayers == 0 {
+		info.MinPlayers = 1
+	}
+	if info.MaxPlayers == 0 {
+		info.MaxPlayers = 8
+	}
+	if info.MinPlayers < 1 || info.MaxPlayers < info.MinPlayers {
+		panic(fmt.Sprintf("mode: %q has bad player limits %d–%d", info.ID, info.MinPlayers, info.MaxPlayers))
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, m := range r.modes {

@@ -14,7 +14,8 @@ import (
 const ModeID = "catapult_coop"
 
 // Info is the registry entry.
-var Info = mode.Info{ID: ModeID, Name: "Bomb Voyage", Tagline: "Bombs up, machines down"}
+var Info = mode.Info{ID: ModeID, Name: "Hold the Keep", Tagline: "Pass the powder, man the catapults",
+	MinPlayers: 1, MaxPlayers: Defs.MaxPlayers}
 
 // Register adds the mode to the default registry.
 func Register() { RegisterTo(mode.Default) }

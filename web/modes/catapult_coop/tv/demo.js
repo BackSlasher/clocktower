@@ -1,12 +1,11 @@
-// Dev-only showcase: /tv?demo=plan|resolve|break|won|lost|boss[&n=8] feeds synthetic room and
+// Dev-only showcase: /tv?demo=plan|resolve|break|won|lost|boss[&n=1..4] feeds synthetic room and
 // snap messages through the normal handlers, so every screen can be looked at without playing
 // to it. Uses the real setup (keeps + defs) from the server; the interior layouts below are
 // sample drawings in the server's notation (W wall, C catapult, = raised floor, . floor,
 // # crate, S stairs). `ctDebug.game.freezeT = 1.35` holds a resolve playback at 1.35 s
 // (the middle of step 2 in the resolve scene).
 
-const ARTS = {
-  9: [
+const ART = [
     'WWWCWWCWW',
     'W=======S',
     'W=.o.....',
@@ -16,21 +15,7 @@ const ARTS = {
     'C=....#..',
     'W=....o..',
     'WS.......',
-  ],
-  11: [
-    'WWWCWWWWCWW',
-    'W====S====S',
-    'W=.o..#....',
-    'C=....#.o..',
-    'W=.==S#....',
-    'W=.*=.#..o.',
-    'WS....S==..',
-    'W=.o..#=*..',
-    'C=....#....',
-    'W=.........',
-    'WS.........',
-  ],
-};
+];
 
 function layoutFrom(rows, id) {
   const cells = rows.map((row) =>
@@ -61,10 +46,9 @@ const W8 = { a: 'wait' };
 
 export function startDemo(kind, setup, deliver) {
   const { map, defs } = setup;
-  const N = Math.min(8, Math.max(1, Number(new URLSearchParams(location.search).get('n')) || 4));
-  const keep = N > 5 ? map.keeps[map.keeps.length - 1] : map.keeps[0];
-  const big = keep.w > 9;
-  const lay = layoutFrom(ARTS[keep.w] || ARTS[9], big ? 'split' : 'platform');
+  const N = Math.min(4, Math.max(1, Number(new URLSearchParams(location.search).get('n')) || 4));
+  const keep = map.keeps[0];
+  const lay = layoutFrom(ART, 'platform');
   const names = ['Ada', 'Brunel', 'Tesla', 'Babbage', 'Lovelace-Byr', 'Watt', 'Faraday', 'Stephenson'];
   const colors = ['#e0a030', '#4fb39a', '#d1594a', '#6a8cff', '#c06adf', '#8fd14f', '#f0f0f0', '#ff8fb0'];
   const levels = defs.levels?.length || 6;
@@ -198,19 +182,13 @@ export function startDemo(kind, setup, deliver) {
         // slot 1 (index 0): Ada steps onto the loading cell; Babbage climbs
         ev.push({ e: 'move', s: 'move', slot: 0, pid: pid(0), from: [2, 1], to: [3, 1], result: 'ok' });
         if (N > 3) ev.push({ e: 'move', s: 'move', slot: 0, pid: pid(3), from: [6, 5], to: [6, 4], result: 'ok' });
-        if (N > 4) ev.push({ e: 'move', s: 'move', slot: 0, pid: pid(4), from: [4, 7], to: [3, 7], result: 'ok' });
-        if (N > 5) ev.push({ e: 'move', s: 'move', slot: 0, pid: pid(5), from: [2, 6], to: [2, 7], result: 'ok' });
-        if (N > 7) ev.push({ e: 'move', s: 'move', slot: 0, pid: pid(7), from: [8, 8], to: [8, 7], result: 'bump' });
         // slot 2 (index 1): Tesla throws up the column at Ada, whose hands are full: blocked
         ev.push({ e: 'throw', s: 'throw', slot: 1, pid: pid(2), bomb: 102, kind: 'stopwatch', from: [3, 5], dir: [0, -1], to: [3, 1], result: 'blocked', by: pid(0), at: [3, 1] });
         if (N > 3) ev.push({ e: 'move', s: 'move', slot: 1, pid: pid(3), from: [6, 4], to: [6, 3], result: 'ok' });
-        if (N > 7) ev.push({ e: 'move', s: 'move', slot: 1, pid: pid(7), from: [8, 8], to: [9, 8], result: 'ok' });
         ev.push({ e: 'fizzle', s: 'grab', slot: 1, pid: pid(1), a: 'pickup', at: [5, 1], reason: 'no_bomb' });
-        if (N > 4) ev.push({ e: 'fizzle', s: 'grab', slot: 1, pid: pid(4), a: 'pickup', at: [3, 7], reason: 'no_bomb' });
         ev.push({ e: 'load', s: 'grab', slot: 1, pid: pid(0), cat: c0.id, bomb: 100, kind: 'keg', result: 'ok' });
         // slot 3 (index 2): Babbage throws up into the empty rampart; Brunel steps; Ada fires
         if (N > 3) ev.push({ e: 'throw', s: 'throw', slot: 2, pid: pid(3), bomb: 103, kind: 'grapeshot', from: [6, 3], dir: [0, -1], to: [6, 1], result: 'landed', at: [6, 1] });
-        if (N > 4) ev.push({ e: 'fizzle', s: 'throw', slot: 2, pid: pid(4), a: 'throw', at: [3, 7], reason: 'empty_hands' });
         ev.push({ e: 'move', s: 'move', slot: 2, pid: pid(1), from: [5, 1], to: [4, 1], result: 'ok' });
         ev.push({ e: 'move', s: 'move', slot: 2, pid: pid(2), from: [3, 5], to: [4, 5], result: 'ok' });
         ev.push({ e: 'fire', s: 'fire', slot: 2, pid: pid(0), cat: c0.id, lane: c0.lane, bomb: 100, kind: 'keg', result: 'ok', hits: [{ id: 1, dmg: 2, hp: 0, killed: true, frozen: 0 }] });
@@ -226,9 +204,6 @@ export function startDemo(kind, setup, deliver) {
         engB[1] = { ...engB[1], x: 4, y: 1 };
         engB[2] = { ...engB[2], x: 4, y: 5, carry: null };
         if (N > 3) engB[3] = { ...engB[3], x: 6, y: 3, carry: null };
-        if (N > 4) engB[4] = { ...engB[4], x: 3, y: 7 };
-        if (N > 5) engB[5] = { ...engB[5], x: 2, y: 7 };
-        if (N > 7) engB[7] = { ...engB[7], x: 9, y: 8 };
         const bB = [...bombs, { id: 102, kind: 'stopwatch', x: 3, y: 1 }, ...(N > 3 ? [{ id: 103, kind: 'grapeshot', x: 6, y: 1 }] : []), { id: 60, kind: 'keg', x: 7, y: 8 }].filter((b, i, a) => a.findIndex((o) => o.x === b.x && o.y === b.y) === i);
         const mB = [
           { ...machines[1], frozen: 0 },

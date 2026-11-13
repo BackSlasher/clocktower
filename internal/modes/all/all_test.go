@@ -50,7 +50,7 @@ func TestWIPModesOrder(t *testing.T) {
 	if got := ids(r); len(got) != 2 || got[0] != "tower_defense" || got[1] != "catapult_coop" {
 		t.Fatalf("with wip: %v", got)
 	}
-	if m, _ := r.Get("catapult_coop"); m.Name != "Bomb Voyage" || m.Tagline != "Bombs up, machines down" {
+	if m, _ := r.Get("catapult_coop"); m.Name != "Hold the Keep" || m.Tagline != "Pass the powder, man the catapults" {
 		t.Fatalf("catapult_coop info: %+v", m.Info)
 	}
 	if _, ok := mode.Get("catapult_coop"); ok {

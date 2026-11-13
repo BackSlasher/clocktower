@@ -19,7 +19,7 @@ import (
 // ModeID is the mode's stable id; Info is the one place its display name lives.
 const ModeID = "stub"
 
-var Info = mode.Info{ID: ModeID, Name: "Stub", Tagline: "Test mode — does nothing"}
+var Info = mode.Info{ID: ModeID, Name: "Stub", Tagline: "Test mode — does nothing", MinPlayers: 1, MaxPlayers: maxPlayers}
 
 // PhaseRunning is the only phase besides the lobby.
 const PhaseRunning mode.Phase = "running"
@@ -172,6 +172,9 @@ func (g *Game) SetConnected(pid string, on bool) {
 	}
 	g.slowVer++
 }
+
+// ReservePIDs keeps ids unique across mode switches.
+func (g *Game) ReservePIDs(next int) { g.nextPID = max(g.nextPID, next) }
 
 // RemovePlayer drops a player for good; the host moves on as on a disconnect.
 func (g *Game) RemovePlayer(pid string) {

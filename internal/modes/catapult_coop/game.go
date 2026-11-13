@@ -307,6 +307,10 @@ func (g *Game) migrateHost() {
 	}
 }
 
+// ReservePIDs keeps player ids unique across mode switches: numbering
+// continues at next or later.
+func (g *Game) ReservePIDs(next int) { g.nextPID = max(g.nextPID, next) }
+
 // RemovePlayer takes a player out of the game for good (the room's kick and
 // leave), in any phase. Their engineer leaves the board; a bomb they carry
 // drops on their cell (settling like a landing bomb, `bomb` event). Their

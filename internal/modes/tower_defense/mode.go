@@ -14,7 +14,8 @@ import (
 const ModeID = "tower_defense"
 
 // Info is the registry entry.
-var Info = mode.Info{ID: ModeID, Name: "Cobble Crawlers", Tagline: "Hold the streets of Brasswick"}
+var Info = mode.Info{ID: ModeID, Name: "Cobble Crawlers", Tagline: "Hold the streets of Brasswick",
+	MinPlayers: 1, MaxPlayers: Defs.MaxPlayers}
 
 // Register adds the mode to the default registry. Call it once from wiring
 // code (see internal/modes/all).

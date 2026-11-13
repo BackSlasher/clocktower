@@ -359,6 +359,10 @@ func (g *Game) migrateHost() {
 	}
 }
 
+// ReservePIDs keeps player ids unique across mode switches: numbering
+// continues at next or later.
+func (g *Game) ReservePIDs(next int) { g.nextPID = max(g.nextPID, next) }
+
 // RemovePlayer takes a player out of the game for good (the room's kick and
 // leave), in any phase. Their towers stay and keep working but belong to
 // nobody (owner ""): anyone may still upgrade and wind them, nobody can sell

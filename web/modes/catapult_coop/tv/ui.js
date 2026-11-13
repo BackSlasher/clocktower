@@ -157,7 +157,6 @@ export class UI {
         }, 2800);
       } else if (!this.endTimer) this.show('end');
     } else this.show(phase === 'break' ? 'break' : 'game');
-    this.$('ccQueue').classList.toggle('two', room.players.length > 4);
     if (phase === 'break') this.renderBreak(room);
     const running = phase !== 'lobby' && phase !== 'won' && phase !== 'lost';
     this.$('ccPaused').classList.toggle('on', running && !room.players.some((p) => p.connected));
@@ -234,7 +233,7 @@ export class UI {
       els.push(el);
     }
     box.replaceChildren(...els);
-    box.style.setProperty('--cols', String(Math.min(4, Math.max(1, els.length > 4 ? Math.ceil(els.length / 2) : els.length))));
+    box.style.setProperty('--cols', String(Math.max(1, els.length))); // one row: at most 4 players
   }
 
   // ------------------------------------------------------------ per frame

@@ -70,6 +70,7 @@ func (g *stubGame) SetConnected(pid string, on bool) {
 	}
 	g.slow++
 }
+func (g *stubGame) ReservePIDs(next int) { g.next = max(g.next, next) }
 func (g *stubGame) RemovePlayer(pid string) {
 	for i, p := range g.players {
 		if p.ID == pid {
@@ -242,7 +243,7 @@ func TestWelcomeAndRoomCarryMode(t *testing.T) {
 	if w["mode"] != "alpha" {
 		t.Fatalf("mode = %v", w["mode"])
 	}
-	want := `[{"id":"alpha","name":"ALPHA","tagline":"tag alpha"},{"id":"beta","name":"BETA","tagline":"tag beta"}]`
+	want := `[{"id":"alpha","maxPlayers":8,"minPlayers":1,"name":"ALPHA","tagline":"tag alpha"},{"id":"beta","maxPlayers":8,"minPlayers":1,"name":"BETA","tagline":"tag beta"}]`
 	got, _ := json.Marshal(w["modes"])
 	if string(got) != want {
 		t.Fatalf("modes = %s", got)

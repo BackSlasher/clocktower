@@ -151,11 +151,17 @@ function renderModeLine() {
   if (info) {
     $('modeName').textContent = info.name;
     $('modeTag').textContent = info.tagline || '';
+    $('modeRange').textContent = rangeText(info);
   }
 }
 
+// The current mode's player limits: `welcome.modes` is the one source (defs.maxPlayers is a
+// fallback for a server that does not send them).
+const modeInfo = () => welcome?.modes?.find((m) => m.id === (setup?.mode || welcome?.mode)) || null;
+const rangeText = (i) => (i.minPlayers === i.maxPlayers ? `${i.maxPlayers} players` : `${i.minPlayers || 1}–${i.maxPlayers} players`);
+
 function renderLobby(r) {
-  const max = setup?.defs?.maxPlayers || 8;
+  const max = modeInfo()?.maxPlayers || setup?.defs?.maxPlayers || 8;
   const ps = r.players;
   $('pcount').textContent = `${ps.length} / ${max}`;
   const slots = Math.min(max, Math.max(4, ps.length + 1));

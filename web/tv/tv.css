@@ -470,3 +470,11 @@ body {
   color: var(--ink-dim);
   font-style: italic;
 }
+
+.mrange {
+  margin-top: 4px;
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
