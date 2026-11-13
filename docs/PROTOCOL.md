@@ -108,7 +108,8 @@ Map = {
   "w": 1920, "h": 1080,
   "tower": { "x": 960, "y": 540 },            // the clock tower (goal)
   "paths": [ { "pts": [[x,y], …] } ],          // polylines, spawn → tower
-  "plots": [ { "id": 0, "x": 400, "y": 300 } ] // build sites
+  "plots": [ { "id": 0, "x": 400, "y": 300 },     // build sites
+             { "id": 22, "x": 1130, "y": 800, "min": 5 } ] // min: open only when room.plotsFor ≥ min (absent = always)
 }
 Defs = {
   "towers": { "rivet": { "name": "Rivet Gun", "desc": "…",
@@ -135,6 +136,7 @@ present.
   "players": [ { "id": "p1", "name": "Ada", "color": "#e0a030",
                  "connected": true, "ready": false } ],
   "wave": 3,                   // current or upcoming wave, 1-based; 0 in lobby
+  "plotsFor": 4,               // plot tier: plots with min ≤ this exist (see below)
   "nextWave": [ { "kind": "scrap", "n": 12 }, … ],  // preview during build; else []
   "end": End | null }          // set in won/lost
 ```
@@ -185,7 +187,7 @@ Events:
 { "e": "sell",  "plot": 4, "pid": "p1", "refund": 66 }
 { "e": "wind",  "plot": 4, "pid": "p2" }                  // at most one per tower per snap per player
 { "e": "gift",  "from": "p1", "to": "p2", "amount": 50 }
-{ "e": "wave_start", "wave": 3 }
+{ "e": "wave_start", "wave": 3 }                          // + "by": "p1" when the host started it early with `go`
 { "e": "wave_clear", "wave": 3, "bonus": 40 }             // bonus = cogs each player received
 ```
 
@@ -207,6 +209,7 @@ Events:
 { "t": "sell",    "plot": 4 }
 { "t": "wind",    "plot": 4, "n": 3 }     // n taps since last send; send at most every 150 ms; server caps at 10 taps/s per player
 { "t": "ready",   "ready": true }         // build phase; every active connected player ready (≥1 ready) → wave starts now
+{ "t": "go" }                             // host, build phase: start the wave now, ready or not
 { "t": "gift",    "to": "p2", "amount": 50 }
 { "t": "restart" }                        // host; in won/lost, or mid-game to end it → back to lobby, same players
 { "t": "ping" }                           // optional; server replies { "t": "pong" }
@@ -225,7 +228,7 @@ Additive details; nothing above changed meaning.
   `groundOnly`, `ignoresArmor`, `chainRange` (tesla hop distance); per enemy
   `desc`, `boss`, `repair` (HP/s) and `repairRange`; top level
   `windRangeBonus`, `tensionDecay` (per second), `maxTapsPerSec`, `buildTime`,
-  `maxPlayers`, `hpPerPlayer`. The Chrono Pendulum has no fire rate, so its
+  `maxPlayers`, `hpPerPlayer`, `hpPlayerMul`. The Chrono Pendulum has no fire rate, so its
   tension widens its radius instead: `range × (1 + windRangeBonus × tension)`
   (`wind: "range"`). Every other tower: `rate × (1 + windBonus × tension)`.
 - **Joining**: the joiner always gets `welcome`, then `room`, then (if the game
@@ -257,6 +260,24 @@ Additive details; nothing above changed meaning.
   per-player cap (`maxTapsPerSec`, sim time) are dropped silently. Numbers that
   should be integers (`plot`, `n`, `amount`) are rejected if fractional. Gifts
   may go to disconnected players.
+- **Enemy HP scaling**: `hpPlayerMul[n − 1]` for `n` connected players (array
+  of `maxPlayers` multipliers). `hpPerPlayer` is kept: it is the per-player
+  step of the first four entries (`1 + hpPerPlayer × (n − 1)` up to 4); from 5
+  the table climbs faster.
+- **Plot tiers**: a plot with `min` exists only when `room.plotsFor ≥ min`;
+  plots without `min` always exist. In the lobby `plotsFor` is the number of
+  seated players (a preview, at least 1); `start` fixes it to the seated
+  players, and while the game runs it only rises (a player joining makes it
+  `max(plotsFor, players)`), never falls (leaving, kicks, disconnects), so a
+  plot that may hold a tower never closes. Clients draw and offer only open
+  plots. `build` on a closed plot gets `bad_request`.
+- **`go`** (host skips the wait): ends the build phase at once and starts the
+  wave, exactly as if the countdown had run out, whoever is or isn't ready.
+  Its `wave_start` event carries `"by"` (the host's id); a wave started by
+  the timer or the ready check has no `by`. Refused with `not_host` for
+  anyone else and `bad_request` outside the build phase (lobby, wave, won,
+  lost); like every game command it gets `paused` while the host has paused
+  the game. It counts as a game command for the idle rule.
 - **Full lobby**: if a 9th player joins while in the lobby, a disconnected
   player (if any) is removed to make room; otherwise `room_full`.
 - **Server busy** (room cap, connection cap, or room-creation rate limit per
@@ -800,9 +821,9 @@ left out of the `resolve` timeline.
 ### Phases and timing
 
 ```
-lobby --start--> plan(level 1, turn 1, untimed) --all done--> resolve --dur-->
+lobby --start--> plan(level 1, turn 1, untimed) --all done / host go--> resolve --dur-->
    ├─ wall ≤ 0 ............................................. lost
-   ├─ level done (script spawned, no machines left), not last → break --all ready / breakTime--> plan(next level, turn 1)
+   ├─ level done (script spawned, no machines left), not last → break --all ready / breakTime / host go--> plan(next level, turn 1)
    ├─ level done, last level ..................................... won
    └─ otherwise ............................................... plan(same level, turn + 1)
 restart (host, any phase but lobby) → lobby, same players
@@ -813,11 +834,12 @@ restart (host, any phase but lobby) → lobby, same players
   `planTime` runs out. The **game's first turn has no timer** (`snap.untimed`,
   `left: 0`) and ends only when every present player is done; disconnected
   players are not waited for. On a timeout, queues play as filed (done or
-  not).
+  not). The host can end it at once with `go` (same effect as a timeout).
 - **resolve**: lasts the `dur` of its `resolve` event. No commands change the
   board.
 - **break**: after every level but the last: a short intermission showing the
-  result. `breakTime` seconds, or until every present player sent `ready`. The
+  result. `breakTime` seconds, or until every present player sent `ready`,
+  or the host sends `go`. The
   wall gets `breakHeal` hit points back when it starts (in `level_clear`).
 - `won`/`lost`: final; `room.end` is set. `restart` returns to the lobby.
 - Everything pauses (timers too) while no player is connected.
@@ -877,6 +899,7 @@ integer is expected) gets `bad_request`.
 { "t": "start" }                          // host, lobby
 { "t": "plan", "acts": [ Act, … ], "done": true }   // replaces your whole queue; 0..slots acts
 { "t": "ready", "ready": true }            // break; "ready" optional, default true
+{ "t": "go" }                              // host; plan or break: end it now
 { "t": "restart" }                        // host; any phase but lobby
 ```
 
@@ -894,6 +917,15 @@ integer is expected) gets `bad_request`.
 | `plan` | `bad_request` | phase is lobby, won or lost; more than `slots` acts; unknown `a` (including the removed `fire`); `move`/`throw` without a unit direction; `dx`/`dy` on `pickup`, `load` or `wait` |
 | | `too_late` | phase is resolve or break (raced the end of the plan phase) |
 | `restart` | `not_host` / `bad_request` | not the host / already in the lobby |
+| `go` | `not_host` | not the host |
+| | `too_late` | phase is resolve |
+| | `bad_request` | phase is lobby, won or lost |
+
+`go` lets the host stop waiting: in a **plan** phase (timed or the untimed
+first turn) the turn resolves at once with every queue as filed, done or
+not, exactly as on a timeout (a player who filed nothing misses the turn as
+usual); in a **break** the next level starts at once, ready or not. Like
+every game command it gets `paused` while the host has paused the game.
 
 `ready` outside a break is ignored. Unknown message types (including the old
 `opt` and `perk`) are ignored.

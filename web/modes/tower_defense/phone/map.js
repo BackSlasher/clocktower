@@ -143,7 +143,7 @@ export class Minimap {
     const radius = this.zoom ? 56 : 46;
     let best = null;
     let bd = radius;
-    for (const p of map.plots) {
+    for (const p of openPlots(this.st)) {
       const [x, y] = this.toScreen(p.x, p.y);
       const d = Math.hypot(x - sx, y - sy);
       if (d < bd) {
@@ -268,7 +268,7 @@ export class Minimap {
     const pr = Math.max(11, 26 * s) * (this.zoom ? 1.0 : 1);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const p of map.plots) {
+    for (const p of openPlots(this.st)) {
       const x = p.x * s;
       const y = p.y * s;
       const t = towers.get(p.id);
@@ -360,4 +360,10 @@ export class Minimap {
     }
     ctx.restore();
   }
+}
+
+// The plots open at the room's tier (`plotsFor`: plots with min ≤ it; bigger groups get extra plots).
+export function openPlots(st) {
+  const n = st.room?.plotsFor || 1;
+  return (st.map?.plots || []).filter((p) => (p.min || 1) <= n);
 }

@@ -19,6 +19,7 @@ const HTML = `
       <div id="under"></div>
     </div>
     <div id="actions">
+      <button id="goBtn" class="btn sm ghost go" type="button" hidden>Start wave now</button>
       <button id="giftBtn" class="btn sm">Gift cogs</button>
       <button id="readyBtn" class="btn sm" hidden>Ready</button>
       <button id="zoomBtn" class="btn sm ghost">Zoom</button>
@@ -166,10 +167,19 @@ export async function mount(ctx) {
     rb.textContent = ready ? 'Ready ✓' : 'Ready';
     // nobody to gift to when playing solo: hide the button rather than open an empty sheet
     const solo = st.room.players.length < 2;
+    // host only: end the build phase now, ready or not (solo, Ready already does that).
+    // Kept away from Ready (Gift sits between them) and drawn as a quiet outline.
+    $('goBtn').hidden = !(build && isHost() && !solo);
     $('giftBtn').hidden = solo;
     if (solo) $('giftSheet').hidden = true;
   }
   $('readyBtn').onclick = () => { ctx.send({ t: 'ready', ready: !me()?.ready }); ctx.buzz(10); };
+  $('goBtn').onclick = () => {
+    const b = $('goBtn');
+    if (b.dataset.lock) return;
+    b.dataset.lock = 1; setTimeout(() => delete b.dataset.lock, 1000);
+    ctx.send({ t: 'go' }); ctx.buzz(20);
+  };
 
   // ---------------------------------------------------------------- snapshots
   function onSnap(m) {
@@ -196,7 +206,10 @@ export async function mount(ctx) {
         break;
       case 'perk': if (e.pid === ctx.you) { ctx.toast(`Perk: ${d.perks?.[e.id]?.name || e.id}`); ctx.buzz(20); } break;
       case 'wave_clear': ctx.toast(`Wave ${e.wave} cleared! +${e.bonus} cogs`); break;
-      case 'wave_start': ctx.buzz(40); break;
+      case 'wave_start':
+        ctx.buzz(40);
+        if (e.by) ctx.toast(e.by === ctx.you ? `Wave ${e.wave}: here they come!` : `${pname(e.by)} started the wave`);
+        break;
     }
   }
 

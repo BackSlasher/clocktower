@@ -237,7 +237,7 @@ func (b *Bot) casualKind(towers map[int]game.TowerSnap) string {
 func (b *Bot) decideCasual(wave, purse int, towers map[int]game.TowerSnap) (game.Cmd, bool) {
 	var free []int
 	for _, pl := range game.Map.Plots {
-		if _, ok := towers[pl.ID]; !ok {
+		if _, ok := towers[pl.ID]; !ok && game.PlotOpen(pl.ID, b.plotsFor) {
 			free = append(free, pl.ID)
 		}
 	}

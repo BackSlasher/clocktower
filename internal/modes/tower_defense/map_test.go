@@ -46,8 +46,31 @@ func TestMapConstraints(t *testing.T) {
 		t.Errorf("paths should enter from 3 different edges, got %v", edges)
 	}
 
-	if n := len(m.Plots); n < 20 || n > 24 {
-		t.Errorf("want about 22 plots, got %d", n)
+	// Plot tiers: about 22 for 1–4 players, ~28 for 5–6, ~34 for 7–8.
+	open := func(n int) int {
+		c := 0
+		for _, pl := range m.Plots {
+			if PlotOpen(pl.ID, n) {
+				c++
+			}
+		}
+		return c
+	}
+	for n, want := range map[int][2]int{1: {20, 24}, 4: {20, 24}, 5: {26, 30}, 6: {26, 30}, 7: {32, 36}, 8: {32, 36}} {
+		if c := open(n); c < want[0] || c > want[1] {
+			t.Errorf("%d players: %d open plots, want %d–%d", n, c, want[0], want[1])
+		}
+	}
+	for i, pl := range m.Plots {
+		if pl.Min < 0 || pl.Min > Defs.MaxPlayers {
+			t.Errorf("plot %d: min %d", i, pl.Min)
+		}
+		if i > 0 && pl.Min < m.Plots[i-1].Min {
+			t.Errorf("plot %d: tier plots come after the plots they add to (min %d after %d)", i, pl.Min, m.Plots[i-1].Min)
+		}
+	}
+	if PlotOpen(-1, 8) || PlotOpen(len(m.Plots), 8) {
+		t.Error("PlotOpen accepts a plot that does not exist")
 	}
 	covered := make([]int, len(m.Paths))
 	premium := 0
@@ -73,6 +96,9 @@ func TestMapConstraints(t *testing.T) {
 			if d := dist(pl.X, pl.Y, o.X, o.Y); d < 120 {
 				t.Errorf("plots %d and %d are only %.0fpx apart", i, j, d)
 			}
+		}
+		if pl.Min > 1 {
+			continue // the coverage rules below are for the base set
 		}
 		n := 0
 		for k, p := range m.Paths {

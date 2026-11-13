@@ -345,6 +345,14 @@
   font-style: italic;
 }
 
+/* the host started the wave early ("go") */
+#banner .bn {
+  margin-top: 4px;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--ink-dim);
+}
+
 /* below the boss health bar (top centre of the canvas) */
 #banner.boss {
   top: 118px;

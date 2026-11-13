@@ -112,6 +112,7 @@ type RoomMsg struct {
 	Host     string       `json:"host"`
 	Players  []PlayerInfo `json:"players"`
 	Wave     int          `json:"wave"`
+	PlotsFor int          `json:"plotsFor"` // plot tier: plots with min ≤ this are open (see map plots)
 	NextWave []WaveEntry  `json:"nextWave"`
 	End      *End         `json:"end"`
 }
@@ -221,6 +222,7 @@ type (
 	EvWaveStart struct {
 		E    string `json:"e"`
 		Wave int    `json:"wave"`
+		By   string `json:"by,omitempty"` // the host, when they started it early with `go`
 	}
 	EvPerk struct {
 		E   string `json:"e"`

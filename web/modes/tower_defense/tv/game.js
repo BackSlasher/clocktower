@@ -21,6 +21,7 @@ export class Game {
     this.paths = [];
     this.bd = null;
     this.colors = new Map(); // pid -> color
+    this.plotsFor = 1; // room.plotsFor: plots with min ≤ this are open
     this.phase = 'connecting';
     this.sound = null; // set by main.js once the audio module has loaded
     this.lobbyGears = null;
@@ -54,8 +55,20 @@ export class Game {
     if (first || !this.bd) this.rebuild();
   }
 
+  // The plots open at the current tier (bigger groups get extra plots).
+  openPlots() {
+    return this.map ? this.map.plots.filter((p) => (p.min || 1) <= this.plotsFor) : [];
+  }
+
   setRoom(room) {
     for (const p of room.players) this.colors.set(p.id, p.color);
+    const pf = room.plotsFor || 1;
+    if (pf !== this.plotsFor) {
+      const before = this.openPlots().length;
+      this.plotsFor = pf;
+      // the backdrop keeps its houses clear of open plots: re-bake when the set changes
+      if (this.map && this.openPlots().length !== before) this.rebuild();
+    }
     if (room.phase === 'lobby' && this.phase !== 'lobby' && this.phase !== 'connecting') this.reset();
     this.phase = room.phase;
   }
@@ -71,7 +84,7 @@ export class Game {
 
   rebuild() {
     if (!this.map) return;
-    this.bd = buildBackdrop(this.map, Math.min(2, Math.max(1, this.px)));
+    this.bd = buildBackdrop({ ...this.map, plots: this.openPlots() }, Math.min(2, Math.max(1, this.px)));
   }
 
   color(pid) {
@@ -384,7 +397,7 @@ export class Game {
   }
 
   drawPlots(g, t, building) {
-    for (const p of this.map.plots) {
+    for (const p of this.openPlots()) {
       if (this.towers.has(p.id)) continue;
       g.fillStyle = 'rgba(0,0,0,0.45)';
       g.beginPath();

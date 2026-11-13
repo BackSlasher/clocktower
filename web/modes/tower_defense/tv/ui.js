@@ -242,9 +242,12 @@ export class UI {
     const defs = this.welcome?.defs;
     const preview = this.previewByWave.get(ev.wave) || [];
     const bossKind = preview.find((g) => defs?.enemies[g.kind]?.boss)?.kind;
-    if (bossKind) this.banner(`Boss wave ${ev.wave}`, `${defs.enemies[bossKind].name} approaches!`, 'boss');
-    else if (ev.wave === defs?.waves) this.banner(`Final wave`, `Hold the line!`, 'wave');
-    else this.banner(`Wave ${ev.wave}`, waveSub(preview, defs), 'wave');
+    // `by`: the host skipped the rest of the build phase
+    const host = ev.by && this.room?.players.find((p) => p.id === ev.by);
+    const note = ev.by ? { name: host?.name || 'The host', color: host?.color } : null;
+    if (bossKind) this.banner(`Boss wave ${ev.wave}`, `${defs.enemies[bossKind].name} approaches!`, 'boss', note);
+    else if (ev.wave === defs?.waves) this.banner(`Final wave`, `Hold the line!`, 'wave', note);
+    else this.banner(`Wave ${ev.wave}`, waveSub(preview, defs), 'wave', note);
   }
 
   waveClear(ev) {
@@ -253,8 +256,8 @@ export class UI {
 
   // ------------------------------------------------------------ banners
 
-  banner(title, sub, kind) {
-    this.bannerQueue.push({ title, sub, kind });
+  banner(title, sub, kind, note = null) {
+    this.bannerQueue.push({ title, sub, kind, note });
     if (!this.bannerBusy) this.nextBanner();
   }
 
@@ -267,7 +270,8 @@ export class UI {
     }
     this.bannerBusy = true;
     el.className = '';
-    el.innerHTML = `<div class="bt">${esc(b.title)}</div>${b.sub ? `<div class="bs">${esc(b.sub)}</div>` : ''}`;
+    el.innerHTML = `<div class="bt">${esc(b.title)}</div>${b.sub ? `<div class="bs">${esc(b.sub)}</div>` : ''}${
+      b.note ? `<div class="bn"><b style="color:${esc(b.note.color || 'inherit')}">${esc(b.note.name)}</b> started the wave</div>` : ''}`;
     void el.offsetWidth;
     el.className = `on ${b.kind}`;
     const glow = $('glow');

@@ -27,20 +27,21 @@ func (g *Game) Step(dt float64) {
 	case PhaseBuild:
 		g.buildLeft -= dt
 		if g.buildLeft <= 0 {
-			g.startWave()
+			g.startWave("")
 		}
 	case PhaseWave:
 		g.stepWave(dt)
 	}
 }
 
-func (g *Game) startWave() {
+// startWave ends the build phase. by is the host who started it early with
+// `go` ("" for the timer or the ready check).
+func (g *Game) startWave(by string) {
 	wd := Defs.WaveDefs[g.wave-1]
 	g.phase = PhaseWave
 	g.buildLeft = 0
 	g.waveTime = 0
-	n := max(1, g.ConnectedCount())
-	playerMul := 1 + Defs.HPPerPlayer*float64(n-1)
+	playerMul := hpMulFor(g.ConnectedCount())
 	g.waveHPMul = wd.HPMul * playerMul
 	g.spawns = g.spawns[:0]
 	for _, gr := range wd.Groups {
@@ -60,8 +61,14 @@ func (g *Game) startWave() {
 	for _, p := range g.players {
 		p.ready = false
 	}
-	g.emit(EvWaveStart{E: "wave_start", Wave: g.wave})
+	g.emit(EvWaveStart{E: "wave_start", Wave: g.wave, By: by})
 	g.slowVer++
+}
+
+// hpMulFor is the enemy HP multiplier for n connected players (Defs.HPPlayerMul).
+func hpMulFor(n int) float64 {
+	t := Defs.HPPlayerMul
+	return t[min(max(1, n), len(t))-1]
 }
 
 func (g *Game) addEnemy(kind string, path int, d, hpMul float64) *enemy {

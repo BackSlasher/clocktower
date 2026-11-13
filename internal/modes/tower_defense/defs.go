@@ -81,7 +81,8 @@ type DefsT struct {
 	MaxTapsPerSec  float64             `json:"maxTapsPerSec"`  // server cap on winding taps per player
 	BuildTime      float64             `json:"buildTime"`      // seconds of build phase
 	MaxPlayers     int                 `json:"maxPlayers"`
-	HPPerPlayer    float64             `json:"hpPerPlayer"` // enemy HP × (1 + this × (players − 1))
+	HPPerPlayer    float64             `json:"hpPerPlayer"` // per-player HP step for 1–4 players (hpPlayerMul[n−1] = 1 + this × (n − 1) there)
+	HPPlayerMul    []float64           `json:"hpPlayerMul"` // enemy HP multiplier by connected players: [n−1]; steeper from 5
 	Perks          map[string]*PerkDef `json:"perks"`       // see perks.go
 	PerkOrder      []string            `json:"perkOrder"`   // menu order
 
@@ -157,6 +158,7 @@ var Defs = &DefsT{
 	BuildTime:      20,
 	MaxPlayers:     8,
 	HPPerPlayer:    0.07,
+	HPPlayerMul:    hpPlayerMul,
 	Perks:          perkDefs,
 	PerkOrder:      perkOrder,
 
@@ -166,6 +168,14 @@ var Defs = &DefsT{
 	CatchUpFrac:     0.5,
 	WaveDefs:        waves,
 }
+
+// hpPlayerMul scales enemy HP with the number of connected players (index
+// players − 1). Up to 4 it is the gentle 1 + 0.07 × (players − 1) that the
+// casual bots were tuned against. Larger groups get more from their extra
+// hands than casual bots do (real groups of 6–8 coordinate, wind and build
+// clearly better), so from 5 players the curve is steeper: a group that plays
+// like the casual bots should usually lose there.
+var hpPlayerMul = []float64{1, 1.07, 1.14, 1.21, 1.38, 1.55, 1.62, 1.68}
 
 var (
 	all    = []int{0, 1, 2}

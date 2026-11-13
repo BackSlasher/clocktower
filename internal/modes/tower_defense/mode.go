@@ -30,7 +30,7 @@ func newMode(rng *rand.Rand, roster []mode.Member) mode.Game {
 
 // knownCmds are the client message types Command handles.
 var knownCmds = map[string]bool{"start": true, "build": true, "upgrade": true, "sell": true,
-	"wind": true, "ready": true, "gift": true, "restart": true, "perk": true}
+	"wind": true, "ready": true, "gift": true, "restart": true, "perk": true, "go": true}
 
 // modeGame adapts *Game to mode.Game. Only the methods whose signatures
 // differ from the concrete ones (they return concrete wire types there, which

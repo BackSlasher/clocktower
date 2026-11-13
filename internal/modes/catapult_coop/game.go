@@ -363,6 +363,8 @@ func (g *Game) Apply(pid string, c Cmd) error {
 			r = *c.Ready
 		}
 		return g.Ready(pid, r)
+	case "go":
+		return g.Go(pid)
 	}
 	return nil
 }
@@ -415,6 +417,26 @@ func (g *Game) Ready(pid string, r bool) error {
 		g.slowVer++
 	}
 	g.checkPhaseEnd()
+	return nil
+}
+
+// Go is the host ending the current plan phase or break now, without waiting
+// for everyone: a plan phase resolves with the queues as filed (done or not,
+// exactly as on a timeout), a break starts the next level.
+func (g *Game) Go(pid string) error {
+	if pid != g.host {
+		return ErrNotHost
+	}
+	switch g.phase {
+	case PhasePlan:
+		g.resolve()
+	case PhaseBreak:
+		g.endBreak()
+	case PhaseResolve:
+		return ErrTooLate
+	default:
+		return badReq("Not now")
+	}
 	return nil
 }
 

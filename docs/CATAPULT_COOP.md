@@ -188,8 +188,9 @@ each break.
 
 - The timer ends every plan phase but the game's first, so nobody can stall
   the game after the start. The first turn waits for every connected player
-  to press done (it never waits for a disconnected one); the host can always
-  restart.
+  to press done (it never waits for a disconnected one); the host can play
+  the turn at once from the ⋯ menu ("Play the turn now", queues as filed),
+  end a break early ("Start now"), or restart.
 - An engineer whose player filed nothing for two turns in a row, or is
   disconnected, sits down: the turn no longer waits for them and they are not
   counted for scaling. Any plan from them stands them back up. Pressing done

@@ -13,8 +13,8 @@ they build clockwork defences on the street corners and keep them wound.
 
 1. **Lobby** — TV shows a 4-letter room code and a QR code. Phones join with a
    name. The first player to join is the host and presses Start.
-2. **Build phase** (20 s, skippable when everyone taps Ready) — spend cogs on
-   towers and upgrades. Building and upgrading also work during waves.
+2. **Build phase** (20 s, skippable when everyone taps Ready, or at once by
+   the host's "Start wave now") — spend cogs on towers and upgrades. Building and upgrading also work during waves.
 3. **Wave** — enemies walk the streets toward the clock tower. Each one that
    arrives costs lives. Players keep building, upgrading and *winding*.
 4. Repeat for 15 waves. Wave 8 and wave 15 are boss waves.
@@ -39,7 +39,12 @@ they build clockwork defences on the street corners and keep them wound.
 
 ## Towers
 
-Built on fixed plots (about 22 on the map). Three levels each; upgrade cost is
+Built on fixed plots: 22 on the map, plus extra plots for larger groups (6
+more from 5 players, 6 more from 7: 28 and 34). Each extra plot carries a
+`min` player count; the plot tier is the number of seated players when the
+game starts and only rises if more join mid-game (a plot never closes while
+it could hold a tower). With split purses, eight players on 22 plots ran out
+of places to build. Three levels each; upgrade cost is
 listed per level. Sell refunds 60 % of everything spent on the tower.
 
 | kind     | name           | cost / up2 / up3 | role |
@@ -66,9 +71,23 @@ Slows do not stack (strongest wins). Bosses are slowed at half strength.
 
 Income is split, so total team income is constant with player count. Extra
 players bring extra hands for winding and more parallel decision making, so
-enemy HP is multiplied by `1 + 0.07 × (connected players − 1)` (`hpPerPlayer`).
-The factor is small on purpose: a casual group's extra hands are worth little
-more than that, and split purses make big upgrades slower for larger groups.
+enemy HP is multiplied by a per-player-count table (`hpPlayerMul` in defs.go,
+indexed by connected players − 1):
+
+| players | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---------|---|---|---|---|---|---|---|---|
+| HP ×    | 1.00 | 1.07 | 1.14 | 1.21 | 1.38 | 1.55 | 1.62 | 1.68 |
+
+Up to four it is the gentle `1 + 0.07 × (players − 1)` (`hpPerPlayer`): a
+casual small group's extra hands are worth little more than that, and split
+purses make big upgrades slower. From five it climbs faster. A playtest with
+eight people found the old linear curve far too easy: real groups that size
+coordinate, wind and build much better than the casual bots it was tuned
+against, and the extra plots make them stronger still. So for 5–8 the target
+is that a team playing like the casual bots usually *loses*, which leaves a
+real group a fair fight. Groups of five and more also get extra plots (see
+Towers).
+
 Starting purse is `max(80, 320 / players)`-ish per player, tuned so a team can
 open with roughly 4–5 basic towers in total regardless of size.
 
@@ -102,7 +121,9 @@ Enemy HP (`hpMul` per wave) rises steadily to wave 8, then slowly; later waves
 get harder through nastier mixes (more brutes and tinkers) rather than ever
 fatter enemies, because a team's strength grows slowly once plots fill and
 towers reach level 3. Wave 8 (one Iron Baron) is the hardest moment of the
-first half and wave 15 (two Barons) of the game.
+first half and wave 15 (two Barons) of the game. For 5–8 players the same
+curve applies on top of the steeper HP factor, so their losses cluster even
+more on waves 14–15.
 
 From wave 9 every wave ends with a few *runners*: very tough Clockroaches or
 Aero-Drones (3–5 per wave) that cost one life each. A team rarely stops all of
@@ -112,7 +133,7 @@ either flawless or a single collapse. The Barons cost 5 lives, not 10, for the
 same reason.
 
 Balance is tuned with the bot harness (`internal/modes/tower_defense/bot`, run with
-`CT_BALANCE_RUNS=100 go test -run Balance -v ./internal/modes/tower_defense/bot`) against
+`CT_BALANCE_RUNS=100 go test -count=1 -run Balance -v ./internal/modes/tower_defense/bot`) against
 human-like "casual" bots: they react a second or two late, wind in bursts at
 about 2 taps/s for roughly half of each wave and only on towers with enemies in
 range, never gift, sometimes dither with cogs in hand, and pick decent rather
@@ -123,11 +144,20 @@ than optimal plots. Targets:
 | 4 casual | wins ~60–75 %, losses mostly on waves 12–15; winners keep ~5–11 lives |
 | 3 casual + 1 idle | wins ~35–55 %, rarely dies at wave 8 |
 | 1, 2 casual | wins ~55–75 % |
-| 8 casual | wins ~60–80 % |
+| 5 casual | wins ~50–65 % (between 4 and 6) |
+| 6, 7, 8 casual | wins ~25–45 %: real groups this size play clearly better than these bots |
+| 8 expert bots | still wins most of the time (≥ 70 %) |
 | 4 casual who never wind | loses more often, but still wins sometimes |
 | 4 casual who never pick a perk | clearly worse, ~15 % or more (see Perks) |
 | 4 expert bots | wins nearly always |
 | builds badly and never winds | loses, mostly in waves 9–13 |
+
+Measured (100 games each): 1/2/3/4 casual win 63/68/74/70 %; 5/6/7/8 casual
+56/31/34/30 % (with the old linear curve and 22 plots they won 76–79 %); 4
+expert bots 100 %, 8 expert bots 100 % with ~17 lives left. Only HP scales
+for 5–8; wave contents, runners and plots for 1–4 are the same for every
+group size, and the 1–4 player rows are identical game for game to before
+the large-group change.
 
 A won game takes about 17 minutes.
 

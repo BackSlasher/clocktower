@@ -51,7 +51,7 @@ func steps(g *Game, secs float64) {
 // enterWave starts the wave right away with no scheduled spawns, so a test
 // can place enemies by hand.
 func enterWave(g *Game) {
-	g.startWave()
+	g.startWave("")
 	g.spawns = nil
 }
 
@@ -575,10 +575,32 @@ func TestCatchUpPurse(t *testing.T) {
 
 func TestHPScaling(t *testing.T) {
 	g, _ := started(t, 4)
-	g.startWave()
+	g.startWave("")
 	want := Defs.WaveDefs[0].HPMul * (1 + 3*Defs.HPPerPlayer)
 	if math.Abs(g.spawns[0].hpMul-want) > 1e-9 {
 		t.Fatalf("hp mul %.3f want %.3f", g.spawns[0].hpMul, want)
+	}
+	// The table: one entry per seat, the old linear rule up to 4, then
+	// rising and above that rule for bigger groups.
+	tab := Defs.HPPlayerMul
+	if len(tab) != Defs.MaxPlayers {
+		t.Fatalf("hpPlayerMul has %d entries, want %d", len(tab), Defs.MaxPlayers)
+	}
+	for n := 1; n <= Defs.MaxPlayers; n++ {
+		if n <= 4 && math.Abs(tab[n-1]-(1+Defs.HPPerPlayer*float64(n-1))) > 1e-9 {
+			t.Errorf("hpPlayerMul[%d] = %.3f, want the linear %.3f", n-1, tab[n-1], 1+Defs.HPPerPlayer*float64(n-1))
+		}
+		if n > 4 && (tab[n-1] <= tab[n-2] || tab[n-1] < 1+Defs.HPPerPlayer*float64(n-1)) {
+			t.Errorf("hpPlayerMul[%d] = %.3f: must rise and stay above the linear rule", n-1, tab[n-1])
+		}
+	}
+	if hpMulFor(0) != 1 || hpMulFor(99) != tab[len(tab)-1] {
+		t.Fatal("hpMulFor does not clamp")
+	}
+	g8, _ := started(t, 8)
+	g8.startWave("")
+	if want := Defs.WaveDefs[0].HPMul * tab[7]; math.Abs(g8.spawns[0].hpMul-want) > 1e-9 {
+		t.Fatalf("8 players: hp mul %.3f want %.3f", g8.spawns[0].hpMul, want)
 	}
 }
 
@@ -767,5 +789,113 @@ func TestHostEndsRunningGame(t *testing.T) {
 	}
 	if err := g.Start(ids[0]); err != nil {
 		t.Fatalf("start after ending: %v", err)
+	}
+}
+
+func TestHostStartsWaveNow(t *testing.T) {
+	g, ids := newGame(t, 3)
+	// Lobby: not the build phase.
+	wantCode(t, g.Apply(ids[0], Cmd{T: "go"}), "bad_request")
+	if err := g.Start(ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	steps(g, 2)
+	_ = g.Ready(ids[1], true) // p3 never readies: the phase would run its timer
+	if g.Phase() != PhaseBuild {
+		t.Fatalf("phase %s want build", g.Phase())
+	}
+	wantCode(t, g.Apply(ids[1], Cmd{T: "go"}), "not_host")
+	if g.Phase() != PhaseBuild {
+		t.Fatal("a non-host started the wave")
+	}
+	g.Snapshot() // drain
+	if err := g.Apply(ids[0], Cmd{T: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if g.Phase() != PhaseWave || g.Wave() != 1 || len(g.spawns) == 0 {
+		t.Fatalf("phase %s wave %d spawns %d", g.Phase(), g.Wave(), len(g.spawns))
+	}
+	for _, id := range ids {
+		if g.player(id).ready {
+			t.Fatalf("%s still ready after the wave started", id)
+		}
+	}
+	var got *EvWaveStart
+	for _, ev := range g.Snapshot().Ev {
+		if e, ok := ev.(EvWaveStart); ok {
+			got = &e
+		}
+	}
+	if got == nil || got.Wave != 1 || got.By != ids[0] {
+		t.Fatalf("wave_start event %+v, want wave 1 by %s", got, ids[0])
+	}
+	// During the wave: refused, nothing changes.
+	wantCode(t, g.Apply(ids[0], Cmd{T: "go"}), "bad_request")
+	if g.Phase() != PhaseWave || g.Wave() != 1 {
+		t.Fatal("go during a wave changed the game")
+	}
+	// The timer and the ready check still leave `by` out.
+	g2, ids2 := started(t, 1)
+	g2.Snapshot()
+	_ = g2.Ready(ids2[0], true)
+	for _, ev := range g2.Snapshot().Ev {
+		if e, ok := ev.(EvWaveStart); ok && e.By != "" {
+			t.Fatalf("ready-check wave_start has by %q", e.By)
+		}
+	}
+}
+
+func TestPlotTiers(t *testing.T) {
+	tier5, tier7 := -1, -1
+	for _, pl := range Map.Plots {
+		if pl.Min == 5 && tier5 < 0 {
+			tier5 = pl.ID
+		}
+		if pl.Min == 7 && tier7 < 0 {
+			tier7 = pl.ID
+		}
+	}
+	if tier5 < 0 || tier7 < 0 {
+		t.Fatal("map has no tier plots")
+	}
+	g, ids := newGame(t, 4)
+	if g.RoomState().PlotsFor != 4 {
+		t.Fatalf("lobby preview %d want 4", g.RoomState().PlotsFor)
+	}
+	_ = g.Start(ids[0])
+	g.player(ids[0]).purse = 1000
+	wantCode(t, g.Build(ids[0], tier5, "rivet"), "bad_request")
+	if g.towers[tier5] != nil {
+		t.Fatal("built on a closed plot")
+	}
+	// A fifth player joins mid-game: the tier rises and stays risen.
+	id, _, _ := g.AddPlayer("Eve")
+	g.SetConnected(id, true)
+	if g.RoomState().PlotsFor != 5 {
+		t.Fatalf("after a join: plotsFor %d want 5", g.RoomState().PlotsFor)
+	}
+	if err := g.Build(ids[0], tier5, "rivet"); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, g.Build(ids[0], tier7, "rivet"), "bad_request")
+	g.RemovePlayer(id)
+	g.SetConnected(ids[3], false)
+	if g.RoomState().PlotsFor != 5 || g.towers[tier5] == nil {
+		t.Fatal("leaving players closed a plot")
+	}
+	_ = g.Restart(ids[0])
+	if g.RoomState().PlotsFor != 4 {
+		t.Fatalf("back in the lobby: plotsFor %d want 4", g.RoomState().PlotsFor)
+	}
+
+	g8, ids8 := started(t, 8)
+	g8.player(ids8[0]).purse = 1000
+	if g8.RoomState().PlotsFor != 8 {
+		t.Fatal("8 players: plotsFor")
+	}
+	for _, p := range []int{tier5, tier7} {
+		if err := g8.Build(ids8[0], p, "rivet"); err != nil {
+			t.Fatalf("8 players, plot %d: %v", p, err)
+		}
 	}
 }

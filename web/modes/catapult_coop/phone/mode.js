@@ -68,6 +68,7 @@ const HTML = `
     </div>
     <div class="ccbrfoot">
       <button id="ccReady" class="btn big-btn" type="button">Ready</button>
+      <button id="ccGo" class="btn sm ghost ccgo" type="button" hidden>Start now</button>
       <div class="ccbrinfo"><span id="ccBrTimer" class="dim"></span><div id="ccBrWho" class="ccwho"></div></div>
     </div>
     <button id="ccMenuBtn2" class="menubtn ccmenu2" type="button" aria-label="Menu">&#8943;</button>
@@ -512,9 +513,12 @@ export async function mount(ctx) {
     $('ccReady').classList.toggle('on', ready);
     $('ccReady').textContent = ready ? 'Ready ✓' : 'Ready';
     renderWho($('ccBrWho'), 'ready');
+    // host only: start the next level without waiting (solo, Ready already does that)
+    $('ccGo').hidden = !isHost() || (r.players?.length || 0) < 2;
     tick();
   }
   $('ccReady').onclick = () => { ctx.send({ t: 'ready', ready: !me()?.ready }); buzz(12); };
+  $('ccGo').onclick = () => { ctx.send({ t: 'go' }); buzz(20); };
 
   // ---------------------------------------------------------------- end screen
   function renderEnd() {
@@ -556,6 +560,13 @@ export async function mount(ctx) {
         onclick: () => { armed = key; clearTimeout(armTimer); armTimer = setTimeout(() => { armed = null; if (!$('ccMenu').hidden) renderMenu(); }, 5000); renderMenu(); },
       }, label);
     const items = [];
+    // host: stop waiting for the others and play the turn with the steps filed so far
+    if (isHost() && st.room?.phase === 'plan') {
+      items.push(h('button', {
+        class: 'btn sm ghost ccgonow', type: 'button',
+        onclick: () => { $('ccMenu').hidden = true; ctx.send({ t: 'go' }); buzz(20); },
+      }, h('span', {}, 'Play the turn now'), h('small', {}, 'everyone’s steps as filed, done or not')));
+    }
     if (isHost()) items.push(h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { $('ccMenu').hidden = true; ctx.send({ t: 'pause', on: true }); } }, 'Pause game'));
     if (isHost()) items.push(confirmItem('end', 'End game', 'End the game for everyone?', () => { armed = null; $('ccMenu').hidden = true; ctx.send({ t: 'restart' }); }));
     // host: remove a player (the server drops them; their phone goes back to the join form)

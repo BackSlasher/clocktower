@@ -29,9 +29,9 @@ Tap a plot, tap a tower to build it. Tap a tower to upgrade, sell or crank it.
 
 ## Build phase and Ready
 
-Before each wave there is a 20 second build phase. The TV previews what is coming. Spend your cogs (the currency) on towers and upgrades. There are about 22 fixed plots on the map. Building and upgrading also work during a wave.
+Before each wave there is a 20 second build phase. The TV previews what is coming. Spend your cogs (the currency) on towers and upgrades. There are 22 fixed plots on the map; bigger groups get more (28 from five players, 34 from seven), so everyone has somewhere to build. Building and upgrading also work during a wave.
 
-Tap **Ready** when you are done. The wave starts early once every active player is ready (see [Idle players](#idle-players)); before wave 1 it waits for everyone or the timer.
+Tap **Ready** when you are done. The wave starts early once every active player is ready (see [Idle players](#idle-players)); before wave 1 it waits for everyone or the timer. When not everyone is tapping Ready, the host can tap **Start wave now** (next to Gift cogs) to start the wave at once.
 
 ## Waves and lives
 
@@ -139,4 +139,4 @@ Browsers will not play sound until the page has had a key press or a click, so a
 
 ## Playing solo and in a crowd
 
-The game is tuned for four, but it works from one player to eight. Starting cogs and income are split, so total team money does not depend on player count. Extra players mean extra hands for cranking and more decisions in parallel, and enemy health rises slightly per extra player to match. Playing solo, you do all the building and cranking yourself.
+The game is tuned for four, but it works from one player to eight. Starting cogs and income are split, so total team money does not depend on player count. Extra players mean extra hands for cranking and more decisions in parallel, and enemy health rises with each extra player to match: gently up to four players, more steeply from five, because a big group that talks to each other is much stronger than the numbers suggest. Groups of five and more also get extra plots to build on. Playing solo, you do all the building and cranking yourself.

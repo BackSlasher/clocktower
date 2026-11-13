@@ -22,11 +22,19 @@ type MapPath struct {
 	len float64
 }
 
-// Plot is a build site.
+// Plot is a build site. Min is the smallest group the plot exists for (the
+// plot tier, see Game.PlotsFor); 0 or 1 means always.
 type Plot struct {
-	ID int     `json:"id"`
-	X  float64 `json:"x"`
-	Y  float64 `json:"y"`
+	ID  int     `json:"id"`
+	X   float64 `json:"x"`
+	Y   float64 `json:"y"`
+	Min int     `json:"min,omitempty"`
+}
+
+// PlotOpen reports whether plot exists at plot tier plotsFor (the room's
+// `plotsFor`).
+func PlotOpen(plot, plotsFor int) bool {
+	return plot >= 0 && plot < len(Map.Plots) && Map.Plots[plot].Min <= max(1, plotsFor)
 }
 
 // XY is a point object.

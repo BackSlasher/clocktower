@@ -27,7 +27,7 @@ func newMode(rng *rand.Rand, roster []mode.Member) mode.Game {
 	return &modeGame{NewFromRoster(rng, roster)}
 }
 
-var knownCmds = map[string]bool{"start": true, "restart": true, "plan": true, "ready": true}
+var knownCmds = map[string]bool{"start": true, "restart": true, "plan": true, "ready": true, "go": true}
 
 // modeGame adapts *Game to mode.Game (the concrete methods return concrete
 // wire types, which tests and bots use).

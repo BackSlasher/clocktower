@@ -46,10 +46,15 @@ func TestBalance(t *testing.T) {
 		{"3 casual + 1 idle", Scenario{Team: team(3, Casual, 1, Idle)}},
 		{"1 casual", Scenario{Team: team(1, Casual)}},
 		{"2 casual", Scenario{Team: team(2, Casual)}},
+		{"3 casual", Scenario{Team: team(3, Casual)}},
+		{"5 casual", Scenario{Team: team(5, Casual)}},
+		{"6 casual", Scenario{Team: team(6, Casual)}},
+		{"7 casual", Scenario{Team: team(7, Casual)}},
 		{"8 casual", Scenario{Team: team(8, Casual)}},
 		{"4 casual, no winding", Scenario{Team: team(4, Casual), NoWind: true}},
 		{"4 casual, no perks", Scenario{Team: team(4, Casual), NoPerks: true}},
 		{"4 good (expert)", Scenario{Team: team(4, Good), ReadyDelay: 4}},
+		{"8 good (expert)", Scenario{Team: team(8, Good), ReadyDelay: 4}},
 		{"3 good + 1 idle", Scenario{Team: team(3, Good, 1, Idle), ReadyDelay: 4}},
 		{"1 good", Scenario{Team: team(1, Good), ReadyDelay: 4}},
 		{"4 bad (no wind)", Scenario{Team: team(4, Bad), ReadyDelay: 2}},
@@ -101,6 +106,8 @@ func TestBalance(t *testing.T) {
 	check("4 casual", 2, 6)
 	check("3 casual + 1 idle", 1, 5)
 	check("4 good (expert)", 5, 6)
+	check("8 good (expert)", 4, 6)
+	check("8 casual", 0, 4)
 	check("4 bad (no wind)", 0, 0)
 	check("4 casual, no winding", 0, 4)
 	check("4 casual, no perks", 0, 4)

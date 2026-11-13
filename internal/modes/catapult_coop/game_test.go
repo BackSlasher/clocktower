@@ -457,3 +457,69 @@ func TestDeterministic(t *testing.T) {
 		t.Fatal("not deterministic")
 	}
 }
+
+func TestHostGoEndsPlanAndBreak(t *testing.T) {
+	g, ids := newGame(t, 3)
+	host, b, c := ids[0], ids[1], ids[2]
+	wantCode(t, g.Apply(host, Cmd{T: "go"}), "bad_request") // lobby
+	if err := g.Start(host); err != nil {
+		t.Fatal(err)
+	}
+	// The untimed first turn: b filed a wait but not done, c filed nothing.
+	_ = g.Apply(b, Cmd{T: "plan", Acts: []Act{wt}})
+	_ = done(g, host)
+	steps(g, Defs.PlanTime*3)
+	if g.Phase() != PhasePlan {
+		t.Fatal("the first turn should still be waiting")
+	}
+	wantCode(t, g.Apply(b, Cmd{T: "go"}), "not_host")
+	if g.Phase() != PhasePlan {
+		t.Fatal("a non-host ended the plan phase")
+	}
+	g.events = nil
+	if err := g.Apply(host, Cmd{T: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if g.Phase() != PhaseResolve || g.Rounds() != 1 {
+		t.Fatalf("phase %s rounds %d", g.phase, g.rounds)
+	}
+	if len(evs[EvResolve](g.events)) != 1 {
+		t.Fatal("no resolve event")
+	}
+	// Queues played as filed: b took part, c missed the turn.
+	if g.player(b).missed != 0 || g.player(c).missed != 1 {
+		t.Fatalf("missed b=%d c=%d", g.player(b).missed, g.player(c).missed)
+	}
+	wantCode(t, g.Apply(host, Cmd{T: "go"}), "too_late") // resolve
+	if g.Phase() != PhaseResolve {
+		t.Fatal("go during resolve changed the phase")
+	}
+
+	// A break: only the host ends it early.
+	clearLevel(t, g)
+	if g.Phase() != PhaseBreak || g.Level() != 1 {
+		t.Fatalf("phase %s level %d", g.phase, g.level)
+	}
+	_ = g.Apply(b, Cmd{T: "ready"})
+	wantCode(t, g.Apply(c, Cmd{T: "go"}), "not_host")
+	if g.Phase() != PhaseBreak {
+		t.Fatal("a non-host ended the break")
+	}
+	if err := g.Apply(host, Cmd{T: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if g.Phase() != PhasePlan || g.Level() != 2 || g.Round() != 1 {
+		t.Fatalf("phase %s level %d round %d", g.phase, g.level, g.round)
+	}
+	for _, p := range g.players {
+		if p.ready {
+			t.Fatalf("%s still ready in the new level", p.id)
+		}
+	}
+	// A timed plan phase ends early too, then finished games refuse it.
+	if err := g.Apply(host, Cmd{T: "go"}); err != nil || g.Phase() != PhaseResolve {
+		t.Fatalf("timed plan: err %v phase %s", err, g.phase)
+	}
+	g.finish(true)
+	wantCode(t, g.Apply(host, Cmd{T: "go"}), "bad_request")
+}

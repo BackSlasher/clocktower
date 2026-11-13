@@ -159,6 +159,9 @@ body:has(#ccGame:not([hidden])) .toast { left: 10px; right: 10px; top: auto; bot
 .ccbrfoot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
 .ccbrinfo { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; }
 .ccmenu2 { position: absolute; top: 10px; right: 12px; }
+.ccgo { align-self: center; min-width: 9em; border-style: dashed; }
+.mrow > .btn.ccgonow { flex: 1 1 100%; display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.ccgonow small { font-family: var(--font-body); font-weight: 400; font-size: 0.72rem; opacity: 0.8; }
 @media (min-aspect-ratio: 5/4) {
   .ccbreak { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; column-gap: 20px; padding: 12px 16px; }
   .ccbreak .ccbrfoot { margin: 0; }

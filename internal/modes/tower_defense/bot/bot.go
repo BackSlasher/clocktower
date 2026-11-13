@@ -79,6 +79,8 @@ type Bot struct {
 	me       *game.PlayerInfo // our entry in the latest room message
 	offerKey string           // the offer we last noticed
 	pickAt   float64          // when we pick from it (<0: not going to)
+
+	plotsFor int // the room's plot tier: only plots open at it can be built on
 }
 
 // New creates a bot for player id.
@@ -111,6 +113,7 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 		return nil
 	}
 	b.me = b.self(room)
+	b.plotsFor = room.PlotsFor
 	switch b.Skill {
 	case Idle:
 		return nil
@@ -253,7 +256,7 @@ func (b *Bot) decideBad(purse int, towers map[int]game.TowerSnap) (game.Cmd, boo
 	}
 	var free []int
 	for _, pl := range game.Map.Plots {
-		if _, ok := towers[pl.ID]; !ok {
+		if _, ok := towers[pl.ID]; !ok && game.PlotOpen(pl.ID, b.plotsFor) {
 			free = append(free, pl.ID)
 		}
 	}
@@ -320,7 +323,7 @@ func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.C
 		sc := balancedScores(kind, towers)
 		var free []int
 		for _, pl := range game.Map.Plots {
-			if _, ok := towers[pl.ID]; !ok {
+			if _, ok := towers[pl.ID]; !ok && game.PlotOpen(pl.ID, b.plotsFor) {
 				free = append(free, pl.ID)
 			}
 		}

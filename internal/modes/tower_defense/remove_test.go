@@ -13,7 +13,7 @@ func TestRemovePlayerMidWave(t *testing.T) {
 	}
 	g.players[1].offer = []string{"sights"}
 	g.players[1].perks["sights"] = 2
-	g.startWave() // a real wave with spawns
+	g.startWave("") // a real wave with spawns
 	steps(g, 3)
 	g.RemovePlayer(ids[1])
 	if g.HasPlayer(ids[1]) || g.NumPlayers() != 2 {
@@ -58,7 +58,7 @@ func TestRemovePlayerMidWave(t *testing.T) {
 		t.Fatalf("phase %s wave %d", g.Phase(), g.Wave())
 	}
 	// HP scaling of the next wave follows the two remaining players.
-	g.startWave()
+	g.startWave("")
 	want := Defs.WaveDefs[wave].HPMul * (1 + Defs.HPPerPlayer)
 	if math.Abs(g.waveHPMul-want) > 1e-9 {
 		t.Fatalf("hp mul %.3f want %.3f", g.waveHPMul, want)

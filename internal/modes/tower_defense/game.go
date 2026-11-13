@@ -100,6 +100,7 @@ type Game struct {
 	phase     Phase
 	time      float64 // sim time since Start
 	wave      int     // current/upcoming wave (1-based), 0 in lobby
+	plotsFor  int     // plot tier: seated players at Start, raised by later joins; 0 in lobby
 	buildLeft float64
 	waveTime  float64
 	waveHPMul float64
@@ -133,6 +134,7 @@ func New(rng *rand.Rand) *Game {
 func (g *Game) reset() {
 	g.phase = PhaseLobby
 	g.time, g.wave, g.buildLeft, g.waveTime = 0, 0, 0, 0
+	g.plotsFor = 0
 	g.lives = Defs.MaxLives
 	g.towers = make([]*tower, len(Map.Plots))
 	g.enemies = nil
@@ -159,6 +161,17 @@ func (g *Game) SlowVersion() uint64      { return g.slowVer }
 func (g *Game) NumPlayers() int          { return len(g.players) }
 func (g *Game) Running() bool            { return g.phase == PhaseBuild || g.phase == PhaseWave }
 func (g *Game) HasPlayer(id string) bool { return g.player(id) != nil }
+
+// PlotsFor is the plot tier: the group size the open plots are laid out for
+// (a plot is open when its Min ≤ this). In the lobby it follows the seated
+// players, as a preview. A running game fixes it at Start and only ever
+// raises it when more players join, so no plot that may hold a tower closes.
+func (g *Game) PlotsFor() int {
+	if g.phase == PhaseLobby {
+		return max(1, len(g.players))
+	}
+	return g.plotsFor
+}
 
 // Purse returns a player's spendable cogs.
 func (g *Game) Purse(pid string) int {
@@ -276,6 +289,9 @@ func (g *Game) AddPlayer(name string) (pid, evicted string, err error) {
 		p.purse = g.catchUpPurse()
 	}
 	g.players = append(g.players, p)
+	if g.phase != PhaseLobby {
+		g.plotsFor = max(g.plotsFor, len(g.players))
+	}
 	if g.host == "" {
 		g.host = p.id
 	}
@@ -409,7 +425,7 @@ func (g *Game) Apply(pid string, c Cmd) error {
 		return ErrBadRequest
 	}
 	switch c.T {
-	case "build", "upgrade", "sell", "wind", "ready", "gift", "perk":
+	case "build", "upgrade", "sell", "wind", "ready", "gift", "perk", "go":
 		if g.Running() {
 			p.actWave = g.wave
 		}
@@ -456,6 +472,8 @@ func (g *Game) Apply(pid string, c Cmd) error {
 		return g.Gift(pid, c.To, *c.Amount)
 	case "perk":
 		return g.Perk(pid, c.ID)
+	case "go":
+		return g.Go(pid)
 	}
 	return nil
 }
@@ -470,6 +488,7 @@ func (g *Game) Start(pid string) error {
 	}
 	g.phase = PhaseBuild
 	g.wave = 1
+	g.plotsFor = len(g.players)
 	g.buildLeft = Defs.BuildTime
 	g.lives = Defs.MaxLives
 	sp := g.startPurse(len(g.players))
@@ -516,6 +535,9 @@ func (g *Game) Build(pid string, plot int, kind string) error {
 	}
 	if !g.plotOK(plot) {
 		return badReq("No such plot")
+	}
+	if !PlotOpen(plot, g.plotsFor) {
+		return badReq("That plot is only open for bigger groups")
 	}
 	def := Defs.Towers[kind]
 	if def == nil {
@@ -632,6 +654,19 @@ func (g *Game) Ready(pid string, r bool) error {
 	return nil
 }
 
+// Go is the host skipping the rest of the build phase: the wave starts now,
+// whoever is ready. Its wave_start event names the host (by).
+func (g *Game) Go(pid string) error {
+	if pid != g.host {
+		return ErrNotHost
+	}
+	if g.phase != PhaseBuild {
+		return badReq("The wave can only be started in the build phase")
+	}
+	g.startWave(pid)
+	return nil
+}
+
 // checkAllReady starts the wave once every active connected player is ready
 // and at least one player is. Idle players (see active) never block it; in
 // wave 1 everyone is active, so the first build phase waits for all.
@@ -645,7 +680,7 @@ func (g *Game) checkAllReady() {
 		}
 	}
 	if any {
-		g.startWave()
+		g.startWave("")
 	}
 }
 
@@ -678,7 +713,7 @@ func (g *Game) emit(ev any) { g.events = append(g.events, ev) }
 
 // RoomState builds the `room` message.
 func (g *Game) RoomState() *RoomMsg {
-	m := &RoomMsg{T: "room", Mode: ModeID, Phase: g.phase, Host: g.host, Wave: g.wave, NextWave: []WaveEntry{}, End: g.end,
+	m := &RoomMsg{T: "room", Mode: ModeID, Phase: g.phase, Host: g.host, Wave: g.wave, PlotsFor: g.PlotsFor(), NextWave: []WaveEntry{}, End: g.end,
 		Players: make([]PlayerInfo, 0, len(g.players))}
 	for _, p := range g.players {
 		m.Players = append(m.Players, PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected, Ready: p.ready,
