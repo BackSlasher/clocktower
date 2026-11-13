@@ -185,6 +185,11 @@ export class Game {
     return { plans: this.plans, cur: -1, machines: false, marks: new Map(), resolving: this.room?.phase === 'resolve' };
   }
 
+  // the stage playing now (for the turn-order card), or null outside a playback
+  stageNow(now) {
+    return this.pb ? this.pb.stageAt(this.playbackT(now)) : null;
+  }
+
   playbackT(now) {
     return this.pb ? this.freezeT ?? ((now - this.pbStart) / 1000) * this.rate : -1;
   }

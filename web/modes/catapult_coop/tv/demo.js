@@ -1,4 +1,4 @@
-// Dev-only showcase: /tv?demo=plan|resolve|break|won|lost|boss[&n=1..4] feeds synthetic room and
+// Dev-only showcase: /tv?demo=plan|tutorial|resolve|break|won|lost|boss[&n=1..4] feeds synthetic room and
 // snap messages through the normal handlers, so every screen can be looked at without playing
 // to it. Uses the real setup (keeps + defs) from the server; the interior layouts below are
 // sample drawings in the server's notation (W wall, C catapult, = raised floor, . floor,
@@ -54,7 +54,9 @@ export function startDemo(kind, setup, deliver) {
   const names = ['Ada', 'Brunel', 'Tesla', 'Babbage', 'Lovelace-Byr', 'Watt', 'Faraday', 'Stephenson'];
   const colors = ['#e0a030', '#4fb39a', '#d1594a', '#6a8cff', '#c06adf', '#8fd14f', '#f0f0f0', '#ff8fb0'];
   const levels = defs.levels?.length || 6;
-  const level = kind === 'boss' ? levels : kind === 'break' ? 3 : 4;
+  const tutorial = kind === 'tutorial';
+  if (tutorial) kind = 'plan';
+  const level = tutorial ? 1 : kind === 'boss' ? levels : kind === 'break' ? 3 : 4;
   const phase = kind === 'resolve' || kind === 'boss' ? 'plan' : kind;
   const cats = keep.catapults;
   const lane = (i) => keep.lanes[i % keep.lanes.length];
@@ -108,7 +110,7 @@ export function startDemo(kind, setup, deliver) {
           ],
         }
       : null;
-  const room = { t: 'room', mode: 'catapult_coop', phase, host: 'p1', keep: keep.id, layout: lay, level, levels, round: 4, players, end };
+  const room = { t: 'room', mode: 'catapult_coop', phase, host: 'p1', keep: keep.id, layout: lay, level, levels, round: tutorial ? 1 : 4, players, end };
 
   const machines =
     kind === 'boss'
@@ -135,7 +137,7 @@ export function startDemo(kind, setup, deliver) {
   // catapult 4 is loaded and its lane is empty: armed, waiting for a machine
   const catapults = cats.map((c, i) => ({ id: c.id, bomb: i === 3 ? { id: 50, kind: 'stopwatch' } : null }));
   const A = {
-    t: 'snap', phase, time: 100, level, round: 4, left: kind === 'break' ? 5 : 14.4, untimed: false, wall: kind === 'lost' ? 0 : kind === 'boss' ? 4 : 11, wallMax: defs.wallHP,
+    t: 'snap', phase, time: 100, level, round: 4, left: tutorial ? 0 : kind === 'break' ? 5 : 14.4, untimed: tutorial, wall: kind === 'lost' ? 0 : kind === 'boss' ? 4 : 11, wallMax: defs.wallHP,
     engineers, bombs, catapults, machines,
     incoming: [],
     plans: phase === 'plan' ? plansOf(kind === 'plan' ? QP : Q) : players.map((p) => ({ pid: p.id, acts: [], done: false })),

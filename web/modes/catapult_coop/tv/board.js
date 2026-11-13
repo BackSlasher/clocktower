@@ -388,6 +388,14 @@ export class Playback {
     return cur;
   }
 
+  // which stage is playing at t: 'throw' | 'move' | 'grab' | 'fire' | 'machines' | null
+  stageAt(t) {
+    if (this.mstage && t >= this.mstage.at) return 'machines';
+    let cur = null;
+    for (const sl of this.slots) for (const st of sl.stages || []) if (t >= st.at) cur = st.s;
+    return cur;
+  }
+
   // marks recorded by time t: Map "pid|slot" -> mark (the most telling one)
   marksAt(t) {
     const out = new Map();

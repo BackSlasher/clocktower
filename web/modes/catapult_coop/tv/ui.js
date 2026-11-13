@@ -6,6 +6,7 @@
 import { fmtTime } from '../../tower_defense/tv/geom.js';
 import { esc, GEAR_SVG, CROWN_SVG } from '/shared/dom.js';
 import { drawBomb } from './sprites.js';
+import { vignetteEl } from './vignettes.js';
 
 const TICK_SVG = `<svg class="cc-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>`;
 const DOTS = `<span class="cc-think"><i></i><i></i><i></i></span>`;
@@ -20,6 +21,8 @@ export const HTML = `
       <div class="cc-wall"><div class="cc-lbl">${BRICK_SVG} Wall</div><div class="cc-big"><span id="ccWall">10</span><span class="cc-of" id="ccWallMax">/ 10</span></div><div class="cc-bar"><div id="ccWallBar"></div></div></div>
     </div>
     <div id="ccStep"></div>
+    <div id="ccOrder"></div>
+    <div id="ccTut"></div>
     <div id="ccQueue"></div>
     <div id="ccPaused">Paused &mdash; waiting for engineers to reconnect</div>
   </section>
@@ -88,6 +91,7 @@ export class UI {
     this.bannerQueue = [];
     this.bannerBusy = false;
     this._k = {};
+    this.cardsBuilt = false;
   }
 
   later(fn, ms) {
@@ -113,6 +117,85 @@ export class UI {
 
   setSetup(s) {
     this.setup = s;
+    this.buildCards();
+  }
+
+  // ------------------------------------------------------------ reference cards
+
+  // The stages of a step in the order the server plays them (docs/PROTOCOL.md, "Resolve
+  // rules"): throws, moves, pick-ups and loads, automatic fire; machines after the last step.
+  static STAGES = [
+    ['throw', 'Throw'],
+    ['move', 'Move'],
+    ['grab', 'Pick up & load'],
+    ['fire', 'Fire'],
+  ];
+
+  buildCards() {
+    const n = this.slots;
+    const panel = (id, num, cap, cls = '') => {
+      const d = document.createElement('div');
+      d.className = `cc-op ${cls}`;
+      d.dataset.s = id;
+      d.append(vignetteEl(id));
+      const c = document.createElement('div');
+      c.className = 'cc-oc';
+      c.innerHTML = `${num ? `<span class="cc-on">${num}</span>` : ''}${esc(cap)}`;
+      d.append(c);
+      return d;
+    };
+    // the always-visible turn-order card
+    const card = this.$('ccOrder');
+    card.replaceChildren();
+    const h = document.createElement('div');
+    h.className = 'cc-oh';
+    h.textContent = 'Each step, in order';
+    const grid = document.createElement('div');
+    grid.className = 'cc-og';
+    UI.STAGES.forEach(([id, cap], i) => grid.append(panel(id, i + 1, cap)));
+    card.append(h, grid, panel('machines', '', `After step ${n}: machines advance`, 'wide'));
+
+    // the first-turn card
+    const tut = this.$('ccTut');
+    const act = (a, name, text) => `<div class="cc-ta">${actIcon(a)}<div><b>${esc(name)}</b> ${text}</div></div>`;
+    tut.innerHTML = `
+      <div class="cc-th">How a turn works</div>
+      <div class="cc-tl">Everyone files up to <b>${esc(n)} steps</b> on their phone, then all the steps play together.</div>
+      <div class="cc-tacts">
+        ${act({ a: 'move', dx: 1, dy: 0 }, 'Move', 'one tile.')}
+        ${act({ a: 'pickup' }, 'Pick up', 'the bomb under you.')}
+        ${act({ a: 'throw', dx: 0, dy: -1 }, 'Throw', 'in a straight line: the first engineer in the way catches it. Full hands? It drops at their feet.')}
+        ${act({ a: 'load' }, 'Load', 'next to a catapult. It fires itself when a machine is in its lane.')}
+        ${act({ a: 'wait' }, 'Wait', 'and do nothing.')}
+      </div>
+      <div class="cc-tsec">Each step plays in this order</div>
+      <div class="cc-tord"></div>
+      <div class="cc-tgot"><div class="cc-tgt"><b>Throws go before moves:</b> throw to where someone <i>is</i>, not where they're going.</div><div class="cc-tgv"></div></div>
+      <div class="cc-tft">No timer this turn &mdash; press <b>Done</b> when you're ready.</div>`;
+    const ord = tut.querySelector('.cc-tord');
+    UI.STAGES.forEach(([id, cap], i) => ord.append(panel(id, i + 1, cap)));
+    ord.append(panel('machines', '', `After step ${n}: machines`));
+    const gv = tut.querySelector('.cc-tgv');
+    gv.append(vignetteEl('good'), vignetteEl('bad'));
+    this.cardsBuilt = true;
+  }
+
+  // per frame: the card's highlight follows the stage being played; the first-turn card shows
+  // while the game's first, untimed turn is being planned
+  tickCards(game, now) {
+    const phase = this.room?.phase;
+    const tut = phase === 'plan' && !!game.snap?.untimed;
+    if (tut !== this._tut) {
+      this._tut = tut;
+      this.$('ccTut').classList.toggle('on', tut);
+      this.$('ccOrder').classList.toggle('hide', tut);
+    }
+    const st = phase === 'resolve' || game.pb ? game.stageNow(now) : null;
+    if (st !== this._stage) {
+      this._stage = st;
+      for (const el of this.$('ccOrder').querySelectorAll('.cc-op')) el.classList.toggle('cur', el.dataset.s === st);
+      this.$('ccOrder').classList.toggle('live', !!st);
+    }
   }
 
   get defs() {
@@ -298,6 +381,7 @@ export class UI {
       this.$('ccStep').className = '';
     }
     this.$('ccQueue').classList.toggle('on', phase === 'plan' || phase === 'resolve');
+    this.tickCards(game, now);
   }
 
   wallHit() {
