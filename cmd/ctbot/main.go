@@ -107,10 +107,9 @@ func main() {
 				bot: bot.New("", skill, seed), cb: ccbot.New("", seed)}
 			p.bot.TapsPerSec = *taps
 			p.cb.Delay = *planDelay + 0.4*float64(i)
-			p.cb.NoPerks = skill == bot.Idle
-			if skill == bot.Bad || skill == bot.Casual {
-				p.cb.Mistake = map[bot.Skill]float64{bot.Bad: 0.4, bot.Casual: 0.1}[skill]
-			}
+			// catapult_coop sloppiness per queued action: casual bots waste a
+			// quarter of their actions (the balance target), bad ones more.
+			p.cb.Mistake = map[bot.Skill]float64{bot.Bad: 0.4, bot.Casual: 0.25}[skill]
 			end, err := p.run(ctx)
 			if err != nil && ctx.Err() == nil {
 				log.Printf("[%s] stopped: %v", p.name, err)
@@ -213,6 +212,7 @@ type player struct {
 	snap      *game.Snap
 	crm       *cc.RoomMsg // catapult_coop room / snap
 	csnap     *cc.Snap
+	idleDone  bool // idle skill: pressed done on the untimed first turn
 	modeAsked time.Time
 	started   time.Time // when this bot first saw the lobby as host
 	restartAt time.Time
@@ -373,9 +373,11 @@ func (p *player) handle(data []byte) (*outcome, error) {
 			// races with teammates; harmless
 		case "too_late":
 			// a plan raced the end of the plan phase; harmless
-		case "bad_plan":
-			p.logf("plan refused: %s", e.Msg)
-			p.cb.Rejected()
+		case "bad_request":
+			p.logf("error %s: %s", e.Code, e.Msg)
+			if p.mode == cc.ModeID {
+				p.cb.Rejected() // file again (an empty, done queue)
+			}
 		default:
 			p.logf("error %s: %s", e.Code, e.Msg)
 		}
@@ -562,14 +564,20 @@ func (p *player) decideCC() []any {
 			keep = k
 		}
 	}
-	if p.bot.Skill == bot.Idle || keep == nil {
+	if keep == nil {
+		return nil
+	}
+	if p.bot.Skill == bot.Idle {
+		// The game's first turn has no timer and waits for everyone, so an
+		// idle bot presses done once there and is silent afterwards.
+		if p.csnap != nil && p.csnap.Untimed && !p.idleDone {
+			p.idleDone = true
+			return []any{cc.Cmd{T: "plan", Done: true}}
+		}
 		return nil
 	}
 	var out []any
 	for _, c := range p.cb.Act(rm, p.csnap, keep) {
-		if c.T == "perk" {
-			p.logf("takes perk %s", c.ID)
-		}
 		out = append(out, c)
 	}
 	return out

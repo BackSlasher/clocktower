@@ -26,7 +26,7 @@ func newMode(rng *rand.Rand, roster []mode.Member) mode.Game {
 	return &modeGame{NewFromRoster(rng, roster)}
 }
 
-var knownCmds = map[string]bool{"start": true, "restart": true, "opt": true, "plan": true, "ready": true, "perk": true}
+var knownCmds = map[string]bool{"start": true, "restart": true, "plan": true, "ready": true}
 
 // modeGame adapts *Game to mode.Game (the concrete methods return concrete
 // wire types, which tests and bots use).
@@ -84,7 +84,7 @@ func NewFromRoster(rng *rand.Rand, roster []mode.Member) *Game {
 		if len(g.players) >= Defs.MaxPlayers {
 			break
 		}
-		p := &player{id: m.ID, name: m.Name, color: m.Color, perks: map[string]int{}}
+		p := &player{id: m.ID, name: m.Name, color: m.Color}
 		if m.Connected {
 			p.connected = true
 			g.connSeq++

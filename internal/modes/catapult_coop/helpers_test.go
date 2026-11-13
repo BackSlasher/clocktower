@@ -60,6 +60,7 @@ func board(t *testing.T, n int) (*Game, []string) {
 	for _, p := range g.players {
 		p.placed, p.carry = false, nil
 	}
+	g.rounds = 1 // not the game's first turn: timed
 	g.startPlan(1)
 	return g, ids
 }
@@ -91,27 +92,19 @@ func addMachine(g *Game, kind string, lane, pos int) *machine {
 	return m
 }
 
-func xy(x, y int) (*int, *int) { return IntP(x), IntP(y) }
+// q sets a player's queue directly (the phase does not end).
+func q(g *Game, pid string, acts ...Act) { g.player(pid).acts = acts }
 
-func cmd(a string, x, y int) Cmd {
-	cx, cy := xy(x, y)
-	return Cmd{T: "plan", A: a, X: cx, Y: cy}
-}
+func mv(dx, dy int) Act  { return Dir(AMove, dx, dy) }
+func th(dx, dy int) Act  { return Dir(AThrow, dx, dy) }
+func pkd(dx, dy int) Act { return Dir(APickup, dx, dy) }
 
-func catCmd(a string, cat int) Cmd { return Cmd{T: "plan", A: a, Cat: IntP(cat)} }
-
-func mustPlan(t *testing.T, g *Game, pid string, c Cmd) {
-	t.Helper()
-	if g.phase != PhasePlan {
-		t.Fatalf("not in plan phase (%s)", g.phase)
-	}
-	p := g.player(pid)
-	pl, err := g.validate(p, c)
-	if err != nil {
-		t.Fatalf("%s plan %+v: %v", pid, c, err)
-	}
-	p.plan = pl // set directly so the phase does not end before all plans are in
-}
+var (
+	pk = Act{A: APickup}
+	ld = Act{A: ALoad}
+	fr = Act{A: AFire}
+	wt = Act{A: AWait}
+)
 
 func wantCode(t *testing.T, err error, code string) {
 	t.Helper()
@@ -121,7 +114,7 @@ func wantCode(t *testing.T, err error, code string) {
 	}
 }
 
-// run resolves the round and returns its events (the batch).
+// run resolves the turn and returns its events (the batch).
 func run(g *Game) []any {
 	g.events = nil
 	g.resolve()

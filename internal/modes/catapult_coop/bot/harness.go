@@ -12,10 +12,9 @@ import (
 // Scenario configures a headless game.
 type Scenario struct {
 	Players int
-	Idle    int     // extra connected players who never send anything
-	Mistake float64 // per-bot chance per round to just wait
-	Wander  float64 // per-bot chance per round to make a random move instead
-	NoPerks bool
+	Idle    int     // extra connected players who press done on the first turn, then nothing
+	Mistake float64 // per-bot chance per slot to waste it (wait)
+	Wander  float64 // per-bot chance per slot to make a pointless move instead
 	Seed    uint64
 }
 
@@ -24,11 +23,11 @@ type Result struct {
 	Won       bool
 	Level     int
 	Wall      int
-	Rounds    int
+	Rounds    int // turns
 	Time      float64
 	End       *game.End
 	Trace     []int // wall HP after each level
-	LvlRounds []int // rounds played in each level reached
+	LvlRounds []int // turns played in each level reached
 }
 
 func (r Result) String() string {
@@ -40,20 +39,26 @@ func (r Result) String() string {
 func Run(sc Scenario) Result {
 	g := game.New(rand.New(rand.NewPCG(sc.Seed, 7)))
 	var bots []*Bot
+	var idle []string
 	for i := 0; i < sc.Players+sc.Idle; i++ {
 		pid, _, err := g.AddPlayer(fmt.Sprintf("Bot%d", i+1))
 		if err != nil {
 			panic(err)
 		}
 		g.SetConnected(pid, true)
-		if i < sc.Players {
+		if i >= sc.Players {
+			idle = append(idle, pid)
+		} else {
 			b := New(pid, sc.Seed*100+uint64(i))
-			b.Mistake, b.Wander, b.NoPerks = sc.Mistake, sc.Wander, sc.NoPerks
+			b.Mistake, b.Wander = sc.Mistake, sc.Wander
 			bots = append(bots, b)
 		}
 	}
 	if err := g.Start(g.Host()); err != nil {
 		panic(err)
+	}
+	for _, pid := range idle { // the untimed first turn waits for them once
+		_ = g.Apply(pid, game.Cmd{T: "plan", Done: true})
 	}
 	var trace, lvlRounds []int
 	level, startRound := g.Level(), 0
@@ -75,6 +80,9 @@ func Run(sc Scenario) Result {
 				room = g.RoomState()
 			}
 		}
+	}
+	if g.End() == nil {
+		panic(fmt.Sprintf("game did not finish (phase %s, level %d, turn %d)", g.Phase(), g.Level(), g.Round()))
 	}
 	return Result{Won: g.Phase() == game.PhaseWon, Level: g.Level(), Wall: g.Wall(), Rounds: g.End().Rounds,
 		Time: g.Time(), End: g.End(), Trace: trace, LvlRounds: lvlRounds}

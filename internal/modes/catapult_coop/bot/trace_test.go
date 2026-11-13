@@ -58,27 +58,28 @@ func TestDebugTrace(t *testing.T) {
 		pid, _, _ := g.AddPlayer(fmt.Sprint("B", i))
 		g.SetConnected(pid, true)
 		b := New(pid, uint64(i))
-		b.NoPerks = os.Getenv("CT_NOPERKS") != ""
 		bots = append(bots, b)
 	}
 	_ = g.Start(g.Host())
+	seen := map[[2]int]bool{}
 	for tick := 0; g.Running() && tick < 100000; tick++ {
 		snap, room := g.Snapshot(), g.RoomState()
-		if g.Phase() == game.PhasePlan && g.Level() >= minLv && snap.Left == game.Defs.PlanTime {
-			plans := TeamPlan(room, snap, g.Keep())
+		if key := [2]int{g.Level(), g.Round()}; g.Phase() == game.PhasePlan && g.Level() >= minLv && !seen[key] {
+			seen[key] = true
+			queues, _ := TeamQueues(room, snap, g.Keep())
 			var ps []string
 			for _, p := range room.Players {
-				c := plans[p.ID]
-				s := c.A
-				if c.X != nil {
-					s += fmt.Sprintf("(%d,%d)", *c.X, *c.Y)
+				var q []string
+				for _, a := range queues[p.ID] {
+					s := a.A
+					if a.DX != nil {
+						s += fmt.Sprintf("(%d,%d)", *a.DX, *a.DY)
+					}
+					q = append(q, s)
 				}
-				if c.Cat != nil {
-					s += fmt.Sprintf("#%d", *c.Cat)
-				}
-				ps = append(ps, s)
+				ps = append(ps, strings.Join(q, " "))
 			}
-			t.Logf("L%d R%d wall %d\n%splans %v", g.Level(), g.Round(), g.Wall(), render(room, snap), ps)
+			t.Logf("L%d T%d wall %d\n%squeues %q", g.Level(), g.Round(), g.Wall(), render(room, snap), ps)
 		}
 		for _, b := range bots {
 			for _, c := range b.Act(room, snap, g.Keep()) {

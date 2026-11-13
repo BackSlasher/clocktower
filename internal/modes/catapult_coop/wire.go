@@ -26,11 +26,10 @@ var (
 	ErrBadRequest = mode.ErrBadRequest
 	ErrRoomFull   = mode.ErrRoomFull
 	ErrBadName    = mode.ErrBadName
-	ErrTooLate    = &Error{Code: "too_late", Msg: "Too late, the round is under way"}
+	ErrTooLate    = &Error{Code: "too_late", Msg: "Too late, the turn is under way"}
 )
 
-func badReq(msg string) *Error  { return &Error{Code: "bad_request", Msg: msg} }
-func badPlan(msg string) *Error { return &Error{Code: "bad_plan", Msg: msg} }
+func badReq(msg string) *Error { return &Error{Code: "bad_request", Msg: msg} }
 
 // Actions.
 const (
@@ -40,67 +39,53 @@ const (
 	ALoad   = "load"
 	AFire   = "fire"
 	AWait   = "wait"
-	AClear  = "clear" // command only: withdraw the plan
 )
+
+// Act is one queued action. DX, DY: a direction for move and throw
+// (required), and optionally for pickup; absent otherwise.
+type Act struct {
+	A  string `json:"a"`
+	DX *int   `json:"dx,omitempty"`
+	DY *int   `json:"dy,omitempty"`
+}
 
 // Cmd is a client → server message. Pointer fields distinguish "absent".
 type Cmd struct {
-	T         string `json:"t"`
-	A         string `json:"a,omitempty"`    // plan: action
-	X         *int   `json:"x,omitempty"`    // plan: target cell (move, pickup)
-	Y         *int   `json:"y,omitempty"`    //
-	DX        *int   `json:"dx,omitempty"`   // plan throw: direction
-	DY        *int   `json:"dy,omitempty"`   //
-	Cat       *int   `json:"cat,omitempty"`  // plan: catapult id
-	Fire      bool   `json:"fire,omitempty"` // plan load: also fire (Quick Hands)
-	ID        string `json:"id,omitempty"`   // perk
-	Ready     *bool  `json:"ready,omitempty"`
-	OpenPlans *bool  `json:"openPlans,omitempty"` // opt
+	T     string `json:"t"`
+	Acts  []Act  `json:"acts,omitempty"`  // plan: the whole queue
+	Done  bool   `json:"done,omitempty"`  // plan: finished planning
+	Ready *bool  `json:"ready,omitempty"` // ready (break)
 }
 
 // IntP and BoolP help build commands in Go (bots, tests).
 func IntP(v int) *int    { return &v }
 func BoolP(v bool) *bool { return &v }
 
-// Plan is a player's chosen action as the server stores and shows it.
-type Plan struct {
-	A    string   `json:"a"`
-	X    *int     `json:"x,omitempty"`
-	Y    *int     `json:"y,omitempty"`
-	DX   *int     `json:"dx,omitempty"` // throw: direction
-	DY   *int     `json:"dy,omitempty"`
-	Cat  *int     `json:"cat,omitempty"`
-	Fire bool     `json:"fire,omitempty"`
-	Path [][2]int `json:"path,omitempty"` // move: the cells walked, start excluded
-}
+// Dir builds an act with a direction.
+func Dir(a string, dx, dy int) Act { return Act{A: a, DX: IntP(dx), DY: IntP(dy)} }
 
 // PlayerInfo is a player entry in the `room` message.
 type PlayerInfo struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Color     string         `json:"color"`
-	Connected bool           `json:"connected"`
-	Away      bool           `json:"away"`
-	Planned   bool           `json:"planned"`
-	Ready     bool           `json:"ready"`
-	Plan      *Plan          `json:"plan"` // only with openPlans, else null
-	Offer     []string       `json:"offer"`
-	Perks     map[string]int `json:"perks"`
-	Can       Abilities      `json:"can"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Color     string `json:"color"`
+	Connected bool   `json:"connected"`
+	Away      bool   `json:"away"`
+	Ready     bool   `json:"ready"` // break: pressed ready
 }
 
 // StatsOut is one player's end-of-game stats.
 type StatsOut struct {
-	Throws  int            `json:"throws"`
-	Catches int            `json:"catches"`
-	Pickups int            `json:"pickups"`
-	Loads   int            `json:"loads"`
-	Fires   int            `json:"fires"`
-	Kills   int            `json:"kills"`
-	Dmg     int            `json:"dmg"`
-	Steps   int            `json:"steps"`
-	Bumps   int            `json:"bumps"`
-	Perks   map[string]int `json:"perks"`
+	Throws  int `json:"throws"`
+	Catches int `json:"catches"`
+	Pickups int `json:"pickups"`
+	Loads   int `json:"loads"`
+	Fires   int `json:"fires"`
+	Kills   int `json:"kills"`
+	Dmg     int `json:"dmg"`
+	Steps   int `json:"steps"`
+	Bumps   int `json:"bumps"`
+	Fizzles int `json:"fizzles"`
 }
 
 // Award is a fun end-of-game title.
@@ -114,7 +99,7 @@ type Award struct {
 type End struct {
 	Won    bool                `json:"won"`
 	Level  int                 `json:"level"`
-	Rounds int                 `json:"rounds"`
+	Rounds int                 `json:"rounds"` // turns resolved
 	Wall   int                 `json:"wall"`
 	Time   float64             `json:"time"`
 	Stats  map[string]StatsOut `json:"stats"`
@@ -123,18 +108,17 @@ type End struct {
 
 // RoomMsg is the `room` message.
 type RoomMsg struct {
-	T         string       `json:"t"`
-	Mode      string       `json:"mode"`
-	Phase     Phase        `json:"phase"`
-	Host      string       `json:"host"`
-	Players   []PlayerInfo `json:"players"`
-	OpenPlans bool         `json:"openPlans"`
-	Keep      string       `json:"keep"`
-	Layout    *Layout      `json:"layout"`
-	Level     int          `json:"level"`
-	Levels    int          `json:"levels"`
-	Round     int          `json:"round"`
-	End       *End         `json:"end"`
+	T       string       `json:"t"`
+	Mode    string       `json:"mode"`
+	Phase   Phase        `json:"phase"`
+	Host    string       `json:"host"`
+	Players []PlayerInfo `json:"players"`
+	Keep    string       `json:"keep"`
+	Layout  *Layout      `json:"layout"`
+	Level   int          `json:"level"`
+	Levels  int          `json:"levels"`
+	Round   int          `json:"round"` // turn within the level
+	End     *End         `json:"end"`
 }
 
 // BombRef is a bomb not on the ground (carried or loaded).
@@ -176,10 +160,17 @@ type MachineSnap struct {
 	Frozen int    `json:"frozen"`
 }
 
-// Incoming is a machine that appears at the end of the current round.
+// Incoming is a machine that appears at the end of the current turn.
 type Incoming struct {
 	Lane int    `json:"lane"`
 	Kind string `json:"kind"`
+}
+
+// PlanSnap is one player's live, public queue.
+type PlanSnap struct {
+	PID  string `json:"pid"`
+	Acts []Act  `json:"acts"`
+	Done bool   `json:"done"`
 }
 
 // Snap is the `snap` message.
@@ -190,6 +181,7 @@ type Snap struct {
 	Level     int            `json:"level"`
 	Round     int            `json:"round"`
 	Left      float64        `json:"left"`
+	Untimed   bool           `json:"untimed"` // plan phase without a timer (the game's first turn)
 	Wall      int            `json:"wall"`
 	WallMax   int            `json:"wallMax"`
 	Engineers []EngineerSnap `json:"engineers"`
@@ -197,10 +189,11 @@ type Snap struct {
 	Catapults []CatapultSnap `json:"catapults"`
 	Machines  []MachineSnap  `json:"machines"`
 	Incoming  []Incoming     `json:"incoming"`
+	Plans     []PlanSnap     `json:"plans"`
 	Ev        []any          `json:"ev"`
 }
 
-// Stage names of a resolve, in order.
+// Stage names of a slot, in order, and the machine stage.
 const (
 	StThrow    = "throw"
 	StMove     = "move"
@@ -216,6 +209,14 @@ type StageTiming struct {
 	Dur float64 `json:"dur"`
 }
 
+// SlotTiming places one slot (and its stages) on the resolve timeline.
+type SlotTiming struct {
+	Slot   int           `json:"slot"`
+	At     float64       `json:"at"`
+	Dur    float64       `json:"dur"`
+	Stages []StageTiming `json:"stages"`
+}
+
 // Hit is one machine affected by a fired bomb.
 type Hit struct {
 	ID     int  `json:"id"`
@@ -225,41 +226,65 @@ type Hit struct {
 	Frozen int  `json:"frozen"`
 }
 
-// Events. Each has E set to its event name; resolve events also carry their
-// stage in S.
+// Fizzle reasons.
+const (
+	FzBlocked       = "blocked"        // move: the next cell is a wall, crate, catapult or ledge
+	FzNoBomb        = "no_bomb"        // pickup: nothing to pick up there
+	FzHandsFull     = "hands_full"     // pickup: already carrying
+	FzEmptyHands    = "empty_hands"    // throw, load: not carrying
+	FzNoTarget      = "no_target"      // throw: nothing to throw to that way
+	FzNoCatapult    = "no_catapult"    // load, fire: not next to a catapult, up on the rampart
+	FzCatapultFull  = "catapult_full"  // load: the catapult(s) next to you are loaded
+	FzCatapultEmpty = "catapult_empty" // fire: the catapult(s) next to you are empty
+)
+
+// Events. Each has E set to its event name. Events of a slot carry S (their
+// stage) and Slot (0-based); machine-stage events carry S only.
 type (
 	EvResolve struct {
-		E      string        `json:"e"`
-		Level  int           `json:"level"`
-		Round  int           `json:"round"`
-		Dur    float64       `json:"dur"`
-		Stages []StageTiming `json:"stages"`
+		E        string       `json:"e"`
+		Level    int          `json:"level"`
+		Round    int          `json:"round"`
+		Dur      float64      `json:"dur"`
+		Slots    []SlotTiming `json:"slots"`
+		Machines *StageTiming `json:"machines"`
+	}
+	EvFizzle struct {
+		E      string `json:"e"`
+		S      string `json:"s"`
+		Slot   *int   `json:"slot,omitempty"`
+		PID    string `json:"pid"`
+		A      string `json:"a"`
+		At     [2]int `json:"at"` // where the engineer stands
+		Reason string `json:"reason"`
 	}
 	EvThrow struct {
 		E      string `json:"e"`
 		S      string `json:"s"`
+		Slot   *int   `json:"slot,omitempty"`
 		PID    string `json:"pid"`
 		Bomb   int    `json:"bomb"`
 		Kind   string `json:"kind"`
 		From   [2]int `json:"from"`
-		Dir    [2]int `json:"dir"`          // the throw's direction (dx, dy)
-		To     [2]int `json:"to"`           // where the flight ends: the catcher's cell, or the landing cell
-		Result string `json:"result"`       // caught | blocked | landed
-		By     string `json:"by,omitempty"` // the engineer who caught or blocked it
-		At     [2]int `json:"at"`           // where the bomb ends up (catcher's cell, or resting cell)
+		Dir    [2]int `json:"dir"`
+		To     [2]int `json:"to"`
+		Result string `json:"result"` // caught | blocked | landed
+		By     string `json:"by,omitempty"`
+		At     [2]int `json:"at"`
 	}
 	EvMove struct {
-		E      string   `json:"e"`
-		S      string   `json:"s"`
-		PID    string   `json:"pid"`
-		From   [2]int   `json:"from"`
-		To     [2]int   `json:"to"`
-		Path   [][2]int `json:"path"`
-		Result string   `json:"result"` // ok | bump
+		E      string `json:"e"`
+		S      string `json:"s"`
+		Slot   *int   `json:"slot,omitempty"`
+		PID    string `json:"pid"`
+		From   [2]int `json:"from"`
+		To     [2]int `json:"to"`
+		Result string `json:"result"` // ok | bump
 	}
 	EvPickup struct {
 		E      string `json:"e"`
 		S      string `json:"s"`
+		Slot   *int   `json:"slot,omitempty"`
 		PID    string `json:"pid"`
 		At     [2]int `json:"at"`
 		Bomb   int    `json:"bomb"`
@@ -269,6 +294,7 @@ type (
 	EvLoad struct {
 		E      string `json:"e"`
 		S      string `json:"s"`
+		Slot   *int   `json:"slot,omitempty"`
 		PID    string `json:"pid"`
 		Cat    int    `json:"cat"`
 		Bomb   int    `json:"bomb"`
@@ -278,6 +304,7 @@ type (
 	EvFire struct {
 		E      string `json:"e"`
 		S      string `json:"s"`
+		Slot   *int   `json:"slot,omitempty"`
 		PID    string `json:"pid"`
 		Cat    int    `json:"cat"`
 		Lane   int    `json:"lane"`
@@ -339,18 +366,13 @@ type (
 	EvLevelClear struct {
 		E     string `json:"e"`
 		Level int    `json:"level"`
-		Wall  int    `json:"wall"`
+		Wall  int    `json:"wall"` // after the break's heal
+		Heal  int    `json:"heal"` // hit points the wall got back for the break
 	}
 	EvPlace struct {
 		E   string `json:"e"`
 		PID string `json:"pid"`
 		X   int    `json:"x"`
 		Y   int    `json:"y"`
-	}
-	EvPerk struct {
-		E    string `json:"e"`
-		PID  string `json:"pid"`
-		ID   string `json:"id"`
-		Wall int    `json:"wall"`
 	}
 )

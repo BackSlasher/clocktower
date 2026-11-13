@@ -7,7 +7,6 @@ package catapultcoop
 
 import (
 	"fmt"
-	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -23,7 +22,7 @@ var Palette = []string{"#e0a030", "#4fb39a", "#d1594a", "#6f8fe0", "#c77dd6", "#
 const NameMaxLen = 12
 
 type stats struct {
-	throws, catches, pickups, loads, fires, kills, dmg, steps, bumps int
+	throws, catches, pickups, loads, fires, kills, dmg, steps, bumps, fizzles int
 }
 
 type player struct {
@@ -31,16 +30,16 @@ type player struct {
 	connected       bool
 	connSeq         uint64
 	ready           bool
-	missed          int // rounds in a row resolved without a plan from this player
+	missed          int // turns in a row resolved with nothing filed by this player
 
 	placed bool // has an engineer on the board
 	x, y   int
 	carry  *BombRef
-	plan   *Plan
+	acts   []Act // the queue (public)
+	done   bool  // finished planning this turn (public)
+	cur    *step // the action of the slot being resolved
 
-	perks map[string]int
-	offer []string
-	st    stats
+	st stats
 }
 
 type bomb struct {
@@ -84,9 +83,10 @@ type Game struct {
 	host    string
 	connSeq uint64
 
-	openPlans bool
-	keep      *Keep
-	lay       *Layout
+	untimed bool // this plan phase has no timer (the game's first turn)
+	curSlot int  // slot being resolved, −1 outside slots
+	keep    *Keep
+	lay     *Layout
 
 	wall     int
 	bombs    []*bomb    // on the ground
@@ -103,7 +103,7 @@ type Game struct {
 
 // New creates a game in the lobby phase.
 func New(rng *rand.Rand) *Game {
-	g := &Game{rng: rng, nextPID: 1}
+	g := &Game{rng: rng, nextPID: 1, curSlot: -1}
 	g.reset()
 	return g
 }
@@ -117,8 +117,8 @@ func (g *Game) reset() {
 	g.nextMID, g.nextBID = 1, 1
 	g.end = nil
 	for _, p := range g.players {
-		p.ready, p.missed, p.placed, p.carry, p.plan = false, 0, false, nil, nil
-		p.perks, p.offer, p.st = map[string]int{}, nil, stats{}
+		p.ready, p.missed, p.placed, p.carry = false, 0, false, nil
+		p.acts, p.done, p.cur, p.st = nil, false, nil, stats{}
 	}
 	g.slowVer++
 }
@@ -240,7 +240,7 @@ func (g *Game) AddPlayer(name string) (pid, evicted string, err error) {
 			g.host = ""
 		}
 	}
-	p := &player{id: fmt.Sprintf("p%d", g.nextPID), name: name, perks: map[string]int{}}
+	p := &player{id: fmt.Sprintf("p%d", g.nextPID), name: name}
 	g.nextPID++
 	used := map[string]bool{}
 	for _, o := range g.players {
@@ -307,8 +307,6 @@ func (g *Game) Apply(pid string, c Cmd) error {
 		return g.Start(pid)
 	case "restart":
 		return g.Restart(pid)
-	case "opt":
-		return g.Opt(pid, c)
 	case "plan":
 		return g.SetPlan(pid, c)
 	case "ready":
@@ -317,8 +315,6 @@ func (g *Game) Apply(pid string, c Cmd) error {
 			r = *c.Ready
 		}
 		return g.Ready(pid, r)
-	case "perk":
-		return g.Perk(pid, c.ID)
 	}
 	return nil
 }
@@ -354,21 +350,6 @@ func (g *Game) Restart(pid string) error {
 	return nil
 }
 
-// Opt sets a lobby option (host, lobby).
-func (g *Game) Opt(pid string, c Cmd) error {
-	if pid != g.host {
-		return ErrNotHost
-	}
-	if g.phase != PhaseLobby {
-		return badReq("Options can only change in the lobby")
-	}
-	if c.OpenPlans != nil && *c.OpenPlans != g.openPlans {
-		g.openPlans = *c.OpenPlans
-		g.slowVer++
-	}
-	return nil
-}
-
 // Ready marks a player ready during a break. Outside a break it is a harmless
 // no-op (it races with the phase change).
 func (g *Game) Ready(pid string, r bool) error {
@@ -388,7 +369,7 @@ func (g *Game) Ready(pid string, r bool) error {
 	return nil
 }
 
-// stand marks a player as taking part again (any plan, ready or perk).
+// stand marks a player as taking part again (any plan or ready).
 func (g *Game) stand(p *player) {
 	if p.missed != 0 {
 		p.missed = 0
@@ -396,7 +377,9 @@ func (g *Game) stand(p *player) {
 	}
 }
 
-// SetPlan validates and stores (or clears) a player's plan.
+// SetPlan replaces a player's whole queue (and done flag). Only the shape is
+// checked here; whether an action is possible is decided when its slot
+// resolves (it may fizzle).
 func (g *Game) SetPlan(pid string, c Cmd) error {
 	p := g.player(pid)
 	if p == nil {
@@ -409,147 +392,45 @@ func (g *Game) SetPlan(pid string, c Cmd) error {
 	default:
 		return badReq("Not now")
 	}
-	if !p.placed {
-		return badPlan("You have no engineer yet")
+	if len(c.Acts) > Defs.Slots {
+		return badReq(fmt.Sprintf("At most %d actions", Defs.Slots))
 	}
-	if c.A == AClear {
-		if p.plan != nil {
-			p.plan = nil
-			g.slowVer++
+	for _, a := range c.Acts {
+		if err := checkAct(a); err != nil {
+			return err
 		}
-		return nil
 	}
-	pl, err := g.validate(p, c)
-	if err != nil {
-		return err
-	}
-	p.plan = pl
+	p.acts = slices.Clone(c.Acts)
+	p.done = c.Done
 	g.stand(p)
-	g.slowVer++
 	g.checkPhaseEnd()
 	return nil
 }
 
-// validate checks a plan command against the board as it stands (the board
-// only changes in resolve, so this is the board the plan will run on).
-func (g *Game) validate(p *player, c Cmd) (*Plan, error) {
-	can := abilities(p)
-	l := g.lay
-	xy := func() (int, int, error) {
-		if c.X == nil || c.Y == nil {
-			return 0, 0, badReq("Missing cell")
-		}
-		if !l.In(*c.X, *c.Y) {
-			return 0, 0, badPlan("That cell is off the map")
-		}
-		return *c.X, *c.Y, nil
-	}
-	switch c.A {
-	case AWait:
-		return &Plan{A: AWait}, nil
-	case AMove:
-		x, y, err := xy()
-		if err != nil {
-			return nil, err
-		}
-		if x == p.x && y == p.y {
-			return nil, badPlan("You are already there")
-		}
-		if !l.Walkable(x, y) {
-			return nil, badPlan("You can't stand there")
-		}
-		budget := can.Move
-		if p.carry != nil {
-			budget = can.MoveCarry
-		}
-		path := l.Path(p.x, p.y, x, y)
-		if path == nil || len(path) > budget {
-			return nil, badPlan(fmt.Sprintf("Too far: you can walk %d cells", budget))
-		}
-		return &Plan{A: AMove, X: IntP(x), Y: IntP(y), Path: path}, nil
-	case APickup:
-		x, y, err := xy()
-		if err != nil {
-			return nil, err
-		}
-		if p.carry != nil {
-			return nil, badPlan("Your hands are full")
-		}
-		if g.bombAt(x, y) == nil {
-			return nil, badPlan("No bomb there")
-		}
-		if abs(x-p.x)+abs(y-p.y) > can.Reach {
-			return nil, badPlan("Out of reach")
-		}
-		return &Plan{A: APickup, X: IntP(x), Y: IntP(y)}, nil
-	case AThrow:
-		if c.X != nil || c.Y != nil {
-			return nil, badReq("Throws take a direction (dx, dy), not a cell")
-		}
-		if c.DX == nil || c.DY == nil {
-			return nil, badReq("Missing direction")
-		}
-		dx, dy := *c.DX, *c.DY
-		if abs(dx)+abs(dy) != 1 {
-			return nil, badReq("Direction must be one of (1,0), (-1,0), (0,1), (0,-1)")
-		}
-		if p.carry == nil {
-			return nil, badPlan("You are not carrying a bomb")
-		}
-		if _, ok := l.Landing(l.ThrowLine(p.x, p.y, dx, dy, can.Throw)); !ok {
-			return nil, badPlan("Nothing to throw to that way")
-		}
-		return &Plan{A: AThrow, DX: IntP(dx), DY: IntP(dy)}, nil
-	case ALoad, AFire:
-		cat, err := g.pickCatapult(p, c.Cat)
-		if err != nil {
-			return nil, err
-		}
-		if c.A == ALoad {
-			if p.carry == nil {
-				return nil, badPlan("You are not carrying a bomb")
-			}
-			if g.cats[cat] != nil {
-				return nil, badPlan("That catapult is already loaded")
-			}
-			if c.Fire && !can.QuickHands {
-				return nil, badPlan("Loading and firing at once needs Quick Hands")
-			}
-			return &Plan{A: ALoad, Cat: IntP(cat), Fire: c.Fire}, nil
-		}
-		if g.cats[cat] == nil {
-			return nil, badPlan("That catapult is not loaded")
-		}
-		return &Plan{A: AFire, Cat: IntP(cat)}, nil
-	}
-	return nil, badReq("Unknown action")
-}
+func unit(dx, dy *int) bool { return dx != nil && dy != nil && abs(*dx)+abs(*dy) == 1 }
 
-// pickCatapult resolves the catapult of a load/fire plan: the given id, which
-// must be next to the engineer, or (id absent) the only one next to them.
-func (g *Game) pickCatapult(p *player, id *int) (int, error) {
-	if id != nil {
-		if *id < 0 || *id >= len(g.keep.Catapults) {
-			return 0, badReq("No such catapult")
+// checkAct checks one action's shape.
+func checkAct(a Act) error {
+	switch a.A {
+	case AMove, AThrow:
+		if !unit(a.DX, a.DY) {
+			return badReq(a.A + " needs a direction: dx, dy one of (1,0), (-1,0), (0,1), (0,-1)")
 		}
-		if !g.lay.LoadCell(p.x, p.y, g.keep.Catapults[*id]) {
-			return 0, badPlan("Stand next to the catapult, up on the rampart")
+	case APickup:
+		if (a.DX == nil) != (a.DY == nil) {
+			return badReq("pickup: give both dx and dy, or neither")
 		}
-		return *id, nil
-	}
-	found := -1
-	for _, c := range g.keep.Catapults {
-		if g.lay.LoadCell(p.x, p.y, c) {
-			if found >= 0 {
-				return 0, badReq("Say which catapult")
-			}
-			found = c.ID
+		if a.DX != nil && !unit(a.DX, a.DY) && (*a.DX != 0 || *a.DY != 0) {
+			return badReq("pickup: dx, dy must be a direction or (0,0)")
 		}
+	case ALoad, AFire, AWait:
+		if a.DX != nil || a.DY != nil {
+			return badReq(a.A + " takes no direction")
+		}
+	default:
+		return badReq("Unknown action")
 	}
-	if found < 0 {
-		return 0, badPlan("Stand next to the catapult, up on the rampart")
-	}
-	return found, nil
+	return nil
 }
 
 // --- phases ---------------------------------------------------------------------
@@ -561,6 +442,9 @@ func (g *Game) Step(dt float64) {
 		return
 	}
 	g.time += dt
+	if g.phase == PhasePlan && g.untimed {
+		return // the first turn waits for everyone
+	}
 	g.left -= dt
 	if g.left > 0 {
 		return
@@ -575,7 +459,7 @@ func (g *Game) Step(dt float64) {
 	}
 }
 
-// checkPhaseEnd ends a plan phase once every present player has planned, and
+// checkPhaseEnd ends a plan phase once every present player is done, and
 // a break once every present player is ready. Present = connected and not
 // away; with nobody present only the timer ends the phase.
 func (g *Game) checkPhaseEnd() {
@@ -588,7 +472,7 @@ func (g *Game) checkPhaseEnd() {
 			continue
 		}
 		n++
-		if g.phase == PhasePlan && p.plan == nil || g.phase == PhaseBreak && !p.ready {
+		if g.phase == PhasePlan && !p.done || g.phase == PhaseBreak && !p.ready {
 			return
 		}
 	}
@@ -605,9 +489,13 @@ func (g *Game) checkPhaseEnd() {
 func (g *Game) startPlan(round int) {
 	g.phase = PhasePlan
 	g.round = round
+	g.untimed = g.rounds == 0
 	g.left = Defs.PlanTime
+	if g.untimed {
+		g.left = 0
+	}
 	for _, p := range g.players {
-		p.plan = nil
+		p.acts, p.done = nil, false
 	}
 	g.slowVer++
 }
@@ -626,7 +514,7 @@ func (g *Game) startLevel(lv int) {
 		g.cats[i] = nil
 	}
 	for _, p := range g.players {
-		p.placed, p.carry, p.plan, p.ready = false, nil, nil, false
+		p.placed, p.carry, p.acts, p.done, p.ready = false, nil, nil, false, false
 	}
 	for _, p := range g.players {
 		if p.connected {
@@ -641,7 +529,7 @@ func (g *Game) startLevel(lv int) {
 	for _, gr := range ld.Groups {
 		hp := gr.hp(n)
 		for i := range gr.count(n) {
-			e := spawnEntry{round: gr.Start + i*gr.Every, lane: gr.Lanes[i%len(gr.Lanes)], kind: gr.Kind, hp: hp}
+			e := spawnEntry{round: gr.round(i), lane: gr.Lanes[i%len(gr.Lanes)], kind: gr.Kind, hp: hp}
 			for range gr.cluster() {
 				g.script = append(g.script, e)
 			}
@@ -657,17 +545,19 @@ func (g *Game) afterResolve() {
 	case g.wall <= 0:
 		g.finish(false)
 	case len(g.script) == 0 && len(g.machines) == 0:
-		g.emit(EvLevelClear{E: "level_clear", Level: g.level, Wall: g.wall})
 		if g.level >= len(Defs.Levels) {
+			g.emit(EvLevelClear{E: "level_clear", Level: g.level, Wall: g.wall})
 			g.finish(true)
 			return
 		}
+		heal := min(Defs.BreakHeal, Defs.WallHP-g.wall)
+		g.wall += heal
+		g.emit(EvLevelClear{E: "level_clear", Level: g.level, Wall: g.wall, Heal: heal})
 		g.phase = PhaseBreak
 		g.left = Defs.BreakTime
 		for _, p := range g.players {
-			p.ready, p.plan = false, nil
+			p.ready, p.acts, p.done = false, nil, false
 		}
-		g.makeOffers()
 		g.slowVer++
 	default:
 		g.startPlan(g.round + 1)
@@ -676,7 +566,7 @@ func (g *Game) afterResolve() {
 
 func (g *Game) endBreak() {
 	for _, p := range g.players {
-		p.offer, p.ready = nil, false
+		p.ready = false
 	}
 	g.startLevel(g.level + 1)
 }
@@ -691,9 +581,7 @@ func (g *Game) finish(won bool) {
 	g.end = &End{Won: won, Level: g.level, Rounds: g.rounds, Wall: max(0, g.wall), Time: round1(g.time),
 		Stats: map[string]StatsOut{}, Awards: g.awards()}
 	for _, p := range g.players {
-		so := p.st.out()
-		so.Perks = maps.Clone(p.perks)
-		g.end.Stats[p.id] = so
+		g.end.Stats[p.id] = p.st.out()
 	}
 	g.slowVer++
 }
@@ -840,17 +728,12 @@ func (g *Game) RoomState() *RoomMsg {
 		keep = keepFor(max(1, len(g.players)))
 		lay = keep.LevelLayout(1)
 	}
-	m := &RoomMsg{T: "room", Mode: ModeID, Phase: g.phase, Host: g.host, OpenPlans: g.openPlans,
+	m := &RoomMsg{T: "room", Mode: ModeID, Phase: g.phase, Host: g.host,
 		Keep: keep.ID, Layout: lay, Level: g.level, Levels: len(Defs.Levels), Round: g.round, End: g.end,
 		Players: make([]PlayerInfo, 0, len(g.players))}
 	for _, p := range g.players {
-		pi := PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected, Away: g.away(p),
-			Planned: p.plan != nil, Ready: p.ready, Offer: slices.Clone(p.offer), Perks: maps.Clone(p.perks), Can: abilities(p)}
-		if g.openPlans && p.plan != nil {
-			c := *p.plan
-			pi.Plan = &c
-		}
-		m.Players = append(m.Players, pi)
+		m.Players = append(m.Players, PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected,
+			Away: g.away(p), Ready: p.ready})
 	}
 	return m
 }
@@ -865,9 +748,16 @@ func (g *Game) View() *Snap { return g.snapshot(false) }
 
 func (g *Game) snapshot(drain bool) *Snap {
 	s := &Snap{T: "snap", Phase: g.phase, Time: round1(g.time), Level: g.level, Round: g.round,
-		Left: round1(math.Max(0, g.left)), Wall: max(0, g.wall), WallMax: Defs.WallHP,
+		Left: round1(math.Max(0, g.left)), Untimed: g.phase == PhasePlan && g.untimed, Wall: max(0, g.wall), WallMax: Defs.WallHP,
 		Engineers: []EngineerSnap{}, Bombs: []BombSnap{}, Catapults: []CatapultSnap{},
-		Machines: []MachineSnap{}, Incoming: []Incoming{}, Ev: []any{}}
+		Machines: []MachineSnap{}, Incoming: []Incoming{}, Plans: []PlanSnap{}, Ev: []any{}}
+	for _, p := range g.players {
+		acts := p.acts
+		if acts == nil {
+			acts = []Act{}
+		}
+		s.Plans = append(s.Plans, PlanSnap{PID: p.id, Acts: acts, Done: p.done})
+	}
 	if drain && len(g.events) > 0 {
 		s.Ev = g.events
 		g.events = nil
@@ -900,7 +790,7 @@ func (g *Game) snapshot(drain bool) *Snap {
 
 func (s stats) out() StatsOut {
 	return StatsOut{Throws: s.throws, Catches: s.catches, Pickups: s.pickups, Loads: s.loads, Fires: s.fires,
-		Kills: s.kills, Dmg: s.dmg, Steps: s.steps, Bumps: s.bumps}
+		Kills: s.kills, Dmg: s.dmg, Steps: s.steps, Bumps: s.bumps, Fizzles: s.fizzles}
 }
 
 func (g *Game) awards() []Award {
@@ -914,6 +804,7 @@ func (g *Game) awards() []Award {
 		{"Loader", "%d bombs loaded", func(s stats) int { return s.loads }},
 		{"Marathon", "%d cells walked", func(s stats) int { return s.steps }},
 		{"Traffic Jam", "%d bumps", func(s stats) int { return s.bumps }},
+		{"Butterfingers", "%d actions that fizzled", func(s stats) int { return s.fizzles }},
 	}
 	out := []Award{}
 	for _, a := range list {

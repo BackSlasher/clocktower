@@ -1,24 +1,41 @@
 package catapultcoop
 
-import "slices"
+import (
+	"math"
+	"slices"
+)
 
-// resolve plays out one round (docs/CATAPULT_COOP.md "Resolve order"):
+// A turn resolves slot by slot (docs/CATAPULT_COOP.md "Resolve order").
+// In each slot every player's action for that slot is first turned into a
+// concrete step against the board as it stands at the start of the slot (an
+// impossible action fizzles), then the slot plays in four stages:
 //
-//  1. throws fly and are caught
+//  1. throws fly and are caught or blocked, or land
 //  2. moves (bumps on shared destinations, swaps and blocked cells)
 //  3. pick-ups, then loads (contested ones fail)
 //  4. catapults fire
-//  5. machines advance, the round's new machines appear, bombs are topped up
+//
+// After the last slot, once per turn: machines advance, the turn's new
+// machines appear, bombs are topped up.
 //
 // The board is updated at once; the events (one batch, starting with
 // `resolve`) let the TV animate it. Within a stage, events are in player
-// join order (machines: id order).
+// join order (machines: id order); fizzles come first in their stage.
+
+// step is one action made concrete for the slot being resolved.
+type step struct {
+	a      string
+	x, y   int // move: destination; pickup: the bomb's cell
+	dx, dy int // throw: direction
+	cat    int // load, fire: catapult id
+}
+
 func (g *Game) resolve() {
 	for _, p := range g.players {
 		if !p.placed {
 			continue
 		}
-		if p.plan == nil {
+		if len(p.acts) == 0 && !p.done {
 			if p.missed < Defs.AwayAfter {
 				p.missed++
 			}
@@ -28,57 +45,200 @@ func (g *Game) resolve() {
 	}
 	saved := g.events
 	g.events = nil
-	stages := []string{StThrow, StMove, StGrab, StFire, StMachines}
-	counts := make([]int, len(stages))
-	mark := func(i int) { counts[i] = len(g.events) }
-
-	g.resolveThrows()
-	mark(0)
-	g.resolveMoves()
-	mark(1)
-	fires := g.resolveGrabs()
-	mark(2)
-	g.resolveFires(fires)
-	mark(3)
-	g.resolveMachines()
-	mark(4)
-
-	hdr := EvResolve{E: "resolve", Level: g.level, Round: g.round, Stages: []StageTiming{}}
-	t, prev := Defs.ResolveBase/2, 0
-	for i, s := range stages {
-		if counts[i] > prev {
-			hdr.Stages = append(hdr.Stages, StageTiming{S: s, At: t, Dur: Defs.StageTime})
-			t += Defs.StageTime
+	hdr := EvResolve{E: "resolve", Level: g.level, Round: g.round, Slots: []SlotTiming{}}
+	t := Defs.ResolveBase / 2
+	for slot := 0; slot < Defs.Slots; slot++ {
+		if !slices.ContainsFunc(g.players, func(p *player) bool { return p.placed && slot < len(p.acts) }) {
+			continue
 		}
-		prev = counts[i]
+		g.curSlot = slot
+		fz := g.buildSteps(slot)
+		st := SlotTiming{Slot: slot, At: t, Stages: []StageTiming{}}
+		stage := func(name string, run func()) {
+			n := len(g.events)
+			for _, e := range fz[name] {
+				g.emit(e)
+			}
+			run()
+			if len(g.events) > n {
+				st.Stages = append(st.Stages, StageTiming{S: name, At: t, Dur: Defs.StageTime})
+				t += Defs.StageTime
+			}
+		}
+		stage(StThrow, g.resolveThrows)
+		stage(StMove, g.resolveMoves)
+		stage(StGrab, g.resolveGrabs)
+		stage(StFire, g.resolveFires)
+		if len(st.Stages) > 0 {
+			st.Dur = t - st.At
+			hdr.Slots = append(hdr.Slots, st)
+		}
 	}
-	hdr.Dur = Defs.ResolveBase + Defs.StageTime*float64(len(hdr.Stages))
+	g.curSlot = -1
+	for _, p := range g.players {
+		p.cur = nil
+	}
+	n := len(g.events)
+	g.resolveMachines()
+	if len(g.events) > n {
+		hdr.Machines = &StageTiming{S: StMachines, At: t, Dur: Defs.MachineTime}
+		t += Defs.MachineTime
+	}
+	hdr.Dur = round1(t + Defs.ResolveBase/2)
+	for i := range hdr.Slots { // clean numbers on the wire
+		sl := &hdr.Slots[i]
+		sl.At, sl.Dur = round2(sl.At), round2(sl.Dur)
+		for j := range sl.Stages {
+			sl.Stages[j].At, sl.Stages[j].Dur = round2(sl.Stages[j].At), round2(sl.Stages[j].Dur)
+		}
+	}
+	if hdr.Machines != nil {
+		hdr.Machines.At, hdr.Machines.Dur = round2(hdr.Machines.At), round2(hdr.Machines.Dur)
+	}
 	batch := g.events
 	g.events = append(append(saved, hdr), batch...)
 
 	g.rounds++
 	g.phase = PhaseResolve
 	g.left = hdr.Dur
-	for _, p := range g.players {
-		p.plan = nil
-	}
 	g.slowVer++
 }
 
-func planned(p *player, a string) bool { return p.placed && p.plan != nil && p.plan.A == a }
+func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
-func xyOf(pl *Plan) (int, int) { return *pl.X, *pl.Y }
+// slotP is the slot tag for events (nil in the machine stage).
+func (g *Game) slotP() *int {
+	if g.curSlot < 0 {
+		return nil
+	}
+	return IntP(g.curSlot)
+}
+
+func planned(p *player, a string) bool { return p.placed && p.cur != nil && p.cur.a == a }
+
+func stageOf(a string) string {
+	switch a {
+	case AThrow:
+		return StThrow
+	case AMove:
+		return StMove
+	case APickup, ALoad:
+		return StGrab
+	}
+	return StFire
+}
+
+// buildSteps sets every player's step for slot (nil for wait, fizzle or no
+// action) and returns the fizzle events by stage.
+func (g *Game) buildSteps(slot int) map[string][]any {
+	fz := map[string][]any{}
+	for _, p := range g.players {
+		p.cur = nil
+		if !p.placed || slot >= len(p.acts) {
+			continue
+		}
+		a := p.acts[slot]
+		st, reason := g.stepFor(p, a)
+		if reason != "" {
+			p.st.fizzles++
+			s := stageOf(a.A)
+			fz[s] = append(fz[s], EvFizzle{E: "fizzle", S: s, Slot: g.slotP(), PID: p.id, A: a.A, At: [2]int{p.x, p.y}, Reason: reason})
+			continue
+		}
+		p.cur = st
+	}
+	return fz
+}
+
+// stepFor makes act concrete for p on the current board, or says why it
+// fizzles.
+func (g *Game) stepFor(p *player, act Act) (*step, string) {
+	l := g.lay
+	switch act.A {
+	case AMove:
+		x, y := p.x+*act.DX, p.y+*act.DY
+		if !l.CanStep(p.x, p.y, x, y) {
+			return nil, FzBlocked
+		}
+		return &step{a: AMove, x: x, y: y}, ""
+	case AThrow:
+		if p.carry == nil {
+			return nil, FzEmptyHands
+		}
+		if _, ok := l.Landing(l.ThrowLine(p.x, p.y, *act.DX, *act.DY, Defs.ThrowRange)); !ok {
+			return nil, FzNoTarget
+		}
+		return &step{a: AThrow, dx: *act.DX, dy: *act.DY}, ""
+	case APickup:
+		if p.carry != nil {
+			return nil, FzHandsFull
+		}
+		b := g.pickTarget(p, act)
+		if b == nil {
+			return nil, FzNoBomb
+		}
+		return &step{a: APickup, x: b.x, y: b.y}, ""
+	case ALoad, AFire:
+		if act.A == ALoad && p.carry == nil {
+			return nil, FzEmptyHands
+		}
+		next := false
+		for _, c := range g.keep.Catapults { // lowest id first
+			if !l.LoadCell(p.x, p.y, c) {
+				continue
+			}
+			next = true
+			if (act.A == ALoad) == (g.cats[c.ID] == nil) {
+				return &step{a: act.A, cat: c.ID}, ""
+			}
+		}
+		switch {
+		case !next:
+			return nil, FzNoCatapult
+		case act.A == ALoad:
+			return nil, FzCatapultFull
+		}
+		return nil, FzCatapultEmpty
+	}
+	return nil, "" // wait
+}
+
+// pickTarget finds the bomb a pickup takes. With a direction: the first bomb
+// along it within reach. Without one (or 0,0): the bomb in the engineer's own
+// cell, else the nearest within reach along the four directions (distance 1
+// before 2; up, right, down, left).
+func (g *Game) pickTarget(p *player, act Act) *bomb {
+	if act.DX != nil && (*act.DX != 0 || *act.DY != 0) {
+		for k := 1; k <= Defs.Reach; k++ {
+			if b := g.bombAt(p.x+k**act.DX, p.y+k**act.DY); b != nil {
+				return b
+			}
+		}
+		return nil
+	}
+	if b := g.bombAt(p.x, p.y); b != nil {
+		return b
+	}
+	for k := 1; k <= Defs.Reach; k++ {
+		for _, d := range Dirs4 {
+			if b := g.bombAt(p.x+k*d[0], p.y+k*d[1]); b != nil {
+				return b
+			}
+		}
+	}
+	return nil
+}
 
 // --- 1. throws ---------------------------------------------------------------------
 
 // resolveThrows: every thrower lets go at once, so a thrower can catch in the
 // same stage. In player order, each bomb flies along its throw line (see
-// Layout.ThrowLine) and stops at the first engineer on it (start-of-round
-// positions): caught if that engineer's hands are empty at that point,
-// otherwise blocked, dropping at their feet. With nobody on the line it lands
-// on the furthest walkable cell of the line. A bomb that comes down on a
-// cell that is not floor or already has a bomb settles on the nearest free
-// floor cell.
+// Layout.ThrowLine) and stops at the first engineer on it (positions at the
+// start of the slot): caught if that engineer's hands are empty at that
+// point, otherwise blocked, dropping at their feet. With nobody on the line
+// it lands on the furthest walkable cell of the line. A bomb that comes down
+// on a cell that is not floor or already has a bomb settles on the nearest
+// free floor cell.
 func (g *Game) resolveThrows() {
 	type flight struct {
 		p *player
@@ -92,10 +252,10 @@ func (g *Game) resolveThrows() {
 		}
 	}
 	for _, f := range fl {
-		dx, dy := *f.p.plan.DX, *f.p.plan.DY
-		line := g.lay.ThrowLine(f.p.x, f.p.y, dx, dy, abilities(f.p).Throw)
+		dx, dy := f.p.cur.dx, f.p.cur.dy
+		line := g.lay.ThrowLine(f.p.x, f.p.y, dx, dy, Defs.ThrowRange)
 		f.p.st.throws++
-		ev := EvThrow{E: "throw", S: StThrow, PID: f.p.id, Bomb: f.b.ID, Kind: f.b.Kind,
+		ev := EvThrow{E: "throw", S: StThrow, Slot: g.slotP(), PID: f.p.id, Bomb: f.b.ID, Kind: f.b.Kind,
 			From: [2]int{f.p.x, f.p.y}, Dir: [2]int{dx, dy}}
 		var stop *player
 		for _, c := range line {
@@ -112,7 +272,7 @@ func (g *Game) resolveThrows() {
 			ev.To = [2]int{stop.x, stop.y}
 			ev.At = ev.To
 		default:
-			to, _ := g.lay.Landing(line) // validated: the line has a walkable cell
+			to, _ := g.lay.Landing(line) // checked: the line has a walkable cell
 			ev.Result = "landed"
 			if stop != nil {
 				to = [2]int{stop.x, stop.y}
@@ -126,9 +286,9 @@ func (g *Game) resolveThrows() {
 	}
 }
 
-// landCell is where a bomb thrown at (x, y) comes to rest: (x, y) itself if
-// it is floor without a bomb, else the nearest such cell by Manhattan
-// distance (ties: smaller y, then smaller x).
+// landCell is where a bomb coming down at (x, y) comes to rest: (x, y)
+// itself if it is floor without a bomb, else the nearest such cell by
+// Manhattan distance (ties: smaller y, then smaller x).
 func (g *Game) landCell(x, y int) (int, int) {
 	free := func(cx, cy int) bool { return g.lay.At(cx, cy).Kind == KFloor && g.bombAt(cx, cy) == nil }
 	if free(x, y) {
@@ -155,7 +315,7 @@ func (g *Game) landCell(x, y int) (int, int) {
 // resolveMoves: a move fails (bump) if another engineer heads for the same
 // cell, if it swaps places with another mover, or if its destination is
 // occupied by an engineer who does not leave. Chains into a vacated cell
-// succeed, and so do rotations of three or more.
+// succeed, and so do rotations of four.
 func (g *Game) resolveMoves() {
 	const (
 		unknown = iota
@@ -165,14 +325,13 @@ func (g *Game) resolveMoves() {
 	var movers []*player
 	status := map[*player]int{}
 	claims := map[[2]int]int{}
+	dest := func(p *player) [2]int { return [2]int{p.cur.x, p.cur.y} }
 	for _, p := range g.players {
 		if planned(p, AMove) {
 			movers = append(movers, p)
-			x, y := xyOf(p.plan)
-			claims[[2]int{x, y}]++
+			claims[dest(p)]++
 		}
 	}
-	dest := func(p *player) [2]int { x, y := xyOf(p.plan); return [2]int{x, y} }
 	for _, p := range movers {
 		d := dest(p)
 		if claims[d] > 1 {
@@ -189,8 +348,7 @@ func (g *Game) resolveMoves() {
 			if status[p] != unknown {
 				continue
 			}
-			d := dest(p)
-			o := g.engineerAt(d[0], d[1])
+			o := g.engineerAt(dest(p)[0], dest(p)[1])
 			switch {
 			case o == nil:
 				status[p] = ok
@@ -204,51 +362,44 @@ func (g *Game) resolveMoves() {
 			changed = true
 		}
 	}
-	type mv struct {
-		p        *player
-		from, to [2]int
-	}
-	var done []mv
+	var moved []*player
 	for _, p := range movers {
-		d := dest(p)
-		ev := EvMove{E: "move", S: StMove, PID: p.id, From: [2]int{p.x, p.y}, To: d, Path: slices.Clone(p.plan.Path), Result: "ok"}
+		ev := EvMove{E: "move", S: StMove, Slot: g.slotP(), PID: p.id, From: [2]int{p.x, p.y}, To: dest(p), Result: "ok"}
 		if status[p] == bump {
 			ev.Result = "bump"
 			p.st.bumps++
 		} else {
-			done = append(done, mv{p, ev.From, d})
-			p.st.steps += len(p.plan.Path)
+			moved = append(moved, p)
+			p.st.steps++
 		}
 		g.emit(ev)
 	}
 	// Positions change only after every outcome is known (engineerAt above
-	// relies on the start-of-round board).
-	for _, m := range done {
-		m.p.x, m.p.y = m.to[0], m.to[1]
+	// relies on the start-of-slot board).
+	for _, p := range moved {
+		p.x, p.y = p.cur.x, p.cur.y
 	}
 }
 
 // --- 3. pick-ups and loads ------------------------------------------------------------
 
 // resolveGrabs: pick-ups first (each fails if the picker's hands are full —
-// they caught a throw — or if another engineer planned to pick up the same
-// cell), then loads (fail if another engineer loads the same catapult). It
-// returns the Quick Hands loaders whose load succeeded and who asked to fire.
-func (g *Game) resolveGrabs() []*player {
+// they caught a throw this slot — or if another engineer picks up the same
+// bomb), then loads (fail if another engineer loads the same catapult).
+func (g *Game) resolveGrabs() {
 	claims := map[[2]int]int{}
 	for _, p := range g.players {
 		if planned(p, APickup) {
-			x, y := xyOf(p.plan)
-			claims[[2]int{x, y}]++
+			claims[[2]int{p.cur.x, p.cur.y}]++
 		}
 	}
 	for _, p := range g.players {
 		if !planned(p, APickup) {
 			continue
 		}
-		x, y := xyOf(p.plan)
+		x, y := p.cur.x, p.cur.y
 		b := g.bombAt(x, y)
-		ev := EvPickup{E: "pickup", S: StGrab, PID: p.id, At: [2]int{x, y}}
+		ev := EvPickup{E: "pickup", S: StGrab, Slot: g.slotP(), PID: p.id, At: [2]int{x, y}}
 		if b != nil {
 			ev.Bomb, ev.Kind = b.id, b.kind
 		}
@@ -270,16 +421,15 @@ func (g *Game) resolveGrabs() []*player {
 	loads := map[int]int{}
 	for _, p := range g.players {
 		if planned(p, ALoad) {
-			loads[*p.plan.Cat]++
+			loads[p.cur.cat]++
 		}
 	}
-	var fire []*player
 	for _, p := range g.players {
 		if !planned(p, ALoad) {
 			continue
 		}
-		c := *p.plan.Cat
-		ev := EvLoad{E: "load", S: StGrab, PID: p.id, Cat: c}
+		c := p.cur.cat
+		ev := EvLoad{E: "load", S: StGrab, Slot: g.slotP(), PID: p.id, Cat: c}
 		if p.carry != nil {
 			ev.Bomb, ev.Kind = p.carry.ID, p.carry.Kind
 		}
@@ -295,31 +445,22 @@ func (g *Game) resolveGrabs() []*player {
 			g.cats[c] = p.carry
 			p.carry = nil
 			p.st.loads++
-			if p.plan.Fire {
-				fire = append(fire, p)
-			}
 		}
 		g.emit(ev)
 	}
-	return fire
 }
 
 // --- 4. fires -------------------------------------------------------------------------
 
-// resolveFires fires, in player order, every planned fire plus the Quick
-// Hands loads. A catapult fires once; a later fire on it finds it empty.
-func (g *Game) resolveFires(quick []*player) {
+// resolveFires fires, in player order, every fire step. A catapult fires
+// once; a later fire on it in the same slot finds it empty.
+func (g *Game) resolveFires() {
 	for _, p := range g.players {
-		var c int
-		switch {
-		case planned(p, AFire):
-			c = *p.plan.Cat
-		case slices.Contains(quick, p):
-			c = *p.plan.Cat
-		default:
+		if !planned(p, AFire) {
 			continue
 		}
-		ev := EvFire{E: "fire", S: StFire, PID: p.id, Cat: c, Lane: g.keep.Catapults[c].Lane, Hits: []Hit{}}
+		c := p.cur.cat
+		ev := EvFire{E: "fire", S: StFire, Slot: g.slotP(), PID: p.id, Cat: c, Lane: g.keep.Catapults[c].Lane, Hits: []Hit{}}
 		b := g.cats[c]
 		if b == nil {
 			ev.Result = "empty"
@@ -350,8 +491,7 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 	if len(in) == 0 {
 		return []Hit{}
 	}
-	switch kind {
-	case "keg":
+	if kind == "keg" {
 		near := in[0]
 		for _, m := range in[1:] {
 			if m.pos < near.pos {
@@ -360,36 +500,16 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 		}
 		in = []*machine{near}
 	}
-	// Perk bonuses of the firer.
-	dmg, freeze := def.Dmg, def.Freeze
-	if kind == "keg" && has(p, "heavy_keg") {
-		dmg += Defs.Perks["heavy_keg"].Amount
-	}
-	if freeze > 0 && has(p, "long_stop") {
-		freeze += Defs.Perks["long_stop"].Amount
-	}
-	var nearest *machine // Wide Shot's extra target
-	if kind == "grapeshot" && has(p, "wide_shot") {
-		nearest = in[0]
-		for _, m := range in[1:] {
-			if m.pos < nearest.pos {
-				nearest = m
-			}
-		}
-	}
 	hits := []Hit{}
 	for _, m := range in {
 		h := Hit{ID: m.id}
-		if d := dmg; d > 0 {
-			if m == nearest {
-				d += Defs.Perks["wide_shot"].Amount
-			}
-			h.Dmg = min(d, m.hp)
-			m.hp -= d
+		if def.Dmg > 0 {
+			h.Dmg = min(def.Dmg, m.hp)
+			m.hp -= def.Dmg
 			p.st.dmg += h.Dmg
 		}
-		if freeze > 0 {
-			m.frozen = max(m.frozen, freeze)
+		if def.Freeze > 0 {
+			m.frozen = max(m.frozen, def.Freeze)
 		}
 		h.HP, h.Frozen = max(0, m.hp), m.frozen
 		if m.hp <= 0 {
@@ -405,7 +525,7 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 // --- 5. machines ----------------------------------------------------------------------
 
 // resolveMachines advances every machine (id order), then spawns this
-// round's arrivals and tops up the bombs.
+// turn's arrivals and tops up the bombs.
 func (g *Game) resolveMachines() {
 	var gone []*machine
 	for _, m := range g.machines {

@@ -359,22 +359,38 @@ Everything in "Websocket", "Modes" and the generic parts of `welcome`/`room`
 (join, tokens, `setup` on a mode switch, `error`, `ping`, limits) applies
 unchanged. This section defines `map`, `defs`, `room`, `snap`, the events and
 the commands of this mode. JSON field names are exact; every field listed is
-always present unless marked *optional*.
+always present unless marked *optional*. There are no perks and no lobby
+options in this mode.
 
 ### Overview
 
 Turn-based co-op on a square grid. Each player has one **engineer** in a
 **keep**. Machines walk down four **lanes** toward the keep's wall; the team
 carries, throws and loads **bombs** into four **catapults** and fires them.
-A game is 6 **levels**; a level is a series of **rounds**; a round is a
-**plan** phase (everyone secretly picks one action) then a **resolve** phase
-(all actions play out at once in a fixed order, then the machines move). The
-shared **wall** has hit points; at 0 the game is lost. Clearing level 6 wins.
+A game is 6 **levels**; a level is a series of **turns** (called `round` in
+the messages). A turn is a **plan** phase, in which every player files a
+**queue** of up to `defs.slots` (4) actions, then a **resolve** phase: slot 1
+of every queue plays at once, then slot 2, and so on; after the last slot the
+machines advance once. Queues are public and live: everyone sees everyone's
+queue as it is edited. The shared **wall** has hit points; at 0 the game is
+lost. Clearing level 6 wins.
+
+### Where things live
+
+| what | message | changes |
+|------|---------|---------|
+| keep shells (size, catapults, lanes) | `welcome`/`setup` `map` | never |
+| numbers, bombs, machines, level names | `welcome`/`setup` `defs` | never |
+| phase, level, turn, players (connected, away, ready), current level's layout, end | `room` | a few times per turn |
+| board (engineers, bombs, catapults, machines, wall), timer, every player's live queue and done flag, events | `snap` (10 Hz) | continuously |
+
+Editing a queue never triggers a `room` message; queues are only in `snap`.
 
 ### Grid, keeps and layouts
 
 - Cells are `(x, y)`, integers, `x` to the right, `y` down, origin top-left.
-  `cells[y][x]`.
+  `cells[y][x]`. Directions `(dx, dy)` are one of `(1,0)` right, `(-1,0)`
+  left, `(0,1)` down, `(0,-1)` up.
 - A **keep** is the fixed outer shell for a whole game: size, the outer wall
   (row `y = 0` and column `x = 0`), four catapults in that wall (two per
   side) and their lanes. It is chosen when the game starts, by the number of
@@ -383,32 +399,30 @@ shared **wall** has hit points; at 0 the game is lost. Clearing level 6 wins.
   `y = 0` and the column `x = 0` are the two far sides, seen from the
   `(w, h)` corner.
 - A **layout** is one level's interior of that keep: every cell's kind and
-  height, and the engineer start cells (courtyard or rampart). Each level
-  names its layout; the outer wall line and the catapults are identical in
-  every layout of a keep.
+  height, and the engineer start cells (the first three on the ramparts, the
+  rest in the courtyard). Each level names its layout; the outer wall line and
+  the catapults are identical in every layout of a keep.
 - Cell `kind`: `floor` (walkable), `block` (crate, pipe or wall; not
   walkable), `stairs` (walkable; connects both heights), `catapult` (not
   walkable; on the wall, height 1), `void` (outside; not walkable; none today).
   `h` is 0 (courtyard) or 1 (ramparts and raised platforms). Stairs have
   `h: 0` but connect to both heights. Blocks of `h: 1` occur only in the outer
   wall; crates inside the keep are blocks of `h: 0`.
+- **Stepping**: a move goes to the 4-adjacent cell in its direction. Both
+  cells must be walkable and of equal `h`, unless either is `stairs`.
 - **Throw line.** A bomb thrown from `(x, y)` in direction `(dx, dy)` passes
   over the cells `(x + k·dx, y + k·dy)` for `k = 1, 2, …`, up to `throwRange`
-  cells, and the line **ends before** the first cell that is off the grid, a
-  `catapult`, `void`, or a `block` with `h: 1` (the outer wall). Everything else
-  is flown over: crates (`block` with `h: 0`), platforms, stairs, height
-  differences. The line's **landing cell** is its furthest walkable cell. A
-  throw whose line has no walkable cell is not allowed.
-- **Walking**: one step goes to a 4-adjacent cell. Both cells must be walkable
-  and of equal `h`, unless either is `stairs`. Engineers never block walking
-  paths (only the destination cell matters, see resolve).
+  cells (larger than any keep), and the line **ends before** the first cell
+  that is off the grid, a `catapult`, `void`, or a `block` with `h: 1` (the
+  outer wall). Everything else is flown over: crates (`block` with `h: 0`),
+  platforms, stairs, height differences. The line's **landing cell** is its
+  furthest walkable cell.
 - **Lanes**: lane `L` leaves the keep from catapult `L.cat` in direction
   `L.dir` (`[0,-1]` from the `y = 0` side, `[-1,0]` from the `x = 0` side).
-  Lane positions are integers `0 … len-1`; position `p` is drawn at cell
-  `(L.x + p·L.dir[0], L.y + p·L.dir[1])` (outside the grid; position 0 is the
-  cell just outside the wall next to the catapult, position `len-1` the far
-  end). Catapult `i` fires down lane `catapults[i].lane` (today lane id =
-  catapult id).
+  Lane positions are integers `0 … len-1` (`len` is 3 today); position `p` is
+  drawn at cell `(L.x + p·L.dir[0], L.y + p·L.dir[1])` (outside the grid;
+  position 0 is the cell just outside the wall next to the catapult). Catapult
+  `i` fires down lane `catapults[i].lane` (today lane id = catapult id).
 - **Loading cells**: an engineer can load or fire catapult `c` when standing
   on a `floor` cell 4-adjacent to it with the same `h` as the catapult (that is,
   on the rampart walkway next to it).
@@ -420,7 +434,7 @@ Map = { "keeps": [ Keep, … ] }      // smallest first
 Keep = {
   "id": "small", "minPlayers": 1, "maxPlayers": 5, "w": 9, "h": 9,
   "catapults": [ { "id": 0, "x": 3, "y": 0, "lane": 0 }, … ],   // 4, ids 0..3
-  "lanes": [ { "id": 0, "cat": 0, "len": 6, "dir": [0,-1], "x": 3, "y": -1 }, … ] }   // len is data; read it
+  "lanes": [ { "id": 0, "cat": 0, "len": 3, "dir": [0,-1], "x": 3, "y": -1 }, … ] }
 ```
 
 The interior is not in `map`: it comes with the room message (`room.layout`),
@@ -432,94 +446,70 @@ because it changes from level to level.
 Defs = {
   "maxPlayers": 8,
   "wallHP": 16,                 // wall hit points at the start (and maximum)
-  "planTime": 12,               // seconds of a plan phase
-  "breakTime": 15,              // seconds of a break between levels
-  "resolveBase": 0.5, "stageTime": 0.5,   // resolve length = resolveBase + stageTime × non-empty stages
-  "move": 1,                    // cells per move: always 1 (kept for compatibility)
-  "moveCarry": 1,               // the same while carrying: 1
-  "throwRange": 20,             // cap on a throw line; larger than any keep, i.e. unlimited
-  "reach": 1,                   // pick-up distance (Manhattan)
-  "awayAfter": 2,               // missed rounds in a row before an engineer is "away"
+  "slots": 4,                   // actions per player per turn
+  "planTime": 20,               // seconds of a plan phase; the game's first turn has no timer
+  "breakTime": 6,               // seconds of the break between levels
+  "breakHeal": 0,               // wall hit points restored at each break (up to wallHP)
+  "resolveBase": 0.4, "stageTime": 0.35, "machineTime": 0.6,   // resolve timeline, see `resolve`
+  "throwRange": 20,             // cap on a throw line (larger than any keep: unlimited)
+  "reach": 1,                   // pick-up distance along a straight line
+  "awayAfter": 2,               // turns in a row with nothing filed before a player is away
   "bombsBase": 2, "bombsPerPlayer": 1,    // bombs kept lying on the ground (see "Bombs")
   "bombs": { "keg": { "name": "Powder Keg", "desc": "2 damage to the machine nearest the wall.", "dmg": 2 },
              "grapeshot": { "name": "Grapeshot", "desc": "…", "dmg": 1 },
              "stopwatch": { "name": "Stopwatch", "desc": "…", "freeze": 2 } },
   "bombOrder": ["keg", "grapeshot", "stopwatch"],
   "machines": { "scrap": { "name": "Scrapling", "desc": "…", "hp": 1, "speed": 1, "every": 1, "dmg": 1 },
-                "roach": { … "speed": 2 … }, "brute": { … "hp": 4, "every": 2, "dmg": 2 },
-                "baron": { … "every": 3, "dmg": 5, "boss": true } },
+                "roach": { … "speed": 2 … }, "brute": { … "hp": 4, "dmg": 2 },
+                "baron": { … "hp": 9, "dmg": 3, "boss": true } },
   "machineOrder": ["scrap", "roach", "brute", "baron"],
   "levels": [ { "name": "Tutorial", "desc": "One Scrapling on one lane.", "layout": "open",
-                "bombs": { "keg": 1 } }, … ],   // 6 levels; bombs = kinds that can appear (spawn weights)
-  "perks": { "long_reach": { "name": "Long Reach", "desc": "You pick up bombs from up to 2 cells away. …" }, …,
-             "mason": { "name": "Mason", "desc": "…", "team": true } },
-  "perkOrder": ["long_reach", "quick_hands", "heavy_keg", "long_stop", "wide_shot", "mason"] }
+                "bombs": { "keg": 1 } }, … ] }   // 6 levels; bombs = kinds that can appear (spawn weights)
 ```
 
 `desc` texts are complete and player-facing; clients show them verbatim.
 Machine `hp` is the base value: a level may give a machine more (the Iron
-Baron scales with the team), so use `hp`/`max` from `spawn` events and snaps
-for health bars. A bomb has `dmg` (keg: to the one machine nearest the wall;
-grapeshot: to every machine in the lane) or `freeze` (stopwatch: every machine
-in the lane skips that many advances). Machines move `speed` cells on every
-`every`-th advance.
+Baron's hit points depend on the team size), so use `hp`/`max` from `spawn`
+events and snaps for health bars. Machines move `speed` cells per turn, on
+every `every`-th turn (all `every` are 1 today). A bomb has `dmg` (keg: to the
+one machine nearest the wall; grapeshot: to every machine in the lane) or
+`freeze` (stopwatch: every machine in the lane skips that many advances).
 
 ### `room`
 
-Sent after `welcome`, after `setup`, and whenever any field changes (plans
-coming in change `planned`, so expect one per plan).
+Sent after `welcome`, after `setup`, and whenever a field changes. Queues are
+not in it (see `snap`).
 
 ```jsonc
 { "t": "room", "mode": "catapult_coop",
   "phase": "lobby" | "plan" | "resolve" | "break" | "won" | "lost",
   "host": "p1",
-  "openPlans": false,           // host option, see `opt`
   "keep": "small",              // keep id (lobby: the keep the current player count would get)
-  "layout": Layout,             // the current level's interior (lobby/won/lost: see below)
+  "layout": Layout,             // the current level's interior (lobby: level 1's, as a preview)
   "level": 2,                   // 1-based; 0 in the lobby
   "levels": 6,
-  "round": 3,                   // 1-based within the level; 0 in the lobby
-  "players": [ {
-      "id": "p1", "name": "Ada", "color": "#e0a030", "connected": true,
-      "away": false,            // disconnected, or missed `awayAfter` rounds in a row (see "Away")
-      "planned": true,          // has a plan this round (plan phase only; false otherwise)
-      "ready": false,           // break phase: pressed ready
-      "plan": Plan | null,      // only when openPlans is on, else always null
-      "offer": ["heavy_keg", "mason", "long_reach"] | null,   // break: unpicked perk choice
-      "perks": { "heavy_keg": 1 },                            // picked perks (never null)
-      "can": { "move": 1, "moveCarry": 1, "throw": 20, "reach": 1, "quickHands": false } } ],
+  "round": 3,                   // the turn, 1-based within the level; 0 in the lobby
+  "players": [ { "id": "p1", "name": "Ada", "color": "#e0a030", "connected": true,
+                 "away": false,   // disconnected, or filed nothing for `awayAfter` turns in a row
+                 "ready": false } ],  // break: pressed ready
   "end": End | null }
 ```
 
 ```jsonc
 Layout = { "id": "crates", "w": 9, "h": 9,
-           "cells": [ [ { "kind": "block", "h": 1 }, … ], … ],   // cells[y][x], h rows of w cells
+           "cells": [ [ { "kind": "block", "h": 1 }, … ], … ],   // cells[y][x]
            "spawns": [ [x, y], … ] }                              // engineer start cells, in seating order
 ```
 
-- `layout` is always present. In the lobby it is level 1's layout of the keep
-  shown in `keep` (a preview); during a game it is the current level's; in
-  `won`/`lost` the last level's. **A new level starts with a new `layout` in
-  the `room` message** (and a `level_start` event); a reconnecting client gets
-  the current one in the `room` message that follows `welcome`.
-- `can` is that player's engineer abilities with perks applied: move budget
-  free-handed and carrying (both always 1), throw-line cap, pick-up reach,
-  whether `load` may also fire. Clients use it for highlighting and never compute perk effects.
-- `End = { "won": true, "level": 6, "rounds": 84, "wall": 4, "time": 312.5,
+- **A new level starts with a new `layout` in the `room` message** (and a
+  `level_start` event); a reconnecting client gets the current one in the
+  `room` message that follows `welcome`.
+- `End = { "won": true, "level": 6, "rounds": 18, "wall": 4, "time": 312.5,
   "stats": { "p1": { "throws", "catches", "pickups", "loads", "fires",
-  "kills", "dmg", "steps", "bumps", "perks": {…} } }, "awards": [ { "pid",
-  "title", "detail" } ] }` (all stats integers; `time` in seconds of game
-  time; award titles today: Sharpshooter, Safe Hands, Bomb Lobber, Loader,
-  Marathon, Traffic Jam).
-
-```jsonc
-Plan = { "a": "move", "x": 4, "y": 5, "path": [[4,4],[4,5]] }   // cells walked, start excluded
-     | { "a": "pickup", "x": 5, "y": 1 }
-     | { "a": "throw",  "dx": 0, "dy": -1 }         // direction; never x/y
-     | { "a": "load",   "cat": 0, "fire": true }    // "fire" present only when true (Quick Hands)
-     | { "a": "fire",   "cat": 0 }
-     | { "a": "wait" }
-```
+  "kills", "dmg", "steps", "bumps", "fizzles" } }, "awards": [ { "pid",
+  "title", "detail" } ] }`. `rounds` is the number of turns played; all stats
+  are integers; award titles today: Sharpshooter, Safe Hands, Bomb Lobber,
+  Loader, Marathon, Traffic Jam, Butterfingers (most fizzles).
 
 ### `snap`
 
@@ -531,17 +521,23 @@ with `ev: []` right after `room`.
 { "t": "snap",
   "phase": "plan", "time": 81.2,     // game time, seconds (paused while nobody is connected)
   "level": 2, "round": 3,
-  "left": 7.4,                       // seconds left in this plan / resolve / break; 0 otherwise
-  "wall": 9, "wallMax": 10,
+  "left": 7.4,                       // seconds left in this plan / resolve / break; 0 when untimed
+  "untimed": false,                  // true in the game's first plan phase: no timer, it waits for everyone
+  "wall": 9, "wallMax": 16,
   "engineers": [ { "pid": "p1", "x": 4, "y": 5, "carry": { "id": 12, "kind": "keg" } | null } ],
   "bombs":     [ { "id": 7, "kind": "grapeshot", "x": 6, "y": 3 } ],   // lying on the ground
   "catapults": [ { "id": 0, "bomb": { "id": 3, "kind": "keg" } | null } ],   // all four, by id
-  "machines":  [ { "id": 21, "kind": "brute", "lane": 2, "pos": 4, "hp": 3, "max": 4,
-                   "frozen": 0 } ],  // frozen = advances it will still skip
-  "incoming":  [ { "lane": 1, "kind": "scrap" } ],   // plan phase: machines that appear at the end of this round
+  "machines":  [ { "id": 21, "kind": "brute", "lane": 2, "pos": 1, "hp": 3, "max": 4, "frozen": 0 } ],
+  "incoming":  [ { "lane": 1, "kind": "scrap" } ],   // plan phase: machines that appear at the end of this turn
+  "plans": [ { "pid": "p1", "acts": [ Act, … ], "done": true } ],   // every player, room order
   "ev": [ Event, … ] }
 ```
 
+- **`plans`** are public and live: every player's current queue and done flag,
+  for every player in the room (an empty `acts` and `done: false` for someone
+  who has filed nothing). During `resolve` they still show the queues being
+  played (so the TV can light up slot N); they are cleared when the next plan
+  phase starts.
 - The snap always holds the **end state**: a resolve updates the board at once
   and its events (in the same snap) say how it got there.
 - Engineers absent from `engineers` have no engineer on the board (players
@@ -549,87 +545,171 @@ with `ev: []` right after `room`.
 - A cell holds at most one engineer and at most one ground bomb; an engineer
   may stand on a cell with a bomb. Bomb ids are unique per game and a bomb
   keeps its id when picked up, thrown, loaded and fired.
-- `incoming` is non-empty only in the plan phase: those machines appear at
-  position `len-1` of their lane during this round's resolve (draw shadows).
+
+### Actions
+
+```jsonc
+Act = { "a": "move",   "dx": 1, "dy": 0 }     // step to the neighbouring cell
+    | { "a": "throw",  "dx": 0, "dy": -1 }    // throw the carried bomb along the line
+    | { "a": "pickup" }                       // see below; "dx","dy" optional
+    | { "a": "pickup", "dx": 0, "dy": 1 }
+    | { "a": "load" } | { "a": "fire" } | { "a": "wait" }
+```
+
+Every action is relative to wherever the engineer is when its slot comes up,
+and is checked only then. What each does at its slot:
+
+- `move`: step one cell in the direction (see "Stepping"). Fizzles
+  `blocked` if the step is not possible (wall, crate, catapult, ledge, edge).
+- `throw`: throw the carried bomb in the direction. Fizzles `empty_hands` if
+  not carrying, `no_target` if the throw line has no walkable cell.
+- `pickup`: with a direction (not `0,0`), the first bomb along it within
+  `reach` cells; without one (or `0,0`), the bomb in the engineer's own cell,
+  else the nearest bomb within `reach` along the four directions, distance 1
+  before 2, in the order up, right, down, left. Any height. Fizzles
+  `hands_full` if already carrying, `no_bomb` if there is none.
+- `load`: put the carried bomb into the lowest-id adjacent catapult the
+  engineer can load from (a loading cell) that is empty. Fizzles
+  `empty_hands`, `no_catapult` (not on a loading cell), `catapult_full`.
+- `fire`: fire the lowest-id adjacent catapult (loading cell) that is
+  loaded. Fizzles `no_catapult`, `catapult_empty`.
+- `wait`: nothing (no event). Slots beyond the queue's length are waits.
+
+A fizzled action does nothing but its `fizzle` event; the player's later
+slots still run.
+
+### Resolve rules
+
+At the start of each slot, every player's action for that slot is made
+concrete against the board as it stands then (positions, hands, catapults),
+or fizzles. Then the slot plays in four stages:
+
+1. **Throws.** Every thrower lets go at once. Then, in player order, each bomb
+   flies along its throw line and stops at the **first engineer on the line**
+   (positions at the start of the slot, before this slot's moves). If that
+   engineer's hands are empty at that moment (which includes an engineer who
+   threw their own bomb this stage, and excludes one who already caught a bomb
+   this stage) they **catch** it; otherwise it is **blocked** and drops at
+   their feet. With nobody on the line it **lands** on the line's landing
+   cell. A bomb that comes down (blocked or landed) rests on that cell if it is
+   `floor` without a bomb, else on the nearest such cell by Manhattan distance
+   (ties: smaller `y`, then smaller `x`; any height). A catcher whose action
+   this slot is a move then makes that move, carrying the bomb.
+2. **Moves.** A move fails (`bump`, engineer stays) if two or more engineers
+   step into the same cell (all of them bump), if two engineers swap cells, or
+   if the cell holds an engineer who is not leaving or whose own move bumps.
+   Stepping into a cell someone is successfully leaving is fine (chains), and
+   four engineers walking round a square all succeed.
+3. **Grab.** Pick-ups first: if two or more engineers pick up the same bomb,
+   all of them fail (`contested`); a picker whose hands are full now (they
+   caught a throw in stage 1) fails (`hands_full`, takes precedence). Then
+   loads: two or more loads into the same catapult all fail (`contested`).
+4. **Fire.** In player order. The first fire of a catapult launches its bomb
+   down its lane (`wasted` if the lane is empty); a later fire of the same
+   catapult in the same slot finds it `empty`. Keg: `dmg` to the machine with
+   the lowest position (ties: lowest id). Grapeshot: `dmg` to every machine in
+   the lane. Stopwatch: every machine in the lane gets
+   `frozen = max(frozen, freeze)`. Machines at 0 hp are removed.
+
+After the last slot, once per turn, the **machine stage**: in id order, each
+machine: if `frozen` > 0 it skips (`stall`, `frozen` − 1); else, on every
+`every`-th turn, it moves `speed` positions toward the wall (`advance`); a
+machine that would go below position 0 instead hits the wall (`wall`): the
+wall loses its `dmg` and the machine is removed. Then this turn's script
+machines appear at position `len − 1` (`spawn`); then bombs are topped up
+(`bomb`).
 
 ### Events
 
-Events are objects with `"e"`; resolve events also carry `"s"` (their stage).
-Order guarantees:
+Events are objects with `"e"`. Events of a slot carry `"s"` (their stage) and
+`"slot"` (0-based); machine-stage events carry `"s": "machines"` and no
+`slot`. Order guarantees:
 
 - One resolve produces one **batch**, emitted in one go and therefore always
-  in one snap, never split: first `resolve`, then the stage events in stage
-  order `throw` → `move` → `grab` → `fire` → `machines`. Within a stage:
-  players in `room.players` order (`grab`: all `pickup`s first, then all
-  `load`s); in `machines`: `advance`/`stall`/`wall` in machine id order, then
-  `spawn`s, then `bomb`s.
+  in one snap, never split: first `resolve`, then slot 0's events, slot 1's,
+  …, then the machine stage. Within a slot: stages in the order `throw`,
+  `move`, `grab`, `fire`; within a stage the `fizzle`s of that stage's actions
+  first, then the stage's events in player order (`grab`: all `pickup`s, then
+  all `load`s). Machine stage: `advance`/`stall`/`wall` in machine id order,
+  then `spawn`s, then `bomb`s.
 - Starting a level emits, in order: `level_start`, one `place` per seated
-  engineer, one `bomb` per authored bomb, and `spawn`s for machines at round 0
+  engineer, one `bomb` per authored bomb, and `spawn`s for machines of turn 0
   (none of these have `s`). The first level's arrive in the first snap after
   `start`; later levels' when the break ends.
-- `level_clear` comes when the resolve animation of a level's last round ends,
+- `level_clear` comes when the resolve animation of a level's last turn ends,
   just before the phase becomes `break` (or `won`).
 
 ```jsonc
-{ "e": "resolve", "level": 2, "round": 3, "dur": 2.0,
-  "stages": [ { "s": "throw", "at": 0.25, "dur": 0.5 }, { "s": "move", "at": 0.75, "dur": 0.5 }, … ] }
-   // dur = length of this resolve phase in seconds (= snap.left at its start). Only non-empty
-   // stages are listed, back to back from resolveBase/2; play each stage's events in its slot.
-{ "e": "throw", "s": "throw", "pid": "p1", "bomb": 12, "kind": "keg",
+{ "e": "resolve", "level": 2, "round": 3, "dur": 2.4,
+  "slots": [ { "slot": 0, "at": 0.2, "dur": 0.35, "stages": [ { "s": "throw", "at": 0.2, "dur": 0.35 } ] },
+             { "slot": 1, "at": 0.55, "dur": 0.7, "stages": [ { "s": "move", "at": 0.55, "dur": 0.35 },
+                                                              { "s": "grab", "at": 0.9, "dur": 0.35 } ] }, … ],
+  "machines": { "s": "machines", "at": 1.6, "dur": 0.6 } | null }
+   // The timeline of this resolve, seconds from its start; dur = the whole resolve phase
+   // (= snap.left at its start). Only slots and stages with events are listed, back to back
+   // from resolveBase/2, each stage stageTime long; then the machine stage (machineTime) if it
+   // has events. Play each event in its stage's slot.
+{ "e": "fizzle", "s": "move", "slot": 0, "pid": "p1", "a": "move", "at": [3,2],
+  "reason": "blocked" | "no_bomb" | "hands_full" | "empty_hands" | "no_target"
+          | "no_catapult" | "catapult_full" | "catapult_empty" }
+   // a = the action that fizzled, at = where the engineer stands; s = the stage the action
+   // belongs to (throw: throw; move: move; pickup, load: grab; fire: fire)
+{ "e": "throw", "s": "throw", "slot": 0, "pid": "p1", "bomb": 12, "kind": "keg",
   "from": [3,5], "dir": [0,-1], "to": [3,1], "result": "caught" | "blocked" | "landed",
   "by": "p2", "at": [3,1] }
-   // dir = the throw's (dx, dy). to = where the flight ends: the cell of the engineer who
-   // caught or blocked it, or the line's landing cell. at = where the bomb ends up: the
-   // catcher's cell (caught), else its resting cell, which differs from `to` when it had to
-   // settle elsewhere. by = the engineer who caught (caught) or blocked (blocked) it; absent
-   // when landed. blocked: the bomb hit an engineer with full hands and dropped at their feet.
-{ "e": "move", "s": "move", "pid": "p1", "from": [4,4], "to": [4,5], "path": [[4,5]],
-  "result": "ok" | "bump" }        // bump: stays at `from` (animate a step toward path[0] and back)
-{ "e": "pickup", "s": "grab", "pid": "p1", "at": [5,1], "bomb": 7, "kind": "keg",
+   // to = where the flight ends: the cell of the engineer who caught or blocked it, or the
+   // line's landing cell. at = where the bomb ends up: the catcher's cell (caught), else its
+   // resting cell (differs from `to` when it had to settle elsewhere). by = who caught or
+   // blocked it; absent when landed.
+{ "e": "move", "s": "move", "slot": 1, "pid": "p1", "from": [4,4], "to": [4,5], "result": "ok" | "bump" }
+   // bump: stays at `from` (animate a nudge toward `to` and back)
+{ "e": "pickup", "s": "grab", "slot": 1, "pid": "p1", "at": [5,1], "bomb": 7, "kind": "keg",
   "result": "ok" | "contested" | "hands_full" | "gone" }
-{ "e": "load", "s": "grab", "pid": "p2", "cat": 0, "bomb": 12, "kind": "keg",
+{ "e": "load", "s": "grab", "slot": 2, "pid": "p2", "cat": 0, "bomb": 12, "kind": "keg",
   "result": "ok" | "contested" | "full" | "empty_hands" }
-{ "e": "fire", "s": "fire", "pid": "p2", "cat": 0, "lane": 0, "bomb": 12, "kind": "keg",
+{ "e": "fire", "s": "fire", "slot": 3, "pid": "p2", "cat": 0, "lane": 0, "bomb": 12, "kind": "keg",
   "result": "ok" | "wasted" | "empty",
   "hits": [ { "id": 21, "dmg": 2, "hp": 2, "killed": false, "frozen": 0 } ] }
    // wasted: fired into an empty lane (bomb gone, hits []); empty: someone else fired that
-   // catapult earlier this stage (bomb 0, kind "", hits []). Per hit: dmg dealt, hp left,
+   // catapult earlier in this slot (bomb 0, kind "", hits []). Per hit: dmg dealt, hp left,
    // killed (machine removed), frozen = its skip count now (stopwatch)
-{ "e": "advance", "s": "machines", "id": 21, "kind": "brute", "lane": 2, "from": 4, "to": 3 }
-{ "e": "stall", "s": "machines", "id": 21, "lane": 2, "pos": 4, "frozen": 1 }   // frozen skip; frozen = skips left
+{ "e": "advance", "s": "machines", "id": 21, "kind": "brute", "lane": 2, "from": 2, "to": 1 }
+{ "e": "stall", "s": "machines", "id": 21, "lane": 2, "pos": 2, "frozen": 1 }   // frozen = skips left
 { "e": "wall", "s": "machines", "id": 9, "kind": "scrap", "lane": 0, "from": 0, "dmg": 1, "wall": 8 }
    // reached the wall from position `from`: wall loses dmg (now `wall`), machine removed
-{ "e": "spawn", "s": "machines", "id": 30, "kind": "roach", "lane": 3, "pos": 5, "hp": 1 }
+{ "e": "spawn", "s": "machines", "id": 30, "kind": "roach", "lane": 3, "pos": 2, "hp": 1 }
 { "e": "bomb", "s": "machines", "id": 40, "kind": "keg", "x": 6, "y": 7 }   // new bomb on the ground
 { "e": "level_start", "level": 2, "name": "Two Fronts", "layout": "crates" }
-{ "e": "level_clear", "level": 2, "wall": 8 }
+{ "e": "level_clear", "level": 2, "wall": 8, "heal": 0 }   // wall after the break's heal; heal = hp restored
 { "e": "place", "pid": "p3", "x": 4, "y": 4 }     // engineer put on the board (level start, late join)
-{ "e": "perk", "pid": "p1", "id": "mason", "wall": 10 }   // wall = wall HP after the pick
 ```
 
-`gone`, `full` and `empty_hands` cannot happen with plans validated as below;
-clients should still accept them (show a fizzle). A machine stage advance of
-a machine that does not move this round (`every` > 1) produces no event.
+`gone`, `full` and `empty_hands` (in `pickup`/`load` events) cannot happen
+with the rules above; clients should still accept them (show a fizzle). A
+machine that does not move this turn (`every` > 1) produces no event.
 
 ### Phases and timing
 
 ```
-lobby --start--> plan(level 1, round 1) --all planned / planTime--> resolve --dur-->
+lobby --start--> plan(level 1, turn 1, untimed) --all done--> resolve --dur-->
    ├─ wall ≤ 0 ............................................. lost
-   ├─ level done (script spawned, no machines left), not last → break --all ready / breakTime--> plan(next level, round 1)
+   ├─ level done (script spawned, no machines left), not last → break --all ready / breakTime--> plan(next level, turn 1)
    ├─ level done, last level ..................................... won
-   └─ otherwise ............................................... plan(same level, round + 1)
+   └─ otherwise ............................................... plan(same level, turn + 1)
 restart (host, any phase but lobby) → lobby, same players
 ```
 
-- **plan**: `planTime` seconds; ends early as soon as every *present* player
-  (connected, not away, with an engineer) has a plan, provided there is at
-  least one present player. Timeout = everyone without a plan waits.
+- **plan**: ends when every *present* player (connected, not away, with an
+  engineer) is `done`, provided there is at least one present player; or when
+  `planTime` runs out. The **game's first turn has no timer** (`snap.untimed`,
+  `left: 0`) and ends only when every present player is done; disconnected
+  players are not waited for. On a timeout, queues play as filed (done or
+  not).
 - **resolve**: lasts the `dur` of its `resolve` event. No commands change the
-  board; plans are cleared at its start.
-- **break**: after every level but the last. `breakTime` seconds; ends early
-  when every present (connected, not away) player is ready. Perk offers are
-  made when it starts and unpicked offers vanish when it ends.
+  board.
+- **break**: after every level but the last: a short intermission showing the
+  result. `breakTime` seconds, or until every present player sent `ready`. The
+  wall gets `breakHeal` hit points back when it starts (in `level_clear`).
 - `won`/`lost`: final; `room.end` is set. `restart` returns to the lobby.
 - Everything pauses (timers too) while no player is connected.
 - Disconnecting can end a plan phase or break early (the rest are done).
@@ -640,83 +720,41 @@ At every level start (including level 1): the level's layout replaces the
 interior; machines are cleared; **carried and loaded bombs and all ground
 bombs are removed**; the layout's authored bombs are placed (kinds drawn from
 the level's `bombs` weights); every connected player's engineer is put on the
-layout's spawn cells in player order (beyond the spawn list: the free walkable
-cell nearest the first spawn); the level script is fixed for the number of
-active players at that moment; machines scheduled for round 0 appear. Wall HP
-and perks carry over.
-
-### Resolve rules
-
-All plans were validated against the board at the start of the round (the
-board changes only in resolve), so resolve needs only these rules:
-
-1. **Throws.** Every thrower lets go at once. Then, in player order, each bomb
-   flies along its throw line (see "Grid") and stops at the **first engineer
-   on the line** (positions at the start of the round, before any move). If
-   that engineer's hands are empty at that moment (which includes an engineer
-   who threw their own bomb this stage, and excludes one who already caught a
-   bomb this stage) they **catch** it; otherwise it is **blocked** and drops at
-   their feet. With nobody on the line it **lands** on the line's landing
-   cell. A bomb that comes down (blocked or landed) rests on that cell if it is
-   `floor` without a bomb, else on the nearest such cell by Manhattan distance
-   (ties: smaller `y`, then smaller `x`; any height). A catcher whose plan was
-   a move then makes that move, carrying the bomb. Someone walking into the
-   line this round does not stop it.
-2. **Moves.** A move fails (`bump`, engineer stays) if two or more engineers
-   planned the same destination (all of them bump), if two engineers swap
-   cells, or if the destination holds an engineer who is not leaving or whose
-   own move bumps. Moving into a cell someone is successfully leaving is fine
-   (chains), and rotations of three or more engineers all succeed.
-3. **Grab.** Pick-ups: if two or more engineers planned to pick up the same
-   cell, all of them fail (`contested`); a picker whose hands are full (they
-   caught a throw in stage 1) fails (`hands_full`, takes precedence).
-   Then loads: two or more loads into the same catapult all fail
-   (`contested`); a successful load empties the loader's hands.
-4. **Fire.** In player order: every `fire` plan, and every successful `load`
-   with `fire: true`. The first fire of a catapult launches its bomb down its
-   lane (`wasted` if the lane is empty); a later fire of the same catapult
-   this round finds it `empty`. Keg: `dmg` to the machine with the lowest
-   position (ties: lowest id). Grapeshot: `dmg` to every machine in the lane.
-   Stopwatch: every machine in the lane gets `frozen = max(frozen, freeze)`.
-   Machines at 0 hp are removed.
-5. **Machines.** In id order, each machine: if `frozen` > 0 it skips (`stall`,
-   `frozen` − 1); else its advance counter goes up and, on every `every`-th
-   advance, it moves `speed` positions toward the wall (`advance`); a machine
-   that would go below position 0 instead hits the wall (`wall`): the wall
-   loses its `dmg` and the machine is removed. Then this round's script
-   machines appear at position `len - 1` (`spawn`; they do not move this
-   round). Then bombs are topped up.
+layout's start cells in player order (beyond the list: the free walkable cell
+nearest the first start cell); the level script is fixed for the number of
+active players at that moment; machines scheduled for turn 0 appear (today
+every machine of a level appears at its start, at the far end of its lane).
+Wall hit points carry over.
 
 ### Bombs
 
-After every resolve, new bombs are added until `bombsBase + bombsPerPlayer ×
-active players` lie on the ground (active = connected and not away, at least
-1). Each goes on a random `floor` cell with `h` 0 that has no bomb and no
-engineer; its kind is drawn from the level's `bombs` weights, except that if
-no keg or grapeshot exists anywhere (ground, hands, catapults) only those
-damaging kinds are drawn. Levels 1–2 have kegs only; grapeshot comes with
-level 3, the stopwatch with level 4.
+After every turn's machine stage, new bombs are added until
+`bombsBase + bombsPerPlayer × active players` lie on the ground (active =
+connected and not away, at least 1). Each goes on a random `floor` cell with
+`h` 0 that has no bomb and no engineer; its kind is drawn from the level's
+`bombs` weights, except that if no keg or grapeshot exists anywhere (ground,
+hands, catapults) only those damaging kinds are drawn. Levels 1–2 have kegs
+only; grapeshot comes with level 3, the stopwatch with level 4.
 
 ### Away players
 
-A player is **away** while disconnected, or after `awayAfter` (2) rounds in a
-row resolved without a plan from them (a timed-out round counts as missed).
-Away players are not waited for (plan phase, break) and do not count for
-scaling (machine counts at level start, bomb top-up). Any `plan`, `ready` or
-`perk` from them stands them back up at once. Reconnecting alone does not.
-Their engineer stays on the board (as an obstacle, keeping what it carries)
-and simply waits.
+A player is **away** while disconnected, or after `awayAfter` (2) turns in a
+row resolved with nothing filed by them (an empty queue that is not `done`).
+An empty queue marked `done` is a deliberate "do nothing" and counts as taking
+part. Away players are not waited for (plan phase, break) and do not count
+for scaling (machine counts at level start, bomb top-up). Any `plan` or
+`ready` from them stands them back up at once; reconnecting alone does not.
+Their engineer stays on the board (keeping what it carries).
 
 ### Joining, leaving, host
 
 - 1–8 players. Joining is allowed in every phase while there is a free seat
   (in the lobby a full room evicts a disconnected player, as in the other
   modes). A player who connects while a game runs gets an engineer at once on
-  the first free spawn cell of the current layout (`place` event), with no
-  missed rounds.
+  the first free start cell of the current layout (`place` event), with no
+  missed turns.
 - Host migration on disconnect: the longest-connected remaining player.
-- `restart` keeps the players, their colours and `openPlans`, and clears
-  perks, stats and the board.
+- `restart` keeps the players and their colours and clears stats and the board.
 
 ### Client → server
 
@@ -725,67 +763,25 @@ integer is expected) gets `bad_request`.
 
 ```jsonc
 { "t": "start" }                          // host, lobby
-{ "t": "opt", "openPlans": true }         // host, lobby
-{ "t": "plan", "a": "move",   "x": 4, "y": 6 }       // a neighbouring cell
-{ "t": "plan", "a": "pickup", "x": 5, "y": 1 }
-{ "t": "plan", "a": "throw",  "dx": 0, "dy": -1 }    // one of (1,0) (-1,0) (0,1) (0,-1)
-{ "t": "plan", "a": "load",   "cat": 0 }             // "cat" optional; "fire": true needs Quick Hands
-{ "t": "plan", "a": "fire",   "cat": 0 }             // "cat" optional
-{ "t": "plan", "a": "wait" }
-{ "t": "plan", "a": "clear" }             // withdraw your plan (planned → false)
-{ "t": "ready", "ready": true }           // break; "ready" optional, default true
-{ "t": "perk", "id": "heavy_keg" }        // break
+{ "t": "plan", "acts": [ Act, … ], "done": true }   // replaces your whole queue; 0..slots acts
+{ "t": "ready", "ready": true }            // break; "ready" optional, default true
 { "t": "restart" }                        // host; any phase but lobby
 ```
 
-A new `plan` replaces the previous one; the phone should remember and draw its
-own plan (with `openPlans` off nobody else can see it). Validation (all
-against the board at the start of the round; errors go to the sender only and
-change nothing):
+- `plan` replaces the queue and the done flag at once. `done` omitted means
+  `false`: sending a new queue without `done` clears done. `acts` omitted or
+  `[]` with `done: true` is a legal "do nothing this turn". Send it on every
+  edit; the server shows it to everyone (in `snap.plans`).
+- Only the **shape** is checked when the plan arrives; whether an action is
+  possible is decided when its slot comes up (it may fizzle).
 
 | command | refused with | when |
 |---------|--------------|------|
 | `start` | `not_host` | not the host |
 | | `bad_request` | not in the lobby |
-| `opt` | `not_host` / `bad_request` | not the host / not in the lobby |
-| `plan` | `bad_request` | phase is lobby, won or lost; unknown `a`; `x`/`y` missing for move/pickup; for throw: `x` or `y` present, `dx`/`dy` missing, or not a unit direction; `cat` not a catapult id; `cat` omitted while next to two catapults |
+| `plan` | `bad_request` | phase is lobby, won or lost; more than `slots` acts; unknown `a`; `move`/`throw` without a unit direction; `pickup` with only one of `dx`/`dy`, or a direction that is neither a unit direction nor `0,0`; `dx`/`dy` on `load`, `fire` or `wait` |
 | | `too_late` | phase is resolve or break (raced the end of the plan phase) |
-| | `bad_plan` | no engineer yet; any rule below fails (`msg` says why) |
-| `perk` | `bad_request` | not in a break; unknown id; no offer; id not in your offer |
 | `restart` | `not_host` / `bad_request` | not the host / already in the lobby |
 
-`ready` outside a break is ignored. `bad_plan` rules:
-
-- every action: `x, y` (when given) must be on the grid;
-- `move`: destination is a 4-neighbour of your cell that you can step to
-  (walkable, same height unless either cell is stairs); the stored plan's
-  `path` is `[[x, y]]`;
-- `pickup`: hands empty; a bomb lies on `(x, y)`; Manhattan distance from
-  your cell ≤ `can.reach` (any height difference);
-- `throw`: carrying; the throw line in that direction has a walkable cell
-  (e.g. not straight into the catapult or wall next to you);
-- `load`: carrying; you stand on a loading cell of the catapult; it is empty;
-  `fire: true` only with `can.quickHands`;
-- `fire`: you stand on a loading cell of the catapult; it is loaded.
-
-### Perks
-
-At the start of each break every connected player gets an `offer` of up to
-three distinct perks (never one at its cap, never one whose team cap is
-reached; Mason only while the wall is below `wallHP`). Picking is optional,
-and an offer can be shorter than three or `null`. Most perks have a **team
-cap**: once that many engineers of the team hold it, it is offered to nobody
-else, and taking the last allowed one removes it from every other open offer
-(an offer left empty becomes `null`). The `desc` text states the cap.
-
-| id | effect | per player | team cap |
-|----|--------|-----------|----------|
-| `long_reach` | pick up from 2 cells away (`can.reach`) | once | 2 |
-| `quick_hands` | `load` may carry `fire: true` (`can.quickHands`) | once | 1 |
-| `heavy_keg` | kegs you fire deal +1 damage | once | 1 |
-| `long_stop` | stopwatches you fire freeze 1 advance longer | once | 1 |
-| `wide_shot` | grapeshot you fire deals +1 to the machine nearest the wall | once | 1 |
-| `mason` | the wall gets 2 HP back at once (up to `wallHP`) | — | 1 |
-
-Effects on firing show up in the `fire` event's `hits` (damage, frozen);
-the others in `can` and the wall in snaps.
+`ready` outside a break is ignored. Unknown message types (including the old
+`opt` and `perk`) are ignored.

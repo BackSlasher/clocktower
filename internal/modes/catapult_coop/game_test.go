@@ -3,14 +3,16 @@ package catapultcoop
 import (
 	"encoding/json"
 	"math/rand/v2"
-	"slices"
 	"strings"
 	"testing"
 
 	"clocktower/internal/mode"
 )
 
-func TestStartSeatsEngineersAndSpawnsTutorial(t *testing.T) {
+// done files an empty queue and says done.
+func done(g *Game, pid string) error { return g.Apply(pid, Cmd{T: "plan", Done: true}) }
+
+func TestStartSeatsEngineers(t *testing.T) {
 	g, ids := started(t, 3)
 	if g.Phase() != PhasePlan || g.Level() != 1 || g.Round() != 1 || g.keep.ID != "small" {
 		t.Fatalf("phase %s level %d round %d keep %s", g.phase, g.level, g.round, g.keep.ID)
@@ -21,8 +23,7 @@ func TestStartSeatsEngineersAndSpawnsTutorial(t *testing.T) {
 		}
 	}
 	s := g.Snapshot()
-	// The tutorial's one machine comes later (a setup window).
-	if len(s.Bombs) != 1 || s.Bombs[0].Kind != "keg" || len(s.Machines) != 0 || len(g.script) != 1 {
+	if len(s.Bombs) != len(g.lay.Bombs) || len(s.Plans) != 3 || !s.Untimed {
 		t.Fatalf("snap %+v", s)
 	}
 	var names []string
@@ -32,10 +33,9 @@ func TestStartSeatsEngineersAndSpawnsTutorial(t *testing.T) {
 		_ = json.Unmarshal(b, &h)
 		names = append(names, h.E)
 	}
-	if strings.Join(names, ",") != "level_start,place,place,place,bomb" {
+	if !strings.HasPrefix(strings.Join(names, ","), "level_start,place,place,place,bomb") {
 		t.Fatalf("events %v", names)
 	}
-	// Six or more players get the large keep.
 	g6, _ := started(t, 6)
 	if g6.keep.ID != "large" {
 		t.Fatal("6 players should get the large keep")
@@ -45,46 +45,115 @@ func TestStartSeatsEngineersAndSpawnsTutorial(t *testing.T) {
 func TestStartErrors(t *testing.T) {
 	g, ids := newGame(t, 2)
 	wantCode(t, g.Start(ids[1]), "not_host")
-	wantCode(t, g.Apply(ids[0], Cmd{T: "plan", A: AWait}), "bad_request")
+	wantCode(t, done(g, ids[0]), "bad_request") // lobby
 	if err := g.Start(ids[0]); err != nil {
 		t.Fatal(err)
 	}
 	wantCode(t, g.Start(ids[0]), "bad_request")
 }
 
-func TestPlanPhaseEndsWhenAllPlannedOrOnTimeout(t *testing.T) {
+func TestPlanShape(t *testing.T) {
 	g, ids := started(t, 2)
-	if err := g.Apply(ids[0], Cmd{T: "plan", A: AWait}); err != nil {
+	a := ids[0]
+	bad := []Cmd{
+		{T: "plan", Acts: []Act{{A: "dance"}}},
+		{T: "plan", Acts: []Act{{A: AMove}}},                // no direction
+		{T: "plan", Acts: []Act{Dir(AMove, 1, 1)}},          // diagonal
+		{T: "plan", Acts: []Act{Dir(AThrow, 0, 2)}},         // not a unit
+		{T: "plan", Acts: []Act{{A: APickup, DX: IntP(1)}}}, // half a direction
+		{T: "plan", Acts: []Act{Dir(APickup, 2, 0)}},        //
+		{T: "plan", Acts: []Act{Dir(ALoad, 1, 0)}},          // load takes none
+		{T: "plan", Acts: []Act{wt, wt, wt, wt, wt}},        // too many
+	}
+	for _, c := range bad {
+		wantCode(t, g.Apply(a, c), "bad_request")
+	}
+	ok := []Cmd{
+		{T: "plan", Acts: []Act{mv(1, 0), th(0, -1), pk, Dir(APickup, 0, 0)}},
+		{T: "plan", Acts: []Act{pkd(0, 1), ld, fr, wt}},
+		{T: "plan"}, // empty, not done
+	}
+	for _, c := range ok {
+		if err := g.Apply(a, c); err != nil {
+			t.Fatalf("%+v: %v", c, err)
+		}
+	}
+	// Impossible actions are accepted (they fizzle later).
+	if err := g.Apply(a, Cmd{T: "plan", Acts: []Act{fr, ld, th(1, 0)}}); err != nil {
 		t.Fatal(err)
 	}
-	if g.Phase() != PhasePlan || !g.RoomState().Players[0].Planned {
-		t.Fatal("ended early or planned flag missing")
-	}
-	// Replace, then clear, then plan again.
-	if err := g.Apply(ids[0], cmd(AMove, g.lay.Spawns[0][0]-1, g.lay.Spawns[0][1])); err != nil {
+}
+
+func TestQueueIsPublicAndDoneEndsThePhase(t *testing.T) {
+	g, ids := started(t, 2)
+	slow := g.SlowVersion()
+	if err := g.Apply(ids[0], Cmd{T: "plan", Acts: []Act{mv(-1, 0)}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Apply(ids[0], Cmd{T: "plan", A: AClear}); err != nil || g.RoomState().Players[0].Planned {
-		t.Fatal("clear failed")
+	if g.SlowVersion() != slow {
+		t.Fatal("a plan edit must not resend the room message")
 	}
-	_ = g.Apply(ids[0], Cmd{T: "plan", A: AWait})
-	_ = g.Apply(ids[1], Cmd{T: "plan", A: AWait})
+	s := g.View()
+	if s.Plans[0].PID != ids[0] || len(s.Plans[0].Acts) != 1 || s.Plans[0].Done || s.Plans[1].Done {
+		t.Fatalf("plans %+v", s.Plans)
+	}
+	b, _ := json.Marshal(s.Plans[0])
+	if string(b) != `{"pid":"p1","acts":[{"a":"move","dx":-1,"dy":0}],"done":false}` {
+		t.Fatalf("plan json %s", b)
+	}
+	_ = g.Apply(ids[0], Cmd{T: "plan", Acts: []Act{mv(-1, 0)}, Done: true})
+	if !g.View().Plans[0].Done || g.Phase() != PhasePlan {
+		t.Fatal("done not shown, or phase ended early")
+	}
+	// A new queue without done clears done.
+	_ = g.Apply(ids[0], Cmd{T: "plan", Acts: []Act{wt}})
+	if g.View().Plans[0].Done {
+		t.Fatal("done not cleared")
+	}
+	_ = g.Apply(ids[0], Cmd{T: "plan", Acts: []Act{wt}, Done: true})
+	_ = done(g, ids[1]) // empty + done is a legal "do nothing"
 	if g.Phase() != PhaseResolve {
 		t.Fatalf("phase %s", g.phase)
 	}
-	wantCode(t, g.Apply(ids[0], Cmd{T: "plan", A: AWait}), "too_late")
-	leave(g, 5)
-	if g.Phase() != PhasePlan || g.Round() != 2 {
+	if g.View().Plans[0].Acts[0].A != AWait {
+		t.Fatal("queues stay visible while the turn plays")
+	}
+	wantCode(t, done(g, ids[0]), "too_late")
+	leave(g, 30)
+	if g.Phase() != PhasePlan || g.Round() != 2 || len(g.View().Plans[0].Acts) != 0 {
 		t.Fatalf("phase %s round %d", g.phase, g.round)
 	}
-	// Timeout.
+}
+
+func TestFirstTurnHasNoTimer(t *testing.T) {
+	g, ids := started(t, 2)
+	if s := g.View(); !s.Untimed || s.Left != 0 {
+		t.Fatalf("first turn %+v", s)
+	}
+	steps(g, Defs.PlanTime*5)
+	if g.Phase() != PhasePlan || g.Round() != 1 {
+		t.Fatal("the first turn timed out")
+	}
+	// A disconnected player is not waited for, even now.
+	g.SetConnected(ids[1], false)
+	_ = done(g, ids[0])
+	if g.Phase() != PhaseResolve {
+		t.Fatal("waited for a disconnected player")
+	}
+	g.SetConnected(ids[1], true)
+	leave(g, 30)
+	if s := g.View(); s.Untimed || s.Left != Defs.PlanTime {
+		t.Fatalf("second turn %+v", s)
+	}
 	if leave(g, Defs.PlanTime+0.1) != PhaseResolve {
-		t.Fatalf("timeout: phase %s", g.phase)
+		t.Fatal("second turn did not time out")
 	}
 }
 
 func TestPausesWithNobodyConnected(t *testing.T) {
 	g, ids := started(t, 1)
+	g.rounds = 1
+	g.startPlan(1)
 	g.SetConnected(ids[0], false)
 	steps(g, 100)
 	if g.Phase() != PhasePlan || g.Round() != 1 {
@@ -95,83 +164,82 @@ func TestPausesWithNobodyConnected(t *testing.T) {
 func TestAwayRule(t *testing.T) {
 	g, ids := started(t, 2)
 	a, b := ids[0], ids[1]
-	// b never plans: rounds 1 and 2 wait for the timer, then b is away and
-	// a's plan alone ends round 3.
+	g.rounds = 1                                                                         // skip the untimed first turn
+	g.machines, g.script = nil, []spawnEntry{{round: 99, lane: 0, kind: "scrap", hp: 1}} // keep the level open
+	g.startPlan(1)
+	// b files nothing: turns 1 and 2 wait for the timer, then b is away and
+	// a alone ends turn 3.
 	for r := 1; r <= 2; r++ {
-		_ = g.Apply(a, Cmd{T: "plan", A: AWait})
+		_ = done(g, a)
 		if g.Phase() != PhasePlan {
-			t.Fatalf("round %d ended without b", r)
+			t.Fatalf("turn %d ended without b", r)
 		}
 		leave(g, Defs.PlanTime+0.1)
-		leave(g, 5)
+		leave(g, 30)
 	}
 	rs := g.RoomState()
-	if !rs.Players[1].Away || rs.Players[0].Away {
+	if !rs.Players[1].Away || rs.Players[0].Away || g.activeCount() != 1 {
 		t.Fatalf("away flags %+v", rs.Players)
 	}
-	if g.activeCount() != 1 {
-		t.Fatalf("active %d", g.activeCount())
-	}
-	_ = g.Apply(a, Cmd{T: "plan", A: AWait})
+	_ = done(g, a)
 	if g.Phase() != PhaseResolve {
-		t.Fatal("round waited for an away player")
+		t.Fatal("turn waited for an away player")
 	}
-	leave(g, 5)
-	// Any plan stands b back up.
-	_ = g.Apply(b, Cmd{T: "plan", A: AWait})
+	leave(g, 30)
+	// Any plan stands b back up (even one not done).
+	_ = g.Apply(b, Cmd{T: "plan", Acts: []Act{wt}})
 	if g.RoomState().Players[1].Away {
 		t.Fatal("plan did not stand b up")
 	}
-	// A disconnected player is away at once and not waited for.
-	g.SetConnected(b, false)
-	if g.Phase() != PhasePlan {
-		t.Fatal("b's plan counted: wrong")
-	}
-	_ = g.Apply(a, Cmd{T: "plan", A: AWait})
-	if g.Phase() != PhaseResolve || !g.RoomState().Players[1].Away {
-		t.Fatal("disconnect should make b away")
+	// Filing something without done is not "missed".
+	g.player(b).missed = 1
+	leave(g, Defs.PlanTime+0.1)
+	if g.player(b).missed != 0 {
+		t.Fatal("a filed queue counts as taking part")
 	}
 }
 
 func TestDisconnectEndsPlanPhase(t *testing.T) {
 	g, ids := started(t, 2)
-	_ = g.Apply(ids[0], Cmd{T: "plan", A: AWait})
+	_ = done(g, ids[0])
 	g.SetConnected(ids[1], false)
 	if g.Phase() != PhaseResolve {
 		t.Fatal("phase should end once the only missing player left")
 	}
 }
 
-// clearLevel kills everything and resolves, leaving the level done.
+// clearLevel kills everything and plays a turn, leaving the level done.
 func clearLevel(t *testing.T, g *Game) {
 	t.Helper()
 	if g.Phase() == PhaseResolve {
-		leave(g, 5)
+		leave(g, 30)
 	}
 	g.machines, g.script = nil, nil
 	for _, p := range g.players {
-		if p.connected && p.plan == nil && g.Phase() == PhasePlan {
-			_ = g.Apply(p.id, Cmd{T: "plan", A: AWait})
+		if p.connected && !p.done && g.Phase() == PhasePlan {
+			_ = done(g, p.id)
 		}
 	}
-	leave(g, 5)
+	leave(g, 30)
 }
 
 func TestLevelFlowToWin(t *testing.T) {
+	old := Defs.BreakHeal
+	Defs.BreakHeal = 2
+	defer func() { Defs.BreakHeal = old }()
 	g, ids := started(t, 2)
 	g.player(ids[0]).carry = &BombRef{ID: 999, Kind: "keg"}
+	g.wall = Defs.WallHP - 3
+	g.events = nil
 	clearLevel(t, g)
-	if g.Phase() != PhaseBreak || g.Level() != 1 {
-		t.Fatalf("phase %s level %d", g.phase, g.level)
+	if g.Phase() != PhaseBreak || g.Level() != 1 || g.wall != Defs.WallHP-1 {
+		t.Fatalf("phase %s level %d wall %d", g.phase, g.level, g.wall)
 	}
-	rs := g.RoomState()
-	for _, p := range rs.Players {
-		if len(p.Offer) != 3 {
-			t.Fatalf("offer %+v", p.Offer)
-		}
+	lc := evs[EvLevelClear](g.events)
+	if len(lc) != 1 || lc[0].Heal != 2 || lc[0].Wall != g.wall {
+		t.Fatalf("level_clear %+v", lc)
 	}
-	// Commands in the break: plan is too late, ready ends it when all are ready.
-	wantCode(t, g.Apply(ids[0], Cmd{T: "plan", A: AWait}), "too_late")
+	wantCode(t, done(g, ids[0]), "too_late")
 	_ = g.Apply(ids[0], Cmd{T: "ready"})
 	if g.Phase() != PhaseBreak || !g.RoomState().Players[0].Ready {
 		t.Fatal("break ended early")
@@ -180,20 +248,17 @@ func TestLevelFlowToWin(t *testing.T) {
 	if g.Phase() != PhasePlan || g.Level() != 2 || g.Round() != 1 {
 		t.Fatalf("phase %s level %d", g.phase, g.level)
 	}
-	// New layout, engineers on its spawns, carried bombs cleared, offers gone.
+	if g.View().Untimed {
+		t.Fatal("only the game's first turn is untimed")
+	}
 	if g.lay.ID != Defs.Levels[1].Layout || g.RoomState().Layout.ID != g.lay.ID {
 		t.Fatalf("layout %s", g.lay.ID)
 	}
-	if at(g, ids[0]) != g.lay.Spawns[0] || g.player(ids[0]).carry != nil || g.RoomState().Players[0].Offer != nil {
+	if at(g, ids[0]) != g.lay.Spawns[0] || g.player(ids[0]).carry != nil {
 		t.Fatal("level start did not reset the engineers")
 	}
 	if len(g.bombs) != len(g.lay.Bombs) {
 		t.Fatalf("bombs %d, layout has %d", len(g.bombs), len(g.lay.Bombs))
-	}
-	for _, b := range g.bombs {
-		if b.kind != "keg" {
-			t.Fatalf("level 2 bomb kind %s", b.kind)
-		}
 	}
 	for lv := 2; lv < len(Defs.Levels); lv++ {
 		clearLevel(t, g)
@@ -215,11 +280,11 @@ func TestLoseWhenWallFalls(t *testing.T) {
 	g, ids := started(t, 1)
 	g.wall = 1
 	addMachine(g, "scrap", 0, 0)
-	_ = g.Apply(ids[0], Cmd{T: "plan", A: AWait})
+	_ = done(g, ids[0])
 	if g.Phase() != PhaseResolve || g.Wall() != 0 {
 		t.Fatalf("phase %s wall %d", g.phase, g.wall)
 	}
-	leave(g, 5)
+	leave(g, 30)
 	if g.Phase() != PhaseLost || g.End() == nil || g.End().Won {
 		t.Fatalf("phase %s", g.phase)
 	}
@@ -237,8 +302,6 @@ func TestBombKindsPerLevel(t *testing.T) {
 			t.Errorf("level %d bombs %v want %v", lv, got, want)
 		}
 	}
-	// A damaging bomb is always available: with only a stopwatch around,
-	// the next draw is never a stopwatch.
 	g, _ := board(t, 1)
 	g.level = 4
 	for i := 0; i < 50; i++ {
@@ -249,152 +312,22 @@ func TestBombKindsPerLevel(t *testing.T) {
 	}
 }
 
-func TestPerks(t *testing.T) {
-	g, ids := board(t, 1)
-	a := ids[0]
-	p := g.player(a)
-	put(g, a, 3, 7)
-	ground(g, 5, 7, "keg")
-	_, err := g.validate(p, cmd(APickup, 5, 7))
-	wantCode(t, err, "bad_plan")
-	p.perks["long_reach"] = 1
-	if _, err := g.validate(p, cmd(APickup, 5, 7)); err != nil {
-		t.Fatal(err)
-	}
-	if c := g.RoomState().Players[0].Can; c.Throw != Defs.ThrowRange || c.Move != 1 || c.MoveCarry != 1 || c.Reach != 2 || c.QuickHands {
-		t.Fatalf("abilities %+v", c)
-	}
-
-	// Picking: break only, from the offer; Mason heals the wall (capped).
-	wantCode(t, g.Perk(a, "mason"), "bad_request")
-	g.phase = PhaseBreak
-	g.wall = 5
-	p.offer = []string{"mason", "quick_hands", "heavy_keg"}
-	wantCode(t, g.Perk(a, "nope"), "bad_request")
-	wantCode(t, g.Perk(a, "strong_arm"), "bad_request") // gone
-	if err := g.Perk(a, "mason"); err != nil || g.wall != 5+Defs.Perks["mason"].Amount || p.offer != nil {
-		t.Fatalf("mason: %v wall %d", err, g.wall)
-	}
-	wantCode(t, g.Perk(a, "quick_hands"), "bad_request") // offer used up
-	// One Mason per break: taking it removes it from the others' offers.
-	g2, ids2 := started(t, 2)
-	g2.phase, g2.wall = PhaseBreak, 3
-	g2.player(ids2[0]).offer = []string{"mason", "heavy_keg"}
-	g2.player(ids2[1]).offer = []string{"long_stop", "mason"}
-	if err := g2.Perk(ids2[0], "mason"); err != nil || g2.wall != 3+Defs.Perks["mason"].Amount {
-		t.Fatal(err)
-	}
-	if o := g2.player(ids2[1]).offer; len(o) != 1 || o[0] != "long_stop" {
-		t.Fatalf("other offer %v", o)
-	}
-	// Quick Hands: one holder per team. Taking it removes it from the other
-	// offers, and it is never offered again.
-	g3, ids3 := started(t, 2)
-	g3.phase = PhaseBreak
-	g3.player(ids3[0]).offer = []string{"quick_hands", "heavy_keg"}
-	g3.player(ids3[1]).offer = []string{"quick_hands"}
-	if err := g3.Perk(ids3[0], "quick_hands"); err != nil {
-		t.Fatal(err)
-	}
-	if o := g3.player(ids3[1]).offer; o != nil {
-		t.Fatalf("other offer %v", o)
-	}
-	for i := 0; i < 30; i++ {
-		g3.makeOffers()
-		for _, pl := range g3.players {
-			if slices.Contains(pl.offer, "quick_hands") {
-				t.Fatal("quick_hands offered twice in a team")
-			}
-		}
-	}
-	// Maxed perks and Mason at full wall are never offered.
-	g.wall = Defs.WallHP
-	for i := 0; i < 20; i++ {
-		g.makeOffers()
-		for _, id := range p.offer {
-			if id == "mason" || id == "long_reach" {
-				t.Fatalf("offered %s", id)
-			}
-		}
-	}
-}
-
-// Heavy Keg, Long Stop and Wide Shot change what the firer's bombs do.
-func TestFiringPerks(t *testing.T) {
-	g, ids := board(t, 1)
-	a := ids[0]
-	p := g.player(a)
-	put(g, a, 1, 3) // loading cell of catapult 2
-	fire := func(kind string) []Hit {
-		g.cats[2] = &BombRef{ID: 1, Kind: kind}
-		g.startPlan(g.round + 1)
-		mustPlan(t, g, a, catCmd(AFire, 2))
-		return evs[EvFire](run(g))[0].Hits
-	}
-	g.machines = nil
-	addMachine(g, "brute", 2, 1)
-	p.perks["heavy_keg"] = 1
-	if h := fire("keg"); h[0].Dmg != Defs.Bombs["keg"].Dmg+1 {
-		t.Fatalf("heavy keg %+v", h)
-	}
-	g.machines = nil
-	addMachine(g, "brute", 2, 2)
-	p.perks["long_stop"] = 1
-	if h := fire("stopwatch"); h[0].Frozen != Defs.Bombs["stopwatch"].Freeze+1 {
-		t.Fatalf("long stop %+v", h)
-	}
-	g.machines = nil
-	near, far := addMachine(g, "brute", 2, 3), addMachine(g, "brute", 2, 5)
-	p.perks["wide_shot"] = 1
-	h := fire("grapeshot")
-	if len(h) != 2 || near.max-near.hp != 2 || far.max-far.hp != 1 {
-		t.Fatalf("wide shot %+v", h)
-	}
-}
-
 func TestRestart(t *testing.T) {
 	g, ids := started(t, 2)
-	g.player(ids[0]).perks["mason"] = 1
+	g.player(ids[0]).st.kills = 3
 	wantCode(t, g.Restart(ids[1]), "not_host")
 	if err := g.Restart(ids[0]); err != nil {
 		t.Fatal(err)
 	}
-	if g.Phase() != PhaseLobby || len(g.players) != 2 || g.player(ids[0]).placed || len(g.player(ids[0]).perks) != 0 {
+	if g.Phase() != PhaseLobby || len(g.players) != 2 || g.player(ids[0]).placed || g.player(ids[0]).st.kills != 0 {
 		t.Fatal("restart did not reset")
 	}
 	if s := g.View(); len(s.Engineers) != 0 || len(s.Machines) != 0 {
 		t.Fatal("board survived the restart")
 	}
 	wantCode(t, g.Restart(ids[0]), "bad_request")
-	if err := g.Start(ids[0]); err != nil || g.Level() != 1 || g.Wall() != Defs.WallHP {
+	if err := g.Start(ids[0]); err != nil || g.Level() != 1 || g.Wall() != Defs.WallHP || !g.View().Untimed {
 		t.Fatal("could not start again")
-	}
-}
-
-func TestOpenPlans(t *testing.T) {
-	g, ids := newGame(t, 2)
-	wantCode(t, g.Apply(ids[1], Cmd{T: "opt", OpenPlans: BoolP(true)}), "not_host")
-	_ = g.Start(ids[0])
-	wantCode(t, g.Apply(ids[0], Cmd{T: "opt", OpenPlans: BoolP(true)}), "bad_request")
-	_ = g.Apply(ids[0], Cmd{T: "plan", A: AWait})
-	if rs := g.RoomState(); rs.Players[0].Plan != nil || !rs.Players[0].Planned || rs.OpenPlans {
-		t.Fatal("plan leaked with open plans off")
-	}
-	_ = g.Restart(ids[0])
-	if err := g.Apply(ids[0], Cmd{T: "opt", OpenPlans: BoolP(true)}); err != nil {
-		t.Fatal(err)
-	}
-	_ = g.Start(ids[0])
-	s := g.lay.Spawns[0]
-	_ = g.Apply(ids[0], cmd(AMove, s[0]+1, s[1]))
-	rs := g.RoomState()
-	if !rs.OpenPlans || rs.Players[0].Plan == nil || rs.Players[0].Plan.A != AMove || len(rs.Players[0].Plan.Path) != 1 {
-		t.Fatalf("open plan %+v", rs.Players[0].Plan)
-	}
-	// Survives a restart (it is a room option).
-	_ = g.Restart(ids[0])
-	if !g.RoomState().OpenPlans {
-		t.Fatal("option lost on restart")
 	}
 }
 
@@ -405,19 +338,17 @@ func TestReconnectAndLateJoin(t *testing.T) {
 	if at(g, ids[1]) != g.lay.Spawns[1] {
 		t.Fatal("reconnect moved the engineer")
 	}
-	// The reconnecting phone can still commit.
-	if err := g.Apply(ids[1], Cmd{T: "plan", A: AWait}); err != nil {
+	if err := done(g, ids[1]); err != nil {
 		t.Fatal(err)
 	}
 	ev := len(g.events)
 	v := g.View()
-	if len(v.Ev) != 0 || len(g.events) != ev || len(v.Engineers) != 2 {
-		t.Fatal("View must not drain events")
+	if len(v.Ev) != 0 || len(g.events) != ev || len(v.Engineers) != 2 || !v.Plans[1].Done {
+		t.Fatal("View must not drain events, and must show the queues")
 	}
 	if rs := g.RoomState(); rs.Layout == nil || rs.Layout.ID != g.lay.ID || rs.Keep != "small" {
 		t.Fatal("room lacks the layout")
 	}
-	// Late join: seated on a free spawn on connect, in any phase.
 	pid, _, err := g.AddPlayer("Late")
 	if err != nil {
 		t.Fatal(err)
@@ -429,7 +360,6 @@ func TestReconnectAndLateJoin(t *testing.T) {
 	if at(g, pid) != g.lay.Spawns[2] {
 		t.Fatalf("late joiner at %v", at(g, pid))
 	}
-	// A disconnected player at a level start gets no engineer until they return.
 	g.SetConnected(ids[1], false)
 	g.startLevel(2)
 	if g.player(ids[1]).placed {
@@ -447,7 +377,6 @@ func TestHostMigrationAndFullRoom(t *testing.T) {
 	if g.Host() != ids[1] {
 		t.Fatalf("host %s", g.Host())
 	}
-	// Lobby: a 9th evicts a disconnected player.
 	_, ev, err := g.AddPlayer("Ninth")
 	if err != nil || ev != ids[0] {
 		t.Fatalf("%v %s", err, ev)
@@ -469,15 +398,17 @@ func TestModeAdapter(t *testing.T) {
 	if err := gm.Command("p4", "start", []byte(`{"t":"start"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := gm.Command("p4", "plan", []byte(`{"t":"plan","a":"wait"}`)); err != nil {
+	if err := gm.Command("p4", "plan", []byte(`{"t":"plan","acts":[{"a":"move","dx":1,"dy":0},{"a":"pickup"}],"done":true}`)); err != nil {
 		t.Fatal(err)
 	}
 	if gm.Phase() != PhaseResolve {
 		t.Fatal("plan did not resolve")
 	}
-	wantCode(t, gm.Command("p4", "plan", []byte(`{"t":"plan","x":"no"}`)), "bad_request")
-	if err := gm.Command("p4", "bogus", nil); err != nil {
-		t.Fatal("unknown types are ignored")
+	wantCode(t, gm.Command("p4", "plan", []byte(`{"t":"plan","acts":"no"}`)), "bad_request")
+	for _, gone := range []string{"opt", "perk", "bogus"} {
+		if err := gm.Command("p4", gone, []byte(`{}`)); err != nil {
+			t.Fatalf("%s: unknown types are ignored", gone)
+		}
 	}
 	s := gm.Setup()
 	var mp MapT
@@ -485,15 +416,18 @@ func TestModeAdapter(t *testing.T) {
 		t.Fatalf("map %s", s.Map)
 	}
 	var d map[string]any
-	if err := json.Unmarshal(s.Defs, &d); err != nil || d["maxPlayers"].(float64) != 8 {
+	if err := json.Unmarshal(s.Defs, &d); err != nil || d["maxPlayers"].(float64) != 8 || d["slots"].(float64) != 4 || d["perks"] != nil {
 		t.Fatalf("defs %s", s.Defs)
 	}
 	b, _ := json.Marshal(gm.RoomState())
-	if !strings.Contains(string(b), `"mode":"catapult_coop"`) || !strings.Contains(string(b), `"cells":[[`) {
+	rs := string(b)
+	if !strings.Contains(rs, `"mode":"catapult_coop"`) || !strings.Contains(rs, `"cells":[[`) ||
+		strings.Contains(rs, "acts") || strings.Contains(rs, "perk") || strings.Contains(rs, "openPlans") {
 		t.Fatalf("room %s", b)
 	}
-	if _, err := json.Marshal(gm.Snapshot()); err != nil {
-		t.Fatal(err)
+	sb, _ := json.Marshal(gm.Snapshot())
+	if !strings.Contains(string(sb), `"plans":[{"pid":"p4"`) {
+		t.Fatalf("snap %s", sb)
 	}
 }
 
@@ -508,6 +442,11 @@ func TestDeterministic(t *testing.T) {
 		}
 		_ = g.Start(ids[0])
 		for i := 0; i < 400 && g.Running(); i++ {
+			if g.Phase() == PhasePlan {
+				for _, id := range ids {
+					_ = g.Apply(id, Cmd{T: "plan", Acts: []Act{mv(-1, 0), pk, mv(0, -1), th(0, -1)}, Done: true})
+				}
+			}
 			g.Step(0.1)
 		}
 		b, _ := json.Marshal(g.View())
@@ -515,21 +454,5 @@ func TestDeterministic(t *testing.T) {
 	}
 	if play() != play() {
 		t.Fatal("not deterministic")
-	}
-}
-
-// With open plans a throw shows its direction (dx, dy; 0 is not omitted).
-func TestOpenPlansThrowDirection(t *testing.T) {
-	g, ids := board(t, 2) // the second player has not planned, so the phase stays open
-	put(g, ids[1], 7, 7)
-	g.openPlans = true
-	put(g, ids[0], 4, 5)
-	give(g, ids[0], "keg")
-	if err := g.Apply(ids[0], Cmd{T: "plan", A: AThrow, DX: IntP(0), DY: IntP(-1)}); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := json.Marshal(g.RoomState().Players[0].Plan)
-	if string(b) != `{"a":"throw","dx":0,"dy":-1}` {
-		t.Fatalf("plan %s", b)
 	}
 }

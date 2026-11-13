@@ -51,19 +51,19 @@ func TestBalance(t *testing.T) {
 		sc   Scenario
 	}
 	// "sloppy" is the tuning target: a party player who wastes a quarter of
-	// their rounds (25% waits). "sloppy+" also wanders off now and then.
+	// their actions (25% of slots are waits). "sloppy+" also wanders.
 	sloppy := func(n int) Scenario { return Scenario{Players: n, Mistake: 0.25} }
 	scens := []scen{
 		{"4 perfect", Scenario{Players: 4}},
-		{"4 bots 15% waits", Scenario{Players: 4, Mistake: 0.15}},
+		{"4 bots 15% wasted", Scenario{Players: 4, Mistake: 0.15}},
 		{"4 sloppy", sloppy(4)},
-		{"4 sloppy, no perks", Scenario{Players: 4, Mistake: 0.25, NoPerks: true}},
 		{"4 sloppy+ (10% wander)", Scenario{Players: 4, Mistake: 0.25, Wander: 0.1}},
 		{"1 sloppy", sloppy(1)},
 		{"2 sloppy", sloppy(2)},
 		{"3 sloppy", sloppy(3)},
 		{"5 sloppy", sloppy(5)},
 		{"6 sloppy", sloppy(6)},
+		{"7 sloppy", sloppy(7)},
 		{"8 sloppy", sloppy(8)},
 		{"3 sloppy + 1 idle", Scenario{Players: 3, Idle: 1, Mistake: 0.25}},
 		{"1 perfect", Scenario{Players: 1}},
@@ -79,7 +79,7 @@ func TestBalance(t *testing.T) {
 		scens = keep
 	}
 	levels := len(game.Defs.Levels)
-	t.Logf("%-22s %8s %10s %10s %8s  %s", "scenario", "wins", "wall(won)", "wall(all)", "rounds", "losses by level / avg wall after each level")
+	t.Logf("%-22s %8s %10s %10s %8s  %s", "scenario", "wins", "wall(won)", "wall(all)", "turns", "losses by level / avg wall after each level")
 	for _, s := range scens {
 		rs := RunMany(s.sc, 1000, runs)
 		wins, wallWon, wallAll, rounds := 0, 0, 0, 0
@@ -123,7 +123,7 @@ func TestBalance(t *testing.T) {
 				fmt.Fprintf(&b, " %.1f", after[i]/float64(cnt[i]))
 			}
 		}
-		b.WriteString(" / rounds per level (won):")
+		b.WriteString(" / turns per level (won):")
 		for i := range lvlR {
 			if lvlN[i] > 0 {
 				fmt.Fprintf(&b, " %.1f", lvlR[i]/float64(lvlN[i]))

@@ -22,15 +22,14 @@ import (
 // Bot is one scripted player.
 type Bot struct {
 	ID      string
-	Delay   float64 // seconds into a plan phase before planning (ctbot: looks human)
-	NoPerks bool
-	Mistake float64 // chance per round to just wait instead of following the team plan
-	Wander  float64 // chance per round to walk to a random reachable cell instead (makes bumps)
+	Delay   float64 // seconds into a timed plan phase before filing (ctbot: looks human)
+	Mistake float64 // chance per slot to waste it (wait) instead of following the team plan
+	Wander  float64 // chance per slot to step somewhere pointless instead (makes bumps)
 
 	rng      *rand.Rand
-	sentKey  [3]int // level, round, phase marker of the last plan sent
+	sentKey  [2]int // level, round of the last queue filed
 	readyKey int    // level of the last break readied
-	perkKey  int
+	rejected bool   // the last queue was refused: file an empty one
 }
 
 // New makes a bot.
@@ -44,135 +43,121 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 	if rm == nil || s == nil || keep == nil || rm.Layout == nil || s.Phase != rm.Phase {
 		return nil
 	}
-	var me *game.PlayerInfo
-	for i := range rm.Players {
-		if rm.Players[i].ID == b.ID {
-			me = &rm.Players[i]
-		}
-	}
-	if me == nil {
+	if !slices.ContainsFunc(rm.Players, func(p game.PlayerInfo) bool { return p.ID == b.ID }) {
 		return nil
 	}
 	switch rm.Phase {
 	case game.PhaseBreak:
-		var out []game.Cmd
-		if len(me.Offer) > 0 && !b.NoPerks && b.perkKey != rm.Level {
-			b.perkKey = rm.Level
-			if id := b.choosePerk(rm, s); id != "" {
-				out = append(out, game.Cmd{T: "perk", ID: id})
-			}
-		}
-		if b.readyKey != rm.Level && (len(me.Offer) == 0 || b.NoPerks || b.perkKey == rm.Level) {
+		if b.readyKey != rm.Level {
 			b.readyKey = rm.Level
-			out = append(out, game.Cmd{T: "ready", Ready: game.BoolP(true)})
+			return []game.Cmd{{T: "ready", Ready: game.BoolP(true)}}
 		}
-		return out
 	case game.PhasePlan:
-		key := [3]int{rm.Level, s.Round, 1}
-		if b.sentKey == key || me.Planned || s.Round != rm.Round {
+		key := [2]int{rm.Level, s.Round}
+		if b.sentKey == key || s.Round != rm.Round {
 			return nil
 		}
-		if game.Defs.PlanTime-s.Left < b.Delay {
+		if !s.Untimed && game.Defs.PlanTime-s.Left < b.Delay {
 			return nil
 		}
 		b.sentKey = key
-		if b.Mistake > 0 && b.rng.Float64() < b.Mistake {
-			return []game.Cmd{{T: "plan", A: game.AWait}}
+		if b.rejected {
+			b.rejected = false
+			return []game.Cmd{{T: "plan", Done: true}}
 		}
-		if b.Wander > 0 && b.rng.Float64() < b.Wander {
-			if c, ok := b.wander(rm.Layout, s, me.Can); ok {
-				return []game.Cmd{c}
+		queues, at := TeamQueues(rm, s, keep)
+		acts := queues[b.ID]
+		for i := range acts {
+			switch x := b.rng.Float64(); {
+			case x < b.Mistake:
+				acts[i] = game.Act{A: game.AWait}
+			case x < b.Mistake+b.Wander:
+				acts[i] = b.wander(rm.Layout, at[b.ID][i])
 			}
 		}
-		plans := TeamPlan(rm, s, keep)
-		c, ok := plans[b.ID]
-		if !ok {
-			c = game.Cmd{T: "plan", A: game.AWait}
-		}
-		return []game.Cmd{c}
+		return []game.Cmd{{T: "plan", Acts: acts, Done: true}}
 	}
 	return nil
 }
 
-// wander picks a legal but pointless move: any cell within this round's
-// walking budget.
-func (b *Bot) wander(l *game.Layout, s *game.Snap, can game.Abilities) (game.Cmd, bool) {
-	for _, e := range s.Engineers {
-		if e.PID != b.ID {
-			continue
+// Rejected tells the bot its last queue was refused: it files again, an
+// empty queue marked done (so a bad queue can't loop).
+func (b *Bot) Rejected() { b.sentKey, b.rejected = [2]int{}, true }
+
+// wander is a legal but pointless step from c (a wait if there is none).
+func (b *Bot) wander(l *game.Layout, c [2]int) game.Act {
+	var ok [][2]int
+	for _, d := range game.Dirs4 {
+		if l.CanStep(c[0], c[1], c[0]+d[0], c[1]+d[1]) {
+			ok = append(ok, d)
 		}
-		budget := can.Move
-		if e.Carry != nil {
-			budget = can.MoveCarry
-		}
-		d := l.Dists(e.X, e.Y)
-		var cells [][2]int
-		for y := range l.H {
-			for x := range l.W {
-				if d[y][x] > 0 && d[y][x] <= budget {
-					cells = append(cells, [2]int{x, y})
-				}
-			}
-		}
-		if len(cells) == 0 {
-			return game.Cmd{}, false
-		}
-		c := cells[b.rng.IntN(len(cells))]
-		return game.Cmd{T: "plan", A: game.AMove, X: game.IntP(c[0]), Y: game.IntP(c[1])}, true
 	}
-	return game.Cmd{}, false
+	if len(ok) == 0 {
+		return game.Act{A: game.AWait}
+	}
+	d := ok[b.rng.IntN(len(ok))]
+	return game.Dir(game.AMove, d[0], d[1])
 }
 
-// Rejected tells the bot its last plan was refused, so it plans again (a
-// wait) on its next call.
-func (b *Bot) Rejected() { b.sentKey = [3]int{} }
-
-var perkPref = []string{"quick_hands", "heavy_keg", "wide_shot", "long_stop", "long_reach", "mason"}
-
-// choosePerk picks this bot's perk so that teammates choosing at the same
-// moment don't collide on capped perks: it replays, in room order, the picks
-// of everyone with an offer (same rules), counting holders against each
-// perk's team cap, and returns its own.
-func (b *Bot) choosePerk(rm *game.RoomMsg, s *game.Snap) string {
-	held := map[string]int{}
-	for _, p := range rm.Players {
-		for id, n := range p.Perks {
-			if n > 0 {
-				held[id]++
+// TeamQueues plans a whole turn for every present engineer: slot by slot,
+// the team plan for the board, then the board as that slot would leave it.
+// It returns each player's queue and their cell at the start of each slot.
+func TeamQueues(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) (map[string][]game.Act, map[string][][2]int) {
+	queues := map[string][]game.Act{}
+	at := map[string][][2]int{}
+	sim := cloneSnap(s)
+	for slot := 0; slot < game.Defs.Slots; slot++ {
+		decs := TeamPlan(rm, sim, keep)
+		for _, e := range sim.Engineers {
+			d, ok := decs[e.PID]
+			if !ok {
+				continue
 			}
+			queues[e.PID] = append(queues[e.PID], d.act(e.X, e.Y))
+			at[e.PID] = append(at[e.PID], [2]int{e.X, e.Y})
 		}
+		sim = simulate(rm.Layout, keep, sim, decs)
 	}
-	for _, p := range rm.Players {
-		if len(p.Offer) == 0 {
-			continue
-		}
-		id := pickPerk(p.Offer, s, held)
-		if p.ID == b.ID {
-			return id
-		}
-		if id != "" {
-			held[id]++
-		}
-	}
-	return ""
+	return queues, at
 }
 
-// pickPerk: Mason when the wall is hurting, else the first perk in
-// preference order that is on offer and not at its team cap.
-func pickPerk(offer []string, s *game.Snap, held map[string]int) string {
-	free := func(id string) bool {
-		d := game.Defs.Perks[id]
-		return d != nil && slices.Contains(offer, id) && (d.TeamMax == 0 || held[id] < d.TeamMax)
+// dec is one engineer's decision for a slot, in board terms.
+type dec struct {
+	A      string
+	X, Y   int // move: destination; pickup: bomb cell
+	DX, DY int // throw
+	Cat    int // load, fire
+}
+
+// act turns d into the relative action for an engineer at (x, y).
+func (d dec) act(x, y int) game.Act {
+	switch d.A {
+	case game.AMove:
+		return game.Dir(game.AMove, d.X-x, d.Y-y)
+	case game.APickup:
+		dx, dy := d.X-x, d.Y-y
+		return game.Dir(game.APickup, sign(dx), sign(dy))
+	case game.AThrow:
+		return game.Dir(game.AThrow, d.DX, d.DY)
 	}
-	if free("mason") && s.Wall <= s.WallMax-3 {
-		return "mason"
+	return game.Act{A: d.A}
+}
+
+func sign(v int) int {
+	switch {
+	case v > 0:
+		return 1
+	case v < 0:
+		return -1
 	}
-	for _, id := range perkPref {
-		if free(id) && id != "mason" {
-			return id
-		}
-	}
-	return ""
+	return 0
+}
+
+// abil is what an engineer can do (the same for everyone).
+type abil struct{ Move, MoveCarry, Throw, Reach int }
+
+func abilities() abil {
+	return abil{Move: 1, MoveCarry: 1, Throw: game.Defs.ThrowRange, Reach: game.Defs.Reach}
 }
 
 // --- team planner ---------------------------------------------------------------
@@ -183,10 +168,10 @@ type eng struct {
 	pid   string
 	x, y  int
 	carry *game.BombRef
-	can   game.Abilities
+	can   abil
 	busy  bool // planned already
 	catch bool // stays put with free hands after the throw stage
-	plan  game.Cmd
+	plan  dec
 }
 
 type planner struct {
@@ -212,7 +197,7 @@ type planner struct {
 }
 
 // TeamPlan returns a plan command for every present engineer.
-func TeamPlan(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) map[string]game.Cmd {
+func TeamPlan(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) map[string]dec {
 	p := &planner{l: rm.Layout, k: keep, s: s, byPos: map[[2]int]*eng{}, bombs: map[[2]int]game.BombSnap{},
 		reachD: map[[3]int][][]int{}, claimedBomb: map[[2]int]bool{}, taken: map[[2]int]bool{},
 		landing: map[[2]int]bool{}, caught: map[*eng]bool{}}
@@ -222,7 +207,7 @@ func TeamPlan(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) map[string]game.C
 	}
 	for _, e := range s.Engineers {
 		pi, ok := present[e.PID]
-		en := &eng{pid: e.PID, x: e.X, y: e.Y, carry: e.Carry, can: pi.Can}
+		en := &eng{pid: e.PID, x: e.X, y: e.Y, carry: e.Carry, can: abilities()}
 		if !ok || pi.Away {
 			en.busy = true // an obstacle; we do not plan for them
 		}
@@ -234,9 +219,9 @@ func TeamPlan(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) map[string]game.C
 	}
 	p.assess()
 	p.run()
-	out := map[string]game.Cmd{}
+	out := map[string]dec{}
 	for _, e := range p.engs {
-		if e.plan.T != "" {
+		if e.plan.A != "" {
 			out[e.pid] = e.plan
 		}
 	}
@@ -493,13 +478,13 @@ func (p *planner) moves(e *eng) [][2]int {
 }
 
 func (p *planner) setMove(e *eng, x, y int) {
-	e.plan = game.Cmd{T: "plan", A: game.AMove, X: game.IntP(x), Y: game.IntP(y)}
+	e.plan = dec{A: game.AMove, X: x, Y: y}
 	e.busy = true
 	p.taken[[2]int{x, y}] = true
 }
 
 func (p *planner) setWait(e *eng) {
-	e.plan = game.Cmd{T: "plan", A: game.AWait}
+	e.plan = dec{A: game.AWait}
 	e.busy = true
 	e.catch = e.carry == nil
 }
@@ -525,7 +510,7 @@ func (p *planner) tryCatapultAt(e *eng, own int) bool {
 	cats := p.adjacentCats(e)
 	for _, c := range cats {
 		if p.s.Catapults[c].Bomb != nil && p.machines[c] > 0 {
-			e.plan = game.Cmd{T: "plan", A: game.AFire, Cat: game.IntP(c)}
+			e.plan = dec{A: game.AFire, Cat: c}
 			e.busy, e.catch = true, e.carry == nil
 			return true
 		}
@@ -537,7 +522,7 @@ func (p *planner) tryCatapultAt(e *eng, own int) bool {
 	anyThreat := slices.ContainsFunc(p.threat, func(t float64) bool { return t > 0 })
 	for _, c := range cats {
 		if p.s.Catapults[c].Bomb == nil && (p.threat[c] > 0 || !anyThreat || c == own) {
-			e.plan = game.Cmd{T: "plan", A: game.ALoad, Cat: game.IntP(c), Fire: e.can.QuickHands && p.machines[c] > 0}
+			e.plan = dec{A: game.ALoad, Cat: c}
 			e.busy = true
 			return true
 		}
@@ -586,7 +571,7 @@ func (p *planner) tryPickup(e *eng, always bool) bool {
 		return false
 	}
 	p.claimedBomb[best] = true
-	e.plan = game.Cmd{T: "plan", A: game.APickup, X: game.IntP(best[0]), Y: game.IntP(best[1])}
+	e.plan = dec{A: game.APickup, X: best[0], Y: best[1]}
 	e.busy = true
 	return true
 }
@@ -815,7 +800,7 @@ func (p *planner) carry(e *eng) {
 	}
 	switch {
 	case th.cost < inf && th.cost <= mv:
-		e.plan = game.Cmd{T: "plan", A: game.AThrow, DX: game.IntP(th.dir[0]), DY: game.IntP(th.dir[1])}
+		e.plan = dec{A: game.AThrow, DX: th.dir[0], DY: th.dir[1]}
 		e.busy = true
 		if th.catch {
 			p.caught[th.stopper] = true

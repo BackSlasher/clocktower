@@ -10,13 +10,14 @@ clients to come. Wire contract: docs/PROTOCOL.md, "Mode `catapult_coop`".
 The horde has reached Brasswick's walls. The engineers are inside the keep
 with four steam catapults on the ramparts and bombs lying all over the
 courtyard below. Fetch bombs, pass them hand to hand up to the ramparts, load,
-fire. Everybody plans their move in secret at the same time, then all the
-moves happen at once.
+fire. Everybody plans their next few moves at the same time, in full view of
+each other, then all the moves happen at once, step by step.
 
 Where the tower defense is real-time and loose, this is turn-based and tight:
 nothing happens until everyone has committed, and one person walking the wrong
-way breaks the chain. The fun is the talking during the planning seconds and
-the groan when two people both went for the same bomb.
+way breaks the chain. The fun is the shouting during planning ("no, throw it
+*left*, I'm on the rampart!") and the groan when two people both went for the
+same bomb.
 
 1–8 players, best at 3–5.
 
@@ -31,8 +32,8 @@ corner.
   viewer are raised walkways. Each has **two catapults**. The only way up is
   by **stairs** (one or two flights per rampart).
 - **Lanes**: each catapult looks out over its own lane, running away from the
-  wall, 6 cells long. Four catapults, four lanes. Machines appear at the far
-  end of a lane and step toward the wall.
+  wall, 3 cells long. Four catapults, four lanes. Machines appear at the far
+  end of a lane and step toward the wall, one step a turn.
 
 The keep is larger for big groups (9 × 9 cells with a 7 × 7 courtyard for
 1–5 players, 11 × 11 for 6–8). Its outer shape (size, wall, the four
@@ -53,43 +54,56 @@ walled-off pockets). Today each keep has four layouts: *open* (flat, the
 tutorial), *crates*, *platform* (a raised platform with a bomb on it) and
 *split* (a line of crates splitting the courtyard, two platforms).
 
-## A round
+## A turn
 
-1. **Plan** (12 s; a tunable). Every phone shows the keep and that player's
-   choices. Each player picks **one** action. The TV shows a tick next to each
-   name as plans come in, and the phase ends as soon as everyone has
-   committed. A plan can be changed until then.
-2. **Resolve** (2–3 s). The TV plays all actions at once, in a fixed order
-   (below), then the machines advance and new ones arrive.
+1. **Plan** (20 s; a tunable; the game's very first turn has no timer, so a
+   new group can take its time). Every player files a **queue** of up to
+   **four actions**, and presses **done**. Queues are visible to everyone as
+   they are edited, on the TV and every phone. The phase ends as soon as
+   everyone is done, or on the timer.
+2. **Resolve** (a few seconds). The TV plays action 1 of every queue at once,
+   then action 2, then 3, then 4 (each in the fixed order below); then the
+   machines advance one step and new ones arrive.
 3. Repeat. A machine that reaches the wall damages it and is destroyed. The
    wall has shared hit points; at zero the game is lost.
 
-### Plans are secret — unless the host says otherwise
+### Plans are public
 
-By default the TV shows only who has committed. The host can switch on
-**Open plans** in the lobby: then the TV (and every phone) draws each
-player's chosen action as it is picked. That is the learning setting.
+Every player's queue is shown to everyone, live, while it is being edited:
+the TV draws each engineer's planned path and actions, and every phone sees
+them too. There are no secret plans. Four actions per turn are a lot to
+coordinate, and since nobody can know for certain where a teammate will be
+at action 3, seeing their queue is what makes plans like "you walk two cells
+right, then I throw at you" possible. The fun moves from guessing to talking:
+the team spots the bump or the missing catcher on the TV and shouts a
+correction before the timer runs out.
 
 ## Actions
 
-One per player per round.
+Up to four per player per turn, played in order. Every action is relative to
+where the engineer is when it comes up, and is checked only then: an action
+that turns out impossible (walking into a wall, picking up where nothing
+lies, loading with empty hands) **fizzles** and the rest of the queue still
+runs.
 
 | action | effect |
 |--------|--------|
-| **Move** | step to a neighbouring cell (carrying or not); levels change only via stairs |
-| **Pick up** | take a bomb lying in your cell or an adjacent one (any height) |
+| **Move** | step to the neighbouring cell in one of four directions (carrying or not); levels change only via stairs |
+| **Pick up** | take a bomb lying in your cell or an adjacent one (any height); optionally in a given direction |
 | **Throw** | throw the bomb you carry in one of four directions; it flies in a straight line over crates, platforms and height differences until it meets an engineer or the wall. The first engineer on the line catches it if their hands are free, otherwise it bounces off them and drops at their feet; with nobody on the line it lands on the last cell before the wall (or the edge of the keep) |
-| **Load** | put the bomb you carry into an adjacent, empty catapult |
-| **Fire** | fire an adjacent, loaded catapult down its lane |
-| **Wait** | do nothing (also what happens if the timer runs out) |
+| **Load** | put the bomb you carry into the catapult next to you (on the rampart) |
+| **Fire** | fire the loaded catapult next to you down its lane |
+| **Wait** | do nothing (also what empty slots do) |
 
-Walking is one cell a round and stairs are a detour, while a throw crosses
-the whole keep and ignores height. So one engineer walking a bomb up to a
-catapult takes many rounds; an engineer in the courtyard who lines up with a
-teammate on the rampart and throws gets it there in one. Lining up, and
-keeping the line clear of teammates with full hands, is the game.
+Walking is one cell an action and stairs are a detour, while a throw crosses
+the whole keep and ignores height. A good turn for a pair: the courtyard
+engineer walks, picks up, steps into line and throws; the rampart engineer
+waits for the catch, then loads and fires. Lining up, and keeping the line
+clear of teammates with full hands, is the game.
 
 ### Resolve order
+
+For each action slot in turn (1, 2, 3, 4), for everyone at once:
 
 1. Throws fly and are caught, bounce off a full-handed engineer, or land.
 2. Moves. Two engineers heading for the same cell bump and both stay put.
@@ -97,12 +111,15 @@ keeping the line clear of teammates with full hands, is the game.
    fine.
 3. Pick-ups and loads. Two engineers grabbing the same bomb, or loading the
    same catapult: neither succeeds.
-4. Catapults fire.
-5. Machines advance; new machines appear; new bombs appear in the courtyard.
+4. Catapults fire (a fire hits when its slot plays).
 
-Because throws go first (positions before moves), "I throw at you, then you
-walk" works, and "you walk into my line and I throw" does not. Catching is a
-deliberate, called play.
+Then, once per turn: machines advance; new machines appear; new bombs appear
+in the courtyard.
+
+Each slot acts on the board the previous slots left. Within a slot throws go
+first (positions before moves), so "I throw at you, then you walk" works in
+the same slot, and "you walk into my line and I throw" needs your step one
+slot earlier. Catching is a deliberate, called play.
 
 ## Bombs
 
@@ -119,13 +136,13 @@ Bombs appear on free courtyard cells, so there are always a few lying about
 
 | machine | traits |
 |---------|--------|
-| **Scrapling** | 1 hit point, 1 cell a round, 1 wall damage |
-| **Clockroach** | 1 hit point, 2 cells a round, comes in clusters (grapeshot fodder) |
-| **Brass Brute** | 4 hit points, 1 cell every other round, 2 wall damage |
-| **Iron Baron** | boss; many hit points, slow, 3 wall damage |
+| **Scrapling** | 1 hit point, 1 cell a turn, 1 wall damage |
+| **Clockroach** | 1 hit point, 2 cells a turn, comes in clusters (grapeshot fodder) |
+| **Brass Brute** | 4 hit points, 1 cell a turn, 2 wall damage |
+| **Iron Baron** | boss; hit points grow with the team, 1 cell a turn, 3 wall damage |
 
 Same cast as the tower defense, so both modes share art and sounds. The TV
-shows the next round's arrivals as shadows at the far end of the lanes.
+shows the next turn's arrivals as shadows at the far end of the lanes.
 
 Later, maybe: Aero-Drones that land in the courtyard and block a cell; a
 fused bomb that goes off after three rounds wherever it is.
@@ -133,7 +150,8 @@ fused bomb that goes off after three rounds wherever it is.
 ## Levels
 
 A game is a series of levels. A level is a script: which machines appear on
-which lane in which round. It ends when everything in the script has been
+which lane in which turn (today each level is one wave: all its machines
+appear at the start). It ends when everything in the script has been
 destroyed or has reached the wall. Difficulty is nothing more than how many
 machines are put on how many lanes:
 
@@ -147,29 +165,29 @@ machines are put on how many lanes:
 Each level also lists the bomb kinds that can appear, with weights: levels 1–2
 have powder kegs only, grapeshot arrives with the Clockroaches (level 3), the
 stopwatch with the Brutes (level 4). Each level uses one interior layout
-(tutorial: *open*; 2–3: *crates*; 4: *platform*; 5–6: *split*), and every
-level gives the team a few rounds to get into position before the first
-machine arrives.
+(tutorial: *open*; 2–3: *crates*; 4: *platform*; 5–6: *split*). A level
+takes about three turns.
 
 Machine counts scale with the number of players (an explicit count per team
 size in the level data, so the curve can be shaped). Wall hit points carry
 over between levels. Clearing the last level wins.
 
-Between levels there is a short break: every player may pick one of up to
-three perks (the same pick-one-of-three as the tower defense): *Long Reach*
-(pick up from two cells away; at most two per team), *Quick Hands* (load and
-fire in one action), *Heavy Keg* (kegs you fire deal +1), *Long Stop*
-(stopwatches you fire freeze one round longer), *Wide Shot* (grapeshot you fire
-deals +1 to the machine nearest the wall), *Mason* (the wall gets 2 hit points
-back). All but Long Reach can be held by one engineer per team, so a team
-shares a small set of specialities instead of everyone stacking the strongest.
+Between levels there is a short break: a few seconds showing the level result
+(level cleared, wall hit points), over when everyone presses ready. There are
+no choices to make; a tunable can give the wall a hit point or two back at
+each break.
 
 ## Players who are away
 
-- The timer ends every plan phase, so nobody can stall the game.
-- An engineer whose player missed two rounds in a row, or is disconnected,
-  sits down: the round no longer waits for them and they are not counted for
-  scaling. Any plan from them stands them back up.
+- The timer ends every plan phase but the game's first, so nobody can stall
+  the game after the start. The first turn waits for every connected player
+  to press done (it never waits for a disconnected one); the host can always
+  restart.
+- An engineer whose player filed nothing for two turns in a row, or is
+  disconnected, sits down: the turn no longer waits for them and they are not
+  counted for scaling. Any plan from them stands them back up. Pressing done
+  with an empty queue is a deliberate "do nothing" and does not count as
+  missed.
 - A phone that reconnects mid-plan gets the board and can still commit.
 
 ## Phone
@@ -181,19 +199,22 @@ A controller, not a map: eyes stay on the TV. Landscape first.
 - A diamond of four arrows matching the TV's diagonals. One tap moves one
   cell that way.
 - Buttons for Pick up, Throw, Load, Fire and Wait. Throw then takes one
-  arrow. Pick up, Load and Fire ask which one only when there is a choice.
+  arrow; Pick up may take one (otherwise it takes the bomb underfoot or the
+  nearest). Load and Fire need no choice: the server uses the catapult next
+  to you.
 - The phone predicts nothing: no catcher, no landing spot. An arrow is greyed
   only when the action is flatly impossible (a wall, a ledge). A later hard
   mode could stop greying too.
-- Your choice can be changed until the round resolves; during resolve the
-  phone says "watch the TV", then tells you what happened to you.
+- Your queue (up to four actions, then done) can be changed until the turn
+  resolves; everyone's queue is public. During resolve the phone says "watch
+  the TV", then tells you what happened to you.
 
 ## Shared shell
 
 No changes to the mode interface are needed. `Step(dt)` runs the plan timer
 and resolve delay; the resolve playback travels as ordered events in the
-snapshot; and because phones only need to know *who* has committed, no
-per-player private messages are needed (a phone remembers its own plan).
+snapshot; and because plans are public, they travel in the snapshot too: no
+per-player private messages are needed.
 
 ## Clarifications
 
@@ -204,77 +225,79 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
   the rampart walkway is the next row and column, at height 1. Catapults are
   wall cells; an engineer loads or fires from the walkway cell next to one.
   Stairs connect both heights; otherwise a step needs equal height.
-- **Moves** are one step to a neighbouring cell. Four engineers walking round
-  a square all succeed; only a swap of two bumps.
+- **Moves** are one step in a direction. Four engineers walking round a
+  square all succeed; only a swap of two bumps.
+- **Actions are relative and checked when their slot plays.** Load and fire
+  use the lowest-numbered catapult next to the engineer that qualifies.
+  Pick-up without a direction takes the bomb underfoot, else the nearest one
+  in reach (up, right, down, left). A fizzle is reported with a reason and the
+  rest of the queue runs.
 - **Throws** take a direction only. The line ends before a catapult, the outer
   wall or the edge of the grid; crates are flown over and can't be landed on.
-  All throws leave the hands at once, so a chain of throws in one round works
-  (A to B while B throws on to C), and an engineer who caught one bomb this
-  round blocks the next. A bomb that can't rest where it comes down (stairs,
+  All throws of a slot leave the hands at once, so a chain of throws works
+  (A to B while B throws on to C), and an engineer who caught one bomb in a
+  slot blocks the next. A bomb that can't rest where it comes down (stairs,
   or a bomb already there) settles on the nearest free floor cell. An engineer
-  who catches and also planned a move walks on with the bomb. A throw with no
-  walkable cell in that direction is refused.
+  who catches and also moves in that slot walks on with the bomb.
 - **Pick-up** reaches the own cell and the four neighbours at any height.
   Contested pick-ups and loads fail for everyone involved; a pick-up also
-  fails if the engineer just caught a bomb.
+  fails if the engineer just caught a bomb in the same slot.
 - **Firing** an empty lane wastes the bomb. If two engineers fire the same
   catapult, it fires once.
 - **Stopwatch** freezes do not stack: a machine skips `max(current, 2)` more
   advances.
-- **Machines** stack freely on lane cells. New machines appear at the far end
-  during the machine stage and first move the round after. The TV gets next
-  round's arrivals (`incoming`) to draw as shadows.
-- **Bombs** on the ground are topped up to *players + 2* after every resolve,
+- **Machines** stack freely on lane cells, move once per turn after the last
+  action slot, appear at the far end and first move the turn after. The TV
+  gets next turn's arrivals (`incoming`) to draw as shadows.
+- **Bombs** on the ground are topped up to *players + 2* after every turn,
   on random free courtyard floor cells (no bomb, no engineer); if no keg or
   grapeshot exists anywhere, the next one drawn is never a stopwatch.
-- **Iron Baron** moves every other round, does 3 wall damage, and its hit
-  points are set per team size in the level data.
-- **Perk team caps.** When the last allowed holder takes a capped perk it
-  leaves everyone else's open offer, and it is never offered again in that
-  game. Perk offers last only for the break; unpicked ones vanish.
-- **Away.** Two missed rounds in a row (a timed-out round counts) or a
-  disconnect make a player away; any plan, ready or perk stands them back up;
-  reconnecting alone does not. Their engineer stays on the board.
+- **Iron Baron** does 3 wall damage; its hit points are set per team size in
+  the level data.
+- **No perks.** The break between levels is a short intermission with no
+  choices (an optional wall heal is a tunable, `breakHeal`, 0 today).
+- **Away.** Two turns in a row with nothing filed (an empty queue not marked
+  done) or a disconnect make a player away; any plan or ready stands them
+  back up; reconnecting alone does not. Their engineer stays on the board.
 - **Late joiners and returning players** get an engineer on a free start cell
   at once, in any phase. A player disconnected at a level start has no engineer
   until they return.
-- **Restart** (host) works in any phase but the lobby; Open plans survives it.
+- **Restart** (host) works in any phase but the lobby. The next game's first
+  turn is untimed again.
 - **Keep size** is chosen at the start by the number of players in the room.
 
 ## Balance notes
 
 Tuned for error-prone party players, not for perfect play. The scripted bots
-(`internal/modes/catapult_coop/bot`) play a coordinated team plan (gunners on
-the ramparts, fetchers in the courtyard lining up throws at them); the tuning
+(`internal/modes/catapult_coop/bot`) plan whole four-action queues for the
+team (gunners on the ramparts catch, load and fire; fetchers in the courtyard
+walk, pick up and throw), simulating each slot to plan the next. The tuning
 target is a **sloppy** team whose every player wastes a quarter of their
-rounds (25% chance per round to just wait). Run the table with
+actions (25% chance per slot to wait instead). Run the table with
 `CT_BALANCE_RUNS=100 go test ./internal/modes/catapult_coop/bot -run TestBalance -v`.
 
-Current knobs: wall 16 HP, lanes 6 cells, bombs on the ground players + 2,
-three start seats on the ramparts, machine counts and Iron Baron HP per team
-size in each level's data, short setup windows (first machines at round 0–2).
-Results, 100 games per row:
+Current knobs: wall 16 HP, lanes 3 cells, every machine moving one step a
+turn (Clockroaches two), each level one wave at its start, bombs on the ground
+players + 2, three start seats on the ramparts, machine counts and Iron Baron
+HP per team size in each level's data (tuned by searching a ladder of
+single-machine steps per team size), no heal at breaks. Results, 100 games
+per row:
 
-| team | wins | wall left when won (of 16) | rounds per game | losses |
-|------|------|----------------------------|-----------------|--------|
-| 4 perfect bots | 99% | 5.4 | 56 | level 6 |
-| 4 bots, 15% waits | 88% | 3.2 | 58 | level 6 |
-| **4 sloppy (25% waits)** | **60%** | 2.3 | 59 | level 6 |
-| 4 sloppy, 10% random moves on top | 17% | 1.5 | 59 | level 6 |
-| 4 sloppy, no perks | 1% | — | 57 | level 6 |
-| 1 / 2 / 3 sloppy | 62% / 66% / 49% | 1.3 / 1.7 / 1.8 | 56 / 57 / 55 | level 6 |
-| 5 / 6 / 8 sloppy | 51% / 60% / 60% | 2.1 / 2.8 / 2.9 | 62 / 63 / 63 | level 6 |
-| 3 sloppy + 1 idle | 56% | 1.8 | 55 | level 6 |
+| team | wins | wall left when won (of 16) | turns per game | losses |
+|------|------|----------------------------|----------------|--------|
+| 4 perfect bots | 100% | 7.7 | 18 | — |
+| 4 bots, 15% wasted | 93% | 3.6 | 18 | level 6 |
+| **4 sloppy (25% wasted)** | **53%** | 2.3 | 18 | level 6 |
+| 4 sloppy, 10% pointless moves on top | 9% | 1.2 | 18 | levels 5–6 |
+| 1 / 2 / 3 sloppy | 51% / 67% / 68% | 1.5 / 1.7 / 2.4 | 18 / 18 / 18 | level 6 |
+| 5 / 6 / 7 / 8 sloppy | 68% / 60% / 65% / 67% | 2.2 / 2.0 / 2.1 / 2.1 | 18 / 19 / 18 / 18 | level 6 |
+| 3 sloppy + 1 idle | 66% | 2.4 | 18 | level 6 |
+| 1 / 8 perfect | 100% / 100% | 3.2 / 8.1 | 17 / 17 | — |
 
-Rounds per level for a won 4-player game: about 6, 9, 5, 12, 12, 15. The
-tutorial and levels 2–5 are never lost; every loss is on level 6. Wins end
-with a few hit points left.
+Turns per level in a won 4-player game: about 2.5, 3, 3, 3, 3, 3. The
+tutorial and levels 2–5 are (almost) never lost; losses are on level 6.
+Wins end with a few hit points left.
 
-Known tension: the outcome is steep in the wall HP a team brings into
-level 6 (about one hit point is worth 30–40 points of win rate), so anything
-worth a few hit points over the game decides it. Perks are worth about 3–4
-HP by level 6 even with the team caps, which is why a team that never picks
-perks almost never wins, and why 15% waits already win 88%. A lone engineer
-plays as a rampart gunner and picks bombs up from the row below; solo results
-are nearly deterministic (total machine damage against wall HP). Wandering
-(random moves that cause bumps) hurts much more than waiting.
+The outcome is steep in wasted actions (15% wasted wins 93%, 25% wins 53%),
+and pointless moves (bumps, walking out of a catcher's line) hurt much more
+than plain waiting.
