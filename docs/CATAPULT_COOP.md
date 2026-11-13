@@ -9,8 +9,9 @@ clients to come. Wire contract: docs/PROTOCOL.md, "Mode `catapult_coop`".
 
 The horde has reached Brasswick's walls. The engineers are inside the keep
 with four steam catapults on the ramparts and bombs lying all over the
-courtyard below. Fetch bombs, pass them hand to hand up to the ramparts, load,
-fire. Everybody plans their next few moves at the same time, in full view of
+courtyard below. Fetch bombs, pass them hand to hand up to the ramparts and
+load them; a loaded catapult fires by itself the moment a machine is in its
+lane. Everybody plans their next few moves at the same time, in full view of
 each other, then all the moves happen at once, step by step.
 
 Where the tower defense is real-time and loose, this is turn-based and tight:
@@ -31,7 +32,9 @@ corner.
   and pipes blocking cells. Bombs lie scattered here.
 - **Ramparts** (high ground): the two sides of the square furthest from the
   viewer are raised walkways. Each has **two catapults**. The only way up is
-  by **stairs** (one or two flights per rampart).
+  by **stairs**, built as corner steps: the main flight in the courtyard's
+  inner corner where the two ramparts meet, sometimes a second one beside a
+  short ledge sticking out of a rampart.
 - **Lanes**: each catapult looks out over its own lane, running away from the
   wall, 3 cells long. Four catapults, four lanes. Machines appear at the far
   end of a lane and step toward the wall, one step a turn.
@@ -45,13 +48,14 @@ strip is always a single row under it.
 the keep: which courtyard cells are crates, which are raised platforms
 (height 1, reached by stairs like the ramparts), where the stairs are, where
 the engineers start and where bombs lie when the level begins. At every level
-start the engineers go back to the start cells (the first three seats are on
-the ramparts, the first right next to a catapult; the rest in the courtyard)
-and the board is cleared of
+start the engineers go back to the start cells (seat 1 on a rampart right at
+a catapult, seat 3 on the other rampart; seats 2 and 4 in the courtyard, lined
+up with them for a first throw) and the board is cleared of
 bombs (in hands, in catapults, on the ground) before the level's own bombs are
 placed. Layouts are ASCII drawings in the code; a test checks every one (all
 catapults reachable from every start cell, every bomb reachable, no
-walled-off pockets). The keep has four layouts: *open* (flat, the
+walled-off pockets, every stairs cell a corner step: two raised neighbours at
+a right angle, two low ones, nothing blocked). The keep has four layouts: *open* (flat, the
 tutorial), *crates*, *platform* (a raised platform with a bomb on it) and
 *split* (a line of crates splitting the courtyard, two platforms).
 
@@ -83,23 +87,22 @@ correction before the timer runs out.
 
 Up to four per player per turn, played in order. Every action is relative to
 where the engineer is when it comes up, and is checked only then: an action
-that turns out impossible (walking into a wall, picking up where nothing
+that turns out impossible (walking into a wall, picking up where no bomb
 lies, loading with empty hands) **fizzles** and the rest of the queue still
-runs.
+runs. There is no fire action: catapults fire themselves.
 
 | action | effect |
 |--------|--------|
 | **Move** | step to the neighbouring cell in one of four directions (carrying or not); levels change only via stairs |
-| **Pick up** | take a bomb lying in your cell or an adjacent one (any height); optionally in a given direction |
+| **Pick up** | take the bomb lying in your own cell (walk onto it first) |
 | **Throw** | throw the bomb you carry in one of four directions; it flies in a straight line over crates, platforms and height differences until it meets an engineer or the wall. The first engineer on the line catches it if their hands are free, otherwise it bounces off them and drops at their feet; with nobody on the line it lands on the last cell before the wall (or the edge of the keep) |
-| **Load** | put the bomb you carry into the catapult next to you (on the rampart) |
-| **Fire** | fire the loaded catapult next to you down its lane |
+| **Load** | put the bomb you carry into the catapult next to you (on the rampart); it fires by itself as soon as its lane has a machine — right away if one is there |
 | **Wait** | do nothing (also what empty slots do) |
 
 Walking is one cell an action and stairs are a detour, while a throw crosses
 the whole keep and ignores height. A good turn for a pair: the courtyard
-engineer walks, picks up, steps into line and throws; the rampart engineer
-waits for the catch, then loads and fires. Lining up, and keeping the line
+engineer walks onto a bomb, picks it up, steps into line and throws; the
+rampart engineer waits for the catch, then loads, and the catapult fires. Lining up, and keeping the line
 clear of teammates with full hands, is the game.
 
 ### Resolve order
@@ -110,9 +113,12 @@ For each action slot in turn (1, 2, 3, 4), for everyone at once:
 2. Moves. Two engineers heading for the same cell bump and both stay put.
    Swapping places is also a bump. Walking into a cell someone is leaving is
    fine.
-3. Pick-ups and loads. Two engineers grabbing the same bomb, or loading the
+3. Pick-ups (each from its own cell) and loads. Two engineers loading the
    same catapult: neither succeeds.
-4. Catapults fire (a fire hits when its slot plays).
+4. Every loaded catapult whose lane has a machine fires by itself. A catapult
+   loaded while its lane is empty waits, and fires in the first slot after a
+   machine has arrived (machines arrive at the end of a turn, so the team sees
+   it for one plan phase first).
 
 Then, once per turn: machines advance; new machines appear; new bombs appear
 in the courtyard.
@@ -199,10 +205,10 @@ A controller, not a map: eyes stay on the TV. Landscape first.
   you are carrying, the countdown and who has committed.
 - A diamond of four arrows matching the TV's diagonals. One tap moves one
   cell that way.
-- Buttons for Pick up, Throw, Load, Fire and Wait. Throw then takes one
-  arrow; Pick up may take one (otherwise it takes the bomb underfoot or the
-  nearest). Load and Fire need no choice: the server uses the catapult next
-  to you.
+- Buttons for Pick up, Throw, Load and Wait. Throw then takes one arrow.
+  Pick up takes the bomb underfoot; Load needs no choice (the server uses the
+  catapult next to you). There is no Fire button: a loaded catapult fires by
+  itself.
 - The phone predicts nothing: no catcher, no landing spot. An arrow is greyed
   only when the action is flatly impossible (a wall, a ledge). A later hard
   mode could stop greying too.
@@ -224,15 +230,14 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
 
 - **Geometry.** The outer wall is the row `y = 0` and the column `x = 0`;
   the rampart walkway is the next row and column, at height 1. Catapults are
-  wall cells; an engineer loads or fires from the walkway cell next to one.
+  wall cells; an engineer loads from the walkway cell next to one.
   Stairs connect both heights; otherwise a step needs equal height.
 - **Moves** are one step in a direction. Four engineers walking round a
   square all succeed; only a swap of two bumps.
-- **Actions are relative and checked when their slot plays.** Load and fire
-  use the lowest-numbered catapult next to the engineer that qualifies.
-  Pick-up without a direction takes the bomb underfoot, else the nearest one
-  in reach (up, right, down, left). A fizzle is reported with a reason and the
-  rest of the queue runs.
+- **Actions are relative and checked when their slot plays.** Load uses the
+  lowest-numbered empty catapult next to the engineer. Pick-up takes the bomb
+  underfoot. A fizzle is reported with a reason and the rest of the queue
+  runs.
 - **Throws** take a direction only. The line ends before a catapult, the outer
   wall or the edge of the grid; crates are flown over and can't be landed on.
   All throws of a slot leave the hands at once, so a chain of throws works
@@ -240,11 +245,13 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
   slot blocks the next. A bomb that can't rest where it comes down (stairs,
   or a bomb already there) settles on the nearest free floor cell. An engineer
   who catches and also moves in that slot walks on with the bomb.
-- **Pick-up** reaches the own cell and the four neighbours at any height.
-  Contested pick-ups and loads fail for everyone involved; a pick-up also
-  fails if the engineer just caught a bomb in the same slot.
-- **Firing** an empty lane wastes the bomb. If two engineers fire the same
-  catapult, it fires once.
+- **Pick-up** works only on the engineer's own cell, so two pick-ups can
+  never collide; it fails if the engineer just caught a bomb in the same
+  slot. Contested loads fail for everyone involved (no current layout has a
+  catapult with two loading cells).
+- **Automatic fire** is checked at the end of every slot, after that slot's
+  loads, in catapult order; a catapult never fires into an empty lane. Kills
+  and damage are credited to whoever loaded the bomb.
 - **Stopwatch** freezes do not stack: a machine skips `max(current, 2)` more
   advances.
 - **Machines** stack freely on lane cells, move once per turn after the last
@@ -270,7 +277,7 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
 
 Tuned for error-prone party players, not for perfect play. The scripted bots
 (`internal/modes/catapult_coop/bot`) plan whole four-action queues for the
-team (gunners on the ramparts catch, load and fire; fetchers in the courtyard
+team (gunners on the ramparts catch and load; fetchers in the courtyard
 walk, pick up and throw), simulating each slot to plan the next. The tuning
 target is a **sloppy** team whose every player wastes a quarter of their
 actions (25% chance per slot to wait instead). Run the table with
@@ -278,25 +285,31 @@ actions (25% chance per slot to wait instead). Run the table with
 
 Current knobs: wall 16 HP, lanes 3 cells, every machine moving one step a
 turn (Clockroaches two), each level one wave at its start, bombs on the ground
-players + 2, three start seats on the ramparts, machine counts and Iron Baron
-HP per team size in each level's data (tuned by searching a ladder of
-single-machine steps per team size), no heal at breaks. Results, 200 games
-per row:
+players + 2, seats 1 and 3 on the ramparts and 2 and 4 in the courtyard lined
+up with them, machine counts and Iron Baron HP per team size in each level's
+data (tuned by searching a ladder of single-machine steps per team size), no
+heal at breaks. Results, 100 games per row:
 
 | team | wins | wall left when won (of 16) | turns per game | losses |
 |------|------|----------------------------|----------------|--------|
-| 4 perfect bots | 100% | 7.8 | 18 | — |
-| 4 bots, 15% wasted | 93% | 3.5 | 18 | level 6 |
-| **4 sloppy (25% wasted)** | **52%** | 2.0 | 18 | levels 5–6 |
-| 4 sloppy, 10% pointless moves on top | 10% | 1.3 | 18 | levels 5–6 |
-| 1 / 2 / 3 sloppy | 51% / 61% / 67% | 1.6 / 1.6 / 2.1 | 18 / 18 / 18 | level 6 |
-| 3 sloppy + 1 idle | 64% | 2.2 | 18 | level 6 |
-| 1 / 2 perfect | 100% / 100% | 3.3 / 3.5 | 17 / 17 | — |
+| 4 perfect bots | 100% | 6.0 | 18 | — |
+| 4 bots, 15% wasted | 93% | 2.8 | 18 | level 6 |
+| **4 sloppy (25% wasted)** | **49%** | 1.6 | 17 | level 6 |
+| 4 sloppy, 10% pointless moves on top | 8% | 1.6 | 17 | level 6 |
+| 1 / 2 / 3 sloppy | 31% / 68% / 58% | 1.1 / 1.3 / 1.4 | 17 / 17 / 17 | level 6 |
+| 3 sloppy + 1 idle | 31% | 1.5 | 17 | level 6 |
+| 1 / 2 perfect | 100% / 100% | 1.9 / 4.2 | 16 / 17 | — |
 
-Turns per level in a won 4-player game: about 2.5, 3, 3, 3, 3, 3. The
-tutorial and levels 2–5 are (almost) never lost; losses are on level 6.
-Wins end with a few hit points left.
+Turns per level in a won 4-player game: about 2, 3, 3, 3, 3, 3. The tutorial
+and levels 2–5 are never lost; every loss is on level 6. Wins end with a hit
+point or two left.
 
-The outcome is steep in wasted actions (15% wasted wins 93%, 25% wins 52%),
+Solo play is nearly deterministic: a lone engineer kills little (fetching a
+bomb, climbing the corner stairs and loading takes most of a turn) and wins or
+loses on total machine damage against wall hit points, so one machine more or
+less moves the solo win rate between about 31% and 88%; 31% is the current
+setting.
+
+The outcome is steep in wasted actions (15% wasted wins 93%, 25% wins 49%),
 and pointless moves (bumps, walking out of a catcher's line) hurt much more
 than plain waiting.

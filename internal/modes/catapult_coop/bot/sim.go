@@ -120,15 +120,15 @@ func simulate(l *game.Layout, keep *game.Keep, s *game.Snap, decs map[string]dec
 			n.Engineers[i].Carry = nil
 		}
 	}
-	// 4. fires.
-	for _, i := range order(game.AFire) {
-		d := decs[n.Engineers[i].PID]
-		b := n.Catapults[d.Cat].Bomb
-		if b == nil {
+	// 4. loaded catapults with a machine in their lane fire by themselves.
+	for c := range n.Catapults {
+		b := n.Catapults[c].Bomb
+		lane := keep.Catapults[c].Lane
+		if b == nil || !slices.ContainsFunc(n.Machines, func(m game.MachineSnap) bool { return m.Lane == lane }) {
 			continue
 		}
-		n.Catapults[d.Cat].Bomb = nil
-		blast(n, keep.Catapults[d.Cat].Lane, b.Kind)
+		n.Catapults[c].Bomb = nil
+		blast(n, lane, b.Kind)
 	}
 	return n
 }

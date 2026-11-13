@@ -22,7 +22,7 @@ var Palette = []string{"#e0a030", "#4fb39a", "#d1594a", "#6f8fe0", "#c77dd6", "#
 const NameMaxLen = 12
 
 type stats struct {
-	throws, catches, pickups, loads, fires, kills, dmg, steps, bumps, fizzles int
+	throws, catches, pickups, loads, kills, dmg, steps, bumps, fizzles int
 }
 
 type player struct {
@@ -91,6 +91,7 @@ type Game struct {
 	wall     int
 	bombs    []*bomb    // on the ground
 	cats     []*BombRef // per catapult: loaded bomb or nil
+	catBy    []string   // per catapult: who loaded it (credited for its fire)
 	machines []*machine
 	script   []spawnEntry // this level's spawns not yet made
 	nextMID  int
@@ -113,7 +114,7 @@ func (g *Game) reset() {
 	g.time, g.left, g.level, g.round, g.rounds = 0, 0, 0, 0, 0
 	g.keep, g.lay = nil, nil
 	g.wall = Defs.WallHP
-	g.bombs, g.cats, g.machines, g.script, g.events = nil, nil, nil, nil, nil
+	g.bombs, g.cats, g.catBy, g.machines, g.script, g.events = nil, nil, nil, nil, nil, nil
 	g.nextMID, g.nextBID = 1, 1
 	g.end = nil
 	for _, p := range g.players {
@@ -376,6 +377,7 @@ func (g *Game) Start(pid string) error {
 	}
 	g.keep = keepFor(len(g.players))
 	g.cats = make([]*BombRef, len(g.keep.Catapults))
+	g.catBy = make([]string, len(g.keep.Catapults))
 	g.wall = Defs.WallHP
 	for _, p := range g.players {
 		p.missed = 0
@@ -463,14 +465,7 @@ func checkAct(a Act) error {
 		if !unit(a.DX, a.DY) {
 			return badReq(a.A + " needs a direction: dx, dy one of (1,0), (-1,0), (0,1), (0,-1)")
 		}
-	case APickup:
-		if (a.DX == nil) != (a.DY == nil) {
-			return badReq("pickup: give both dx and dy, or neither")
-		}
-		if a.DX != nil && !unit(a.DX, a.DY) && (*a.DX != 0 || *a.DY != 0) {
-			return badReq("pickup: dx, dy must be a direction or (0,0)")
-		}
-	case ALoad, AFire, AWait:
+	case APickup, ALoad, AWait:
 		if a.DX != nil || a.DY != nil {
 			return badReq(a.A + " takes no direction")
 		}
@@ -558,7 +553,7 @@ func (g *Game) startLevel(lv int) {
 	g.machines = nil
 	g.bombs = nil
 	for i := range g.cats {
-		g.cats[i] = nil
+		g.cats[i], g.catBy[i] = nil, ""
 	}
 	for _, p := range g.players {
 		p.placed, p.carry, p.acts, p.done, p.ready = false, nil, nil, false, false
@@ -836,7 +831,7 @@ func (g *Game) snapshot(drain bool) *Snap {
 // --- end of game ---------------------------------------------------------------------
 
 func (s stats) out() StatsOut {
-	return StatsOut{Throws: s.throws, Catches: s.catches, Pickups: s.pickups, Loads: s.loads, Fires: s.fires,
+	return StatsOut{Throws: s.throws, Catches: s.catches, Pickups: s.pickups, Loads: s.loads,
 		Kills: s.kills, Dmg: s.dmg, Steps: s.steps, Bumps: s.bumps, Fizzles: s.fizzles}
 }
 

@@ -285,79 +285,54 @@ func TestMoveFizzlesAtWallsAndLedges(t *testing.T) {
 
 // --- 3. pick-ups and loads ------------------------------------------------------------
 
-func TestPickupTargets(t *testing.T) {
+func TestPickupOwnCellOnly(t *testing.T) {
 	g, ids := board(t, 2)
 	a, b := ids[0], ids[1]
 	put(g, a, 4, 4)
+	put(g, b, 6, 4)
 	own := ground(g, 4, 4, "keg")
-	ground(g, 4, 3, "keg")
-	right := ground(g, 5, 4, "grapeshot")
-	q(g, a, pk) // own cell first
-	run(g)
-	if g.player(a).carry.ID != own.id {
-		t.Fatal("own cell first")
-	}
-	// Without a direction and nothing underfoot: nearest, up before right.
-	g.startPlan(2)
-	g.player(a).carry = nil
+	ground(g, 7, 4, "grapeshot") // next to b: out of reach
 	q(g, a, pk)
-	run(g)
-	if g.player(a).carry.ID == right.id || g.bombAt(4, 3) != nil {
-		t.Fatal("up first")
-	}
-	// With a direction.
-	g.startPlan(3)
-	g.player(a).carry = nil
-	q(g, a, pkd(1, 0))
-	run(g)
-	if g.player(a).carry.ID != right.id {
-		t.Fatal("direction")
-	}
-	// From the rampart down into the courtyard (any height).
-	g.startPlan(4)
-	put(g, b, 5, 1)
-	ground(g, 5, 2, "keg")
-	q(g, b, pkd(0, 1))
-	run(g)
-	if g.player(b).carry == nil {
-		t.Fatal("from above")
-	}
-	// Nothing there; hands already full.
-	g.startPlan(5)
-	q(g, a, pkd(0, 1))
-	g.player(a).carry = nil
 	q(g, b, pk)
-	f := fizzles(run(g))
-	if f[a] != FzNoBomb || f[b] != FzHandsFull {
+	ev := run(g)
+	if g.player(a).carry == nil || g.player(a).carry.ID != own.id || g.bombAt(4, 4) != nil {
+		t.Fatal("own cell")
+	}
+	if f := fizzles(ev); f[b] != FzNoBomb || g.player(b).carry != nil {
+		t.Fatalf("neighbour cell: %v", f)
+	}
+	// Walk onto it, then pick it up (a bomb never blocks walking).
+	g.startPlan(2)
+	q(g, b, mv(1, 0), pk)
+	run(g)
+	if g.player(b).carry == nil || at(g, b) != [2]int{7, 4} {
+		t.Fatal("walk then pick up")
+	}
+	// Hands already full.
+	g.startPlan(3)
+	ground(g, 4, 4, "keg")
+	q(g, a, pk)
+	if f := fizzles(run(g)); f[a] != FzHandsFull {
 		t.Fatalf("%v", f)
 	}
 }
 
-func TestPickupContestedAndHandsFull(t *testing.T) {
-	g, ids := board(t, 3)
-	a, b, c := ids[0], ids[1], ids[2]
+func TestPickupFailsAfterCatch(t *testing.T) {
+	g, ids := board(t, 2)
+	a, c := ids[0], ids[1]
 	put(g, a, 4, 4)
-	put(g, b, 6, 4)
-	bomb := ground(g, 5, 4, "keg")
-	q(g, a, pkd(1, 0))
-	q(g, b, pkd(-1, 0))
-	ev := evs[EvPickup](run(g))
-	if ev[0].Result != "contested" || ev[1].Result != "contested" || g.bombAt(5, 4) != bomb {
-		t.Fatalf("%+v", ev)
-	}
-	// A pick-up by someone who catches a throw in the same slot fails.
-	g.startPlan(2)
+	ground(g, 4, 4, "keg")
 	put(g, c, 4, 7)
 	give(g, c, "grapeshot")
 	q(g, c, th(0, -1)) // a at (4,4) is first on the line
-	q(g, a, pkd(1, 0))
-	ev = evs[EvPickup](run(g))
-	if ev[0].Result != "hands_full" || g.player(a).carry.Kind != "grapeshot" {
+	q(g, a, pk)
+	ev := evs[EvPickup](run(g))
+	if len(ev) != 1 || ev[0].Result != "hands_full" || g.player(a).carry.Kind != "grapeshot" || g.bombAt(4, 4) == nil {
 		t.Fatalf("%+v", ev)
 	}
 }
 
-func TestLoadAndFireTargetsAndFizzles(t *testing.T) {
+func TestLoadTargetsAndFizzles(t *testing.T) {
 	g, ids := board(t, 4)
 	a, b, c, d := ids[0], ids[1], ids[2], ids[3]
 	put(g, a, 3, 1) // loading cell of catapult 0
@@ -377,144 +352,114 @@ func TestLoadAndFireTargetsAndFizzles(t *testing.T) {
 	if f[b] != FzNoCatapult || f[c] != FzCatapultFull || f[d] != FzEmptyHands || f[a] != "" {
 		t.Fatalf("%v", f)
 	}
-	if l := evs[EvLoad](ev); len(l) != 1 || l[0].Cat != 0 || l[0].Result != "ok" || g.cats[0] == nil {
+	if l := evs[EvLoad](ev); len(l) != 1 || l[0].Cat != 0 || l[0].Result != "ok" || g.cats[0] == nil || g.catBy[0] != a {
 		t.Fatalf("%+v", l)
 	}
-	// Fire: catapult 0 is loaded now; catapult 1 too; d has none next to it.
-	g.startPlan(2)
-	g.cats[1] = nil
-	q(g, a, fr)
-	q(g, c, fr) // catapult 1 is empty now
-	q(g, d, fr)
-	f = fizzles(run(g))
-	if f[c] != FzCatapultEmpty || f[d] != FzNoCatapult || f[a] != "" || g.cats[0] != nil {
-		t.Fatalf("%v", f)
+	// No machine in lane 0: it stays loaded.
+	if len(evs[EvFire](ev)) != 0 || g.cats[0] == nil {
+		t.Fatal("fired into an empty lane")
 	}
 }
 
 func TestLoadContested(t *testing.T) {
-	// Catapult 2 (0,3) has one loading cell (1,3); use a 2-wide rampart.
 	g, ids := board(t, 2)
-	g.lay.Cells[3][2] = Cell{Kind: KFloor, H: 1} // not a loading cell: not adjacent
+	g.lay.Cells[2][0] = Cell{Kind: KFloor, H: 1} // a second loading cell for catapult 2 (0,3)
 	put(g, ids[0], 1, 3)
+	put(g, ids[1], 0, 2)
 	give(g, ids[0], "keg")
-	put(g, ids[1], 2, 3)
 	give(g, ids[1], "keg")
-	g.player(ids[0]).acts = []Act{ld}
-	ev := run(g)
-	if l := evs[EvLoad](ev); len(l) != 1 || l[0].Result != "ok" {
-		t.Fatalf("%+v", l)
-	}
-	// Two loaders on one catapult (forced): both fail.
-	g.startPlan(2)
-	g.cats[2] = nil
-	give(g, ids[0], "keg")
-	g.curSlot = 0
-	g.player(ids[0]).cur = &step{a: ALoad, cat: 2}
-	g.player(ids[1]).cur = &step{a: ALoad, cat: 2}
-	g.events = nil
-	g.resolveGrabs()
-	l := evs[EvLoad](g.events)
+	q(g, ids[0], ld)
+	q(g, ids[1], ld)
+	l := evs[EvLoad](run(g))
 	if len(l) != 2 || l[0].Result != "contested" || l[1].Result != "contested" || g.cats[2] != nil {
 		t.Fatalf("%+v", l)
 	}
 }
 
-// --- 4. fires ----------------------------------------------------------------------
+// --- 4. fires (automatic) ------------------------------------------------------------
 
-func TestFireEffects(t *testing.T) {
-	g, ids := board(t, 4)
-	for i, c := range []int{0, 1, 2, 3} {
-		cat := g.keep.Catapults[c]
-		for _, dv := range Dirs4 {
-			if g.lay.LoadCell(cat.X+dv[0], cat.Y+dv[1], cat) {
-				put(g, ids[i], cat.X+dv[0], cat.Y+dv[1])
-			}
-		}
-		q(g, ids[i], fr)
-	}
-	near := addMachine(g, "brute", 0, 2)
-	far := addMachine(g, "scrap", 0, 4)
-	g.cats[0] = &BombRef{ID: 50, Kind: "keg"}
-	s1, s2 := addMachine(g, "scrap", 1, 5), addMachine(g, "brute", 1, 3)
-	g.cats[1] = &BombRef{ID: 51, Kind: "grapeshot"}
-	w := addMachine(g, "scrap", 2, 5)
-	g.cats[2] = &BombRef{ID: 52, Kind: "stopwatch"}
-	g.cats[3] = &BombRef{ID: 53, Kind: "keg"}
-
+func TestAutoFireEffects(t *testing.T) {
+	g, ids := board(t, 1)
+	a := ids[0]
+	put(g, a, 8, 8)
+	near := addMachine(g, "brute", 0, 0)
+	far := addMachine(g, "scrap", 0, 2)
+	g.cats[0], g.catBy[0] = &BombRef{ID: 50, Kind: "keg"}, a
+	s1, s2 := addMachine(g, "scrap", 1, 2), addMachine(g, "brute", 1, 1)
+	g.cats[1], g.catBy[1] = &BombRef{ID: 51, Kind: "grapeshot"}, a
+	w := addMachine(g, "scrap", 2, 2)
+	g.cats[2], g.catBy[2] = &BombRef{ID: 52, Kind: "stopwatch"}, "gone" // loader removed
+	g.cats[3] = &BombRef{ID: 53, Kind: "keg"}                           // empty lane: stays loaded
 	all := run(g)
 	fires := evs[EvFire](all)
-	if len(fires) != 4 {
+	if len(fires) != 3 || *fires[0].Slot != 0 || g.cats[3] == nil {
 		t.Fatalf("%+v", fires)
 	}
-	if f := fires[0]; f.Result != "ok" || len(f.Hits) != 1 || f.Hits[0].ID != near.id || f.Hits[0].Dmg != 2 || near.hp != 2 || far.hp != 1 {
+	if f := fires[0]; f.PID != a || f.Cat != 0 || len(f.Hits) != 1 || f.Hits[0].ID != near.id || f.Hits[0].Dmg != 2 || near.hp != 2 || far.hp != 1 {
 		t.Fatalf("keg: %+v", f)
 	}
 	if f := fires[1]; len(f.Hits) != 2 || !f.Hits[0].Killed || s2.hp != 3 || slices.Contains(g.machines, s1) {
 		t.Fatalf("grapeshot: %+v", f)
 	}
-	if f := fires[2]; f.Hits[0].Frozen != 2 || f.Hits[0].Dmg != 0 {
+	if f := fires[2]; f.PID != "" || f.Hits[0].Frozen != 2 || f.Hits[0].Dmg != 0 {
 		t.Fatalf("stopwatch: %+v", f)
 	}
-	if f := fires[3]; f.Result != "wasted" || g.cats[3] != nil {
-		t.Fatalf("empty lane: %+v", f)
+	if st := g.player(a).st; st.kills != 1 || st.dmg != 4 {
+		t.Fatalf("loader credit %+v", st)
 	}
-	if w.pos != 5 || w.frozen != 1 {
+	if w.pos != 2 || w.frozen != 1 {
 		t.Fatalf("frozen machine pos=%d frozen=%d", w.pos, w.frozen)
-	}
-	g.startPlan(2)
-	run(g)
-	g.startPlan(3)
-	run(g)
-	if w.pos != 4 {
-		t.Fatalf("after freeze pos=%d", w.pos)
 	}
 }
 
-func TestSecondFireInSlotFindsCatapultEmpty(t *testing.T) {
+func TestLoadFiresInTheSameSlotOrWaitsForAMachine(t *testing.T) {
 	g, ids := board(t, 2)
-	g.lay.Cells[2][0] = Cell{Kind: KFloor, H: 1} // a second loading cell for catapult 2 (0,3)
-	put(g, ids[0], 1, 3)
-	put(g, ids[1], 0, 2)
-	addMachine(g, "scrap", 2, 3)
-	g.cats[2] = &BombRef{ID: 9, Kind: "keg"}
-	q(g, ids[0], fr)
-	q(g, ids[1], fr)
-	f := evs[EvFire](run(g))
-	if len(f) != 2 || f[0].Result != "ok" || f[1].Result != "empty" {
-		t.Fatalf("%+v", f)
+	a, b := ids[0], ids[1]
+	put(g, a, 3, 1)
+	put(g, b, 1, 3)
+	give(g, a, "keg")
+	give(g, b, "keg")
+	m := addMachine(g, "scrap", 0, 2)
+	q(g, a, wt, ld) // lane 0 has a machine: fires at the end of slot 1
+	q(g, b, ld)     // lane 2 is empty: stays loaded
+	g.script = []spawnEntry{{round: 1, lane: 2, kind: "scrap", hp: 1}}
+	ev := run(g)
+	f := evs[EvFire](ev)
+	if len(f) != 1 || *f[0].Slot != 1 || f[0].PID != a || slices.Contains(g.machines, m) {
+		t.Fatalf("same slot: %+v", f)
+	}
+	if g.cats[2] == nil || len(evs[EvSpawn](ev)) != 1 {
+		t.Fatal("lane 2 catapult should still be loaded, a machine arrived at the end of the turn")
+	}
+	// Next turn: it fires at the end of slot 0, even with nobody acting.
+	g.startPlan(2)
+	f = evs[EvFire](run(g))
+	if len(f) != 1 || f[0].Cat != 2 || *f[0].Slot != 0 || f[0].PID != b || g.cats[2] != nil {
+		t.Fatalf("next turn: %+v", f)
 	}
 }
 
 // --- slots ------------------------------------------------------------------------------
 
 func TestSlotsPlayInOrderOnTheNewState(t *testing.T) {
-	// One engineer: walk, pick up, walk, throw — each slot on the board the
-	// previous one left; machines move once, after the last slot.
+	// Walk onto a bomb, pick it up, walk into line, throw; machines move once.
 	g, ids := board(t, 2)
 	a, b := ids[0], ids[1]
 	put(g, a, 4, 6)
-	put(g, b, 3, 1) // catches in column 3
-	ground(g, 4, 4, "keg")
-	m := addMachine(g, "scrap", 0, 5)
-	q(g, a, mv(0, -1), pkd(0, -1), mv(-1, 0), th(0, -1))
+	put(g, b, 3, 1) // catches in column 3, then loads
+	ground(g, 4, 5, "keg")
+	m := addMachine(g, "scrap", 3, 2)
+	q(g, a, mv(0, -1), pk, mv(-1, 0), th(0, -1))
 	q(g, b, wt, wt, wt, wt)
 	ev := run(g)
 	if at(g, a) != [2]int{3, 5} || g.player(b).carry == nil || len(fizzles(ev)) != 0 {
 		t.Fatalf("at %v carry %v ev %+v", at(g, a), g.player(b).carry, ev)
 	}
-	if m.pos != 4 || len(evs[EvAdvance](ev)) != 1 {
+	if m.pos != 1 || len(evs[EvAdvance](ev)) != 1 {
 		t.Fatalf("machine moved %d", m.pos)
 	}
-	// b loads in slot 0 and fires in slot 1 of the next turn.
-	g.startPlan(2)
-	q(g, b, ld, fr)
-	ev = run(g)
-	if f := evs[EvFire](ev); len(f) != 1 || *f[0].Slot != 1 || !f[0].Hits[0].Killed {
-		t.Fatalf("%+v", f)
-	}
 	// A fizzle does not stop the later slots.
-	g.startPlan(3)
+	g.startPlan(2)
 	put(g, a, 3, 2)
 	q(g, a, mv(0, -1), mv(1, 0))
 	ev = run(g)
@@ -529,26 +474,26 @@ func TestResolveHeaderTimeline(t *testing.T) {
 	put(g, ids[1], 6, 6)
 	put(g, ids[2], 1, 3)
 	give(g, ids[0], "keg")
-	addMachine(g, "scrap", 2, 3)
-	g.cats[2] = &BombRef{ID: 77, Kind: "keg"}
+	give(g, ids[2], "keg")
+	addMachine(g, "scrap", 2, 2)
 	q(g, ids[0], th(0, -1))
 	q(g, ids[1], mv(0, -1), wt, mv(0, -1))
-	q(g, ids[2], wt, fr)
+	q(g, ids[2], wt, ld)
 	ev := run(g)
 	h, ok := ev[0].(EvResolve)
 	if !ok {
 		t.Fatalf("first event %+v", ev[0])
 	}
-	// Slot 0: throw, move. Slot 1: fire. Slot 2: move. Then machines (bomb top-up).
-	if len(h.Slots) != 3 || h.Slots[0].Slot != 0 || len(h.Slots[0].Stages) != 2 || h.Slots[1].Stages[0].S != StFire ||
-		h.Slots[2].Slot != 2 || h.Machines == nil {
+	// Slot 0: throw, move. Slot 1: grab (load), fire. Slot 2: move. Then machines (bomb top-up).
+	if len(h.Slots) != 3 || h.Slots[0].Slot != 0 || len(h.Slots[0].Stages) != 2 || len(h.Slots[1].Stages) != 2 ||
+		h.Slots[1].Stages[1].S != StFire || h.Slots[2].Slot != 2 || h.Machines == nil {
 		t.Fatalf("header %+v", h)
 	}
 	last := h.Slots[2]
-	if h.Slots[1].At < h.Slots[0].At+h.Slots[0].Dur || h.Machines.At < last.At+last.Dur || h.Dur < h.Machines.At+h.Machines.Dur {
+	const eps = 1e-6
+	if h.Slots[1].At+eps < h.Slots[0].At+h.Slots[0].Dur || h.Machines.At+eps < last.At+last.Dur || h.Dur+eps < h.Machines.At+h.Machines.Dur {
 		t.Fatalf("timeline not in order %+v", h)
 	}
-	// Events come in slot order and carry their slot; machine events don't.
 	prev := -1
 	for _, e := range ev[1:] {
 		switch v := e.(type) {

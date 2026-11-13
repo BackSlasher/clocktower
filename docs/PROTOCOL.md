@@ -466,7 +466,8 @@ options in this mode.
 
 Turn-based co-op on a square grid. Each player has one **engineer** in a
 **keep**. Machines walk down four **lanes** toward the keep's wall; the team
-carries, throws and loads **bombs** into four **catapults** and fires them.
+carries, throws and loads **bombs** into four **catapults**, which fire by
+themselves as soon as their lane has a machine.
 A game is 6 **levels**; a level is a series of **turns** (called `round` in
 the messages). A turn is a **plan** phase, in which every player files a
 **queue** of up to `defs.slots` (4) actions, then a **resolve** phase: slot 1
@@ -499,8 +500,8 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
   `y = 0` and the column `x = 0` are the two far sides, seen from the
   `(w, h)` corner.
 - A **layout** is one level's interior of that keep: every cell's kind and
-  height, and the engineer start cells (the first three on the ramparts, the
-  rest in the courtyard). Each level names its layout; the outer wall line and
+  height, and the engineer start cells (seats 1 and 3 on the ramparts, seats
+  2 and 4 in the courtyard). Each level names its layout; the outer wall line and
   the catapults are identical in every layout of a keep.
 - Cell `kind`: `floor` (walkable), `block` (crate, pipe or wall; not
   walkable), `stairs` (walkable; connects both heights), `catapult` (not
@@ -508,6 +509,13 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
   `h` is 0 (courtyard) or 1 (ramparts and raised platforms). Stairs have
   `h: 0` but connect to both heights. Blocks of `h: 1` occur only in the outer
   wall; crates inside the keep are blocks of `h: 0`.
+- **Stairs are corner steps.** In every layout each `stairs` cell sits in an
+  inside corner: of its four neighbours, two are raised `floor` (`h: 1`) at a
+  right angle to each other and the other two are low `floor` (`h: 0`); none is
+  blocked. Draw them as steps rising from the two low sides to the two high
+  sides. (A test enforces this.) The rampart's own flight is the courtyard's
+  inner corner `(2, 2)`; others sit next to a one-cell ledge sticking out of
+  the rampart or in the corner of a raised platform.
 - **Stepping**: a move goes to the 4-adjacent cell in its direction. Both
   cells must be walkable and of equal `h`, unless either is `stairs`.
 - **Throw line.** A bomb thrown from `(x, y)` in direction `(dx, dy)` passes
@@ -519,11 +527,11 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
   furthest walkable cell.
 - **Lanes**: lane `L` leaves the keep from catapult `L.cat` in direction
   `L.dir` (`[0,-1]` from the `y = 0` side, `[-1,0]` from the `x = 0` side).
-  Lane positions are integers `0 … len-1` (`len` is 3 today); position `p` is
+  Lane positions are integers `0 … len-1` (`len` is 3); position `p` is
   drawn at cell `(L.x + p·L.dir[0], L.y + p·L.dir[1])` (outside the grid;
   position 0 is the cell just outside the wall next to the catapult). Catapult
   `i` fires down lane `catapults[i].lane` (today lane id = catapult id).
-- **Loading cells**: an engineer can load or fire catapult `c` when standing
+- **Loading cells**: an engineer can load catapult `c` when standing
   on a `floor` cell 4-adjacent to it with the same `h` as the catapult (that is,
   on the rampart walkway next to it).
 
@@ -552,7 +560,6 @@ Defs = {
   "breakHeal": 0,               // wall hit points restored at each break (up to wallHP)
   "resolveBase": 0.4, "stageTime": 0.35, "machineTime": 0.6,   // resolve timeline, see `resolve`
   "throwRange": 20,             // cap on a throw line (larger than any keep: unlimited)
-  "reach": 1,                   // pick-up distance along a straight line
   "awayAfter": 2,               // turns in a row with nothing filed before a player is away
   "bombsBase": 2, "bombsPerPlayer": 1,    // bombs kept lying on the ground (see "Bombs")
   "bombs": { "keg": { "name": "Powder Keg", "desc": "2 damage to the machine nearest the wall.", "dmg": 2 },
@@ -605,7 +612,7 @@ Layout = { "id": "crates", "w": 9, "h": 9,
   `level_start` event); a reconnecting client gets the current one in the
   `room` message that follows `welcome`.
 - `End = { "won": true, "level": 6, "rounds": 18, "wall": 4, "time": 312.5,
-  "stats": { "p1": { "throws", "catches", "pickups", "loads", "fires",
+  "stats": { "p1": { "throws", "catches", "pickups", "loads",
   "kills", "dmg", "steps", "bumps", "fizzles" } }, "awards": [ { "pid",
   "title", "detail" } ] }`. `rounds` is the number of turns played; all stats
   are integers; award titles today: Sharpshooter, Safe Hands, Bomb Lobber,
@@ -651,9 +658,8 @@ with `ev: []` right after `room`.
 ```jsonc
 Act = { "a": "move",   "dx": 1, "dy": 0 }     // step to the neighbouring cell
     | { "a": "throw",  "dx": 0, "dy": -1 }    // throw the carried bomb along the line
-    | { "a": "pickup" }                       // see below; "dx","dy" optional
-    | { "a": "pickup", "dx": 0, "dy": 1 }
-    | { "a": "load" } | { "a": "fire" } | { "a": "wait" }
+    | { "a": "pickup" }                       // the bomb in your own cell
+    | { "a": "load" } | { "a": "wait" }
 ```
 
 Every action is relative to wherever the engineer is when its slot comes up,
@@ -663,16 +669,12 @@ and is checked only then. What each does at its slot:
   `blocked` if the step is not possible (wall, crate, catapult, ledge, edge).
 - `throw`: throw the carried bomb in the direction. Fizzles `empty_hands` if
   not carrying, `no_target` if the throw line has no walkable cell.
-- `pickup`: with a direction (not `0,0`), the first bomb along it within
-  `reach` cells; without one (or `0,0`), the bomb in the engineer's own cell,
-  else the nearest bomb within `reach` along the four directions, distance 1
-  before 2, in the order up, right, down, left. Any height. Fizzles
-  `hands_full` if already carrying, `no_bomb` if there is none.
+- `pickup`: pick up the bomb lying in the engineer's **own cell** (walk onto
+  it first; a bomb never blocks walking). Fizzles `hands_full` if already
+  carrying, `no_bomb` if there is no bomb in that cell.
 - `load`: put the carried bomb into the lowest-id adjacent catapult the
   engineer can load from (a loading cell) that is empty. Fizzles
   `empty_hands`, `no_catapult` (not on a loading cell), `catapult_full`.
-- `fire`: fire the lowest-id adjacent catapult (loading cell) that is
-  loaded. Fizzles `no_catapult`, `catapult_empty`.
 - `wait`: nothing (no event). Slots beyond the queue's length are waits.
 
 A fizzled action does nothing but its `fizzle` event; the player's later
@@ -700,16 +702,23 @@ or fizzles. Then the slot plays in four stages:
    if the cell holds an engineer who is not leaving or whose own move bumps.
    Stepping into a cell someone is successfully leaving is fine (chains), and
    four engineers walking round a square all succeed.
-3. **Grab.** Pick-ups first: if two or more engineers pick up the same bomb,
-   all of them fail (`contested`); a picker whose hands are full now (they
-   caught a throw in stage 1) fails (`hands_full`, takes precedence). Then
-   loads: two or more loads into the same catapult all fail (`contested`).
-4. **Fire.** In player order. The first fire of a catapult launches its bomb
-   down its lane (`wasted` if the lane is empty); a later fire of the same
-   catapult in the same slot finds it `empty`. Keg: `dmg` to the machine with
-   the lowest position (ties: lowest id). Grapeshot: `dmg` to every machine in
-   the lane. Stopwatch: every machine in the lane gets
-   `frozen = max(frozen, freeze)`. Machines at 0 hp are removed.
+3. **Grab.** Pick-ups first: each takes the bomb in the picker's own cell
+   (two engineers never share a cell, so pick-ups cannot collide); a picker
+   whose hands are full now (they caught a throw in stage 1) fails
+   (`hands_full`). Then loads: two or more loads into the same catapult all
+   fail (`contested`; no current layout has a catapult with two loading
+   cells, so this cannot happen today).
+4. **Fire (automatic).** At the end of the slot, every loaded catapult whose
+   lane has at least one machine fires by itself, in catapult id order; so a
+   `load` into a lane with a machine fires in the same slot. A loaded catapult
+   whose lane is empty stays loaded and fires at the end of the first later
+   slot in which its lane has a machine. Machines only arrive in the machine
+   stage, so that is the first slot of a later turn (the team sees the
+   machine for one plan phase first); it fires in that slot even if nobody
+   acts. Keg: `dmg` to the machine with the lowest position (ties: lowest id).
+   Grapeshot: `dmg` to every machine in the lane. Stopwatch: every machine in
+   the lane gets `frozen = max(frozen, freeze)`. Machines at 0 hp are removed.
+   Kills and damage are credited to the engineer who loaded the bomb.
 
 After the last slot, once per turn, the **machine stage**: in id order, each
 machine: if `frozen` > 0 it skips (`stall`, `frozen` − 1); else, on every
@@ -730,7 +739,7 @@ Events are objects with `"e"`. Events of a slot carry `"s"` (their stage) and
   …, then the machine stage. Within a slot: stages in the order `throw`,
   `move`, `grab`, `fire`; within a stage the `fizzle`s of that stage's actions
   first, then the stage's events in player order (`grab`: all `pickup`s, then
-  all `load`s). Machine stage: `advance`/`stall`/`wall` in machine id order,
+  all `load`s; `fire`: the automatic fires in catapult id order). Machine stage: `advance`/`stall`/`wall` in machine id order,
   then `spawn`s, then `bomb`s.
 - Starting a level emits, in order: `level_start`, one `place` per seated
   engineer, one `bomb` per authored bomb, and `spawn`s for machines of turn 0
@@ -751,9 +760,9 @@ Events are objects with `"e"`. Events of a slot carry `"s"` (their stage) and
    // has events. Play each event in its stage's slot.
 { "e": "fizzle", "s": "move", "slot": 0, "pid": "p1", "a": "move", "at": [3,2],
   "reason": "blocked" | "no_bomb" | "hands_full" | "empty_hands" | "no_target"
-          | "no_catapult" | "catapult_full" | "catapult_empty" }
+          | "no_catapult" | "catapult_full" }
    // a = the action that fizzled, at = where the engineer stands; s = the stage the action
-   // belongs to (throw: throw; move: move; pickup, load: grab; fire: fire)
+   // belongs to (throw: throw; move: move; pickup, load: grab)
 { "e": "throw", "s": "throw", "slot": 0, "pid": "p1", "bomb": 12, "kind": "keg",
   "from": [3,5], "dir": [0,-1], "to": [3,1], "result": "caught" | "blocked" | "landed",
   "by": "p2", "at": [3,1] }
@@ -764,14 +773,14 @@ Events are objects with `"e"`. Events of a slot carry `"s"` (their stage) and
 { "e": "move", "s": "move", "slot": 1, "pid": "p1", "from": [4,4], "to": [4,5], "result": "ok" | "bump" }
    // bump: stays at `from` (animate a nudge toward `to` and back)
 { "e": "pickup", "s": "grab", "slot": 1, "pid": "p1", "at": [5,1], "bomb": 7, "kind": "keg",
-  "result": "ok" | "contested" | "hands_full" | "gone" }
+  "result": "ok" | "hands_full" }      // at = the engineer's own cell
 { "e": "load", "s": "grab", "slot": 2, "pid": "p2", "cat": 0, "bomb": 12, "kind": "keg",
-  "result": "ok" | "contested" | "full" | "empty_hands" }
+  "result": "ok" | "contested" }
 { "e": "fire", "s": "fire", "slot": 3, "pid": "p2", "cat": 0, "lane": 0, "bomb": 12, "kind": "keg",
-  "result": "ok" | "wasted" | "empty",
   "hits": [ { "id": 21, "dmg": 2, "hp": 2, "killed": false, "frozen": 0 } ] }
-   // wasted: fired into an empty lane (bomb gone, hits []); empty: someone else fired that
-   // catapult earlier in this slot (bomb 0, kind "", hits []). Per hit: dmg dealt, hp left,
+   // A catapult fired by itself (every fire is automatic, see "Resolve rules"). pid = the
+   // engineer who loaded that bomb; absent if they were removed from the game. hits is never
+   // empty (a catapult only fires when its lane has a machine). Per hit: dmg dealt, hp left,
    // killed (machine removed), frozen = its skip count now (stopwatch)
 { "e": "advance", "s": "machines", "id": 21, "kind": "brute", "lane": 2, "from": 2, "to": 1 }
 { "e": "stall", "s": "machines", "id": 21, "lane": 2, "pos": 2, "frozen": 1 }   // frozen = skips left
@@ -784,9 +793,9 @@ Events are objects with `"e"`. Events of a slot carry `"s"` (their stage) and
 { "e": "place", "pid": "p3", "x": 4, "y": 4 }     // engineer put on the board (level start, late join)
 ```
 
-`gone`, `full` and `empty_hands` (in `pickup`/`load` events) cannot happen
-with the rules above; clients should still accept them (show a fizzle). A
-machine that does not move this turn (`every` > 1) produces no event.
+A machine that does not move this turn (`every` > 1) produces no event. A
+slot in which nothing happens (no action, no fizzle, no automatic fire) is
+left out of the `resolve` timeline.
 
 ### Phases and timing
 
@@ -882,9 +891,18 @@ integer is expected) gets `bad_request`.
 |---------|--------------|------|
 | `start` | `not_host` | not the host |
 | | `bad_request` | not in the lobby |
-| `plan` | `bad_request` | phase is lobby, won or lost; more than `slots` acts; unknown `a`; `move`/`throw` without a unit direction; `pickup` with only one of `dx`/`dy`, or a direction that is neither a unit direction nor `0,0`; `dx`/`dy` on `load`, `fire` or `wait` |
+| `plan` | `bad_request` | phase is lobby, won or lost; more than `slots` acts; unknown `a` (including the removed `fire`); `move`/`throw` without a unit direction; `dx`/`dy` on `pickup`, `load` or `wait` |
 | | `too_late` | phase is resolve or break (raced the end of the plan phase) |
 | `restart` | `not_host` / `bad_request` | not the host / already in the lobby |
 
 `ready` outside a break is ignored. Unknown message types (including the old
 `opt` and `perk`) are ignored.
+
+Changes from the previous version of this contract: the `fire` action is gone
+(catapults fire by themselves; a queue containing `fire` is refused with
+`bad_request`); `pickup` takes no direction and works only on the engineer's
+own cell; `defs.reach` is gone; fizzle reason `catapult_empty` is gone;
+`pickup` results `contested`/`gone` and `load` results `full`/`empty_hands`
+are gone; the `fire` event lost `result`, its `pid` is now the loader (and may
+be absent) and `hits` is never empty; `end.stats` lost `fires`; lanes are 3
+cells; stairs are always corner steps; seats 2 and 4 start in the courtyard.

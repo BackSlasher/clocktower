@@ -37,12 +37,11 @@ const (
 	APickup = "pickup"
 	AThrow  = "throw"
 	ALoad   = "load"
-	AFire   = "fire"
 	AWait   = "wait"
 )
 
 // Act is one queued action. DX, DY: a direction for move and throw
-// (required), and optionally for pickup; absent otherwise.
+// (required); absent otherwise.
 type Act struct {
 	A  string `json:"a"`
 	DX *int   `json:"dx,omitempty"`
@@ -80,7 +79,6 @@ type StatsOut struct {
 	Catches int `json:"catches"`
 	Pickups int `json:"pickups"`
 	Loads   int `json:"loads"`
-	Fires   int `json:"fires"`
 	Kills   int `json:"kills"`
 	Dmg     int `json:"dmg"`
 	Steps   int `json:"steps"`
@@ -228,14 +226,13 @@ type Hit struct {
 
 // Fizzle reasons.
 const (
-	FzBlocked       = "blocked"        // move: the next cell is a wall, crate, catapult or ledge
-	FzNoBomb        = "no_bomb"        // pickup: nothing to pick up there
-	FzHandsFull     = "hands_full"     // pickup: already carrying
-	FzEmptyHands    = "empty_hands"    // throw, load: not carrying
-	FzNoTarget      = "no_target"      // throw: nothing to throw to that way
-	FzNoCatapult    = "no_catapult"    // load, fire: not next to a catapult, up on the rampart
-	FzCatapultFull  = "catapult_full"  // load: the catapult(s) next to you are loaded
-	FzCatapultEmpty = "catapult_empty" // fire: the catapult(s) next to you are empty
+	FzBlocked      = "blocked"       // move: the next cell is a wall, crate, catapult or ledge
+	FzNoBomb       = "no_bomb"       // pickup: no bomb in the engineer's own cell
+	FzHandsFull    = "hands_full"    // pickup: already carrying
+	FzEmptyHands   = "empty_hands"   // throw, load: not carrying
+	FzNoTarget     = "no_target"     // throw: nothing to throw to that way
+	FzNoCatapult   = "no_catapult"   // load: not next to a catapult, up on the rampart
+	FzCatapultFull = "catapult_full" // load: the catapult(s) next to you are loaded
 )
 
 // Events. Each has E set to its event name. Events of a slot carry S (their
@@ -289,7 +286,7 @@ type (
 		At     [2]int `json:"at"`
 		Bomb   int    `json:"bomb"`
 		Kind   string `json:"kind"`
-		Result string `json:"result"` // ok | contested | hands_full
+		Result string `json:"result"` // ok | hands_full (caught a bomb earlier in the slot)
 	}
 	EvLoad struct {
 		E      string `json:"e"`
@@ -301,17 +298,18 @@ type (
 		Kind   string `json:"kind"`
 		Result string `json:"result"` // ok | contested
 	}
+	// EvFire: a catapult fired by itself (all fires are automatic). PID is
+	// the engineer who loaded that bomb (absent if they were removed).
 	EvFire struct {
-		E      string `json:"e"`
-		S      string `json:"s"`
-		Slot   *int   `json:"slot,omitempty"`
-		PID    string `json:"pid"`
-		Cat    int    `json:"cat"`
-		Lane   int    `json:"lane"`
-		Bomb   int    `json:"bomb"`
-		Kind   string `json:"kind"`
-		Result string `json:"result"` // ok | wasted | empty
-		Hits   []Hit  `json:"hits"`
+		E    string `json:"e"`
+		S    string `json:"s"`
+		Slot *int   `json:"slot,omitempty"`
+		PID  string `json:"pid,omitempty"`
+		Cat  int    `json:"cat"`
+		Lane int    `json:"lane"`
+		Bomb int    `json:"bomb"`
+		Kind string `json:"kind"`
+		Hits []Hit  `json:"hits"`
 	}
 	EvAdvance struct {
 		E    string `json:"e"`

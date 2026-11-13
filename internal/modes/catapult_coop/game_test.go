@@ -60,8 +60,9 @@ func TestPlanShape(t *testing.T) {
 		{T: "plan", Acts: []Act{{A: AMove}}},                // no direction
 		{T: "plan", Acts: []Act{Dir(AMove, 1, 1)}},          // diagonal
 		{T: "plan", Acts: []Act{Dir(AThrow, 0, 2)}},         // not a unit
-		{T: "plan", Acts: []Act{{A: APickup, DX: IntP(1)}}}, // half a direction
-		{T: "plan", Acts: []Act{Dir(APickup, 2, 0)}},        //
+		{T: "plan", Acts: []Act{{A: APickup, DX: IntP(1)}}}, // pickup takes no direction
+		{T: "plan", Acts: []Act{Dir(APickup, 0, 0)}},        //
+		{T: "plan", Acts: []Act{{A: "fire"}}},               // removed: catapults fire by themselves
 		{T: "plan", Acts: []Act{Dir(ALoad, 1, 0)}},          // load takes none
 		{T: "plan", Acts: []Act{wt, wt, wt, wt, wt}},        // too many
 	}
@@ -69,8 +70,8 @@ func TestPlanShape(t *testing.T) {
 		wantCode(t, g.Apply(a, c), "bad_request")
 	}
 	ok := []Cmd{
-		{T: "plan", Acts: []Act{mv(1, 0), th(0, -1), pk, Dir(APickup, 0, 0)}},
-		{T: "plan", Acts: []Act{pkd(0, 1), ld, fr, wt}},
+		{T: "plan", Acts: []Act{mv(1, 0), th(0, -1), pk, ld}},
+		{T: "plan", Acts: []Act{pk, ld, wt}},
 		{T: "plan"}, // empty, not done
 	}
 	for _, c := range ok {
@@ -79,7 +80,7 @@ func TestPlanShape(t *testing.T) {
 		}
 	}
 	// Impossible actions are accepted (they fizzle later).
-	if err := g.Apply(a, Cmd{T: "plan", Acts: []Act{fr, ld, th(1, 0)}}); err != nil {
+	if err := g.Apply(a, Cmd{T: "plan", Acts: []Act{ld, pk, th(1, 0)}}); err != nil {
 		t.Fatal(err)
 	}
 }

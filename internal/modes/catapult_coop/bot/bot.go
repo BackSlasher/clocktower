@@ -5,7 +5,8 @@
 // Coordination works the way a team that talks would: every bot runs the same
 // deterministic team planner on the same board and sends its own line of the
 // result. The planner gives some engineers a "gunner" job (stand by a
-// catapult on the rampart, catch, load, fire) and the rest fetch bombs and
+// catapult on the rampart, catch and load; catapults fire by themselves) and
+// the rest fetch bombs and
 // pass them up by throwing, choosing among throws and moves by an estimate of
 // the rounds until the bomb is in a catapult. Everything is path-found on
 // the current level's layout; nothing is hard-coded to a map.
@@ -130,7 +131,7 @@ type dec struct {
 	A      string
 	X, Y   int // move: destination; pickup: bomb cell
 	DX, DY int // throw
-	Cat    int // load, fire
+	Cat    int // load
 }
 
 // act turns d into the relative action for an engineer at (x, y).
@@ -138,30 +139,17 @@ func (d dec) act(x, y int) game.Act {
 	switch d.A {
 	case game.AMove:
 		return game.Dir(game.AMove, d.X-x, d.Y-y)
-	case game.APickup:
-		dx, dy := d.X-x, d.Y-y
-		return game.Dir(game.APickup, sign(dx), sign(dy))
 	case game.AThrow:
 		return game.Dir(game.AThrow, d.DX, d.DY)
 	}
 	return game.Act{A: d.A}
 }
 
-func sign(v int) int {
-	switch {
-	case v > 0:
-		return 1
-	case v < 0:
-		return -1
-	}
-	return 0
-}
-
 // abil is what an engineer can do (the same for everyone).
 type abil struct{ Move, MoveCarry, Throw, Reach int }
 
 func abilities() abil {
-	return abil{Move: 1, MoveCarry: 1, Throw: game.Defs.ThrowRange, Reach: game.Defs.Reach}
+	return abil{Move: 1, MoveCarry: 1, Throw: game.Defs.ThrowRange, Reach: 0} // pick-up: own cell only
 }
 
 // --- team planner ---------------------------------------------------------------
@@ -493,7 +481,7 @@ func (p *planner) setWait(e *eng) {
 	e.catch = e.carry == nil
 }
 
-// adjacentCats lists catapults e can load or fire from where it stands.
+// adjacentCats lists catapults e can load from where it stands.
 func (p *planner) adjacentCats(e *eng) []int {
 	var out []int
 	for _, c := range p.k.Catapults {
@@ -504,21 +492,14 @@ func (p *planner) adjacentCats(e *eng) []int {
 	return out
 }
 
-// tryCatapult fires a loaded adjacent catapult whose lane has machines, or
-// loads an empty adjacent one when carrying.
+// tryCatapult loads an empty adjacent catapult when carrying (a loaded
+// catapult fires by itself once its lane has a machine).
 func (p *planner) tryCatapult(e *eng) bool { return p.tryCatapultAt(e, -1) }
 
 // tryCatapultAt is tryCatapult for a gunner whose station is catapult own:
 // it also loads its own catapult when that lane is quiet (ready for later).
 func (p *planner) tryCatapultAt(e *eng, own int) bool {
-	cats := p.adjacentCats(e)
-	for _, c := range cats {
-		if p.s.Catapults[c].Bomb != nil && p.machines[c] > 0 {
-			e.plan = dec{A: game.AFire, Cat: c}
-			e.busy, e.catch = true, e.carry == nil
-			return true
-		}
-	}
+	cats := p.adjacentCats(e) // loaded catapults fire by themselves; only loading is ours
 	if e.carry == nil {
 		return false
 	}
@@ -615,12 +596,10 @@ func (p *planner) gunnerCount(n int) int {
 	switch {
 	case n <= 0:
 		return 0
-	case n <= 2:
+	case n <= 3:
 		return 1
-	case n <= 6:
-		return 2
 	}
-	return 4
+	return 2
 }
 
 // groups splits the catapults among g gunners: all together, by side of the

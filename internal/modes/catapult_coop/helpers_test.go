@@ -95,14 +95,12 @@ func addMachine(g *Game, kind string, lane, pos int) *machine {
 // q sets a player's queue directly (the phase does not end).
 func q(g *Game, pid string, acts ...Act) { g.player(pid).acts = acts }
 
-func mv(dx, dy int) Act  { return Dir(AMove, dx, dy) }
-func th(dx, dy int) Act  { return Dir(AThrow, dx, dy) }
-func pkd(dx, dy int) Act { return Dir(APickup, dx, dy) }
+func mv(dx, dy int) Act { return Dir(AMove, dx, dy) }
+func th(dx, dy int) Act { return Dir(AThrow, dx, dy) }
 
 var (
 	pk = Act{A: APickup}
 	ld = Act{A: ALoad}
-	fr = Act{A: AFire}
 	wt = Act{A: AWait}
 )
 

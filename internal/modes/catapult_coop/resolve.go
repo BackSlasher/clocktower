@@ -12,8 +12,8 @@ import (
 //
 //  1. throws fly and are caught or blocked, or land
 //  2. moves (bumps on shared destinations, swaps and blocked cells)
-//  3. pick-ups, then loads (contested ones fail)
-//  4. catapults fire
+//  3. pick-ups (own cell), then loads (contested loads fail)
+//  4. loaded catapults whose lane has a machine fire by themselves
 //
 // After the last slot, once per turn: machines advance, the turn's new
 // machines appear, bombs are topped up.
@@ -47,10 +47,7 @@ func (g *Game) resolve() {
 	g.events = nil
 	hdr := EvResolve{E: "resolve", Level: g.level, Round: g.round, Slots: []SlotTiming{}}
 	t := Defs.ResolveBase / 2
-	for slot := 0; slot < Defs.Slots; slot++ {
-		if !slices.ContainsFunc(g.players, func(p *player) bool { return p.placed && slot < len(p.acts) }) {
-			continue
-		}
+	for slot := 0; slot < Defs.Slots; slot++ { // every slot runs: catapults fire by themselves
 		g.curSlot = slot
 		fz := g.buildSteps(slot)
 		st := SlotTiming{Slot: slot, At: t, Stages: []StageTiming{}}
@@ -68,7 +65,7 @@ func (g *Game) resolve() {
 		stage(StThrow, g.resolveThrows)
 		stage(StMove, g.resolveMoves)
 		stage(StGrab, g.resolveGrabs)
-		stage(StFire, g.resolveFires)
+		stage(StFire, g.autoFire)
 		if len(st.Stages) > 0 {
 			st.Dur = t - st.At
 			hdr.Slots = append(hdr.Slots, st)
@@ -122,10 +119,8 @@ func stageOf(a string) string {
 		return StThrow
 	case AMove:
 		return StMove
-	case APickup, ALoad:
-		return StGrab
 	}
-	return StFire
+	return StGrab // pickup, load
 }
 
 // buildSteps sets every player's step for slot (nil for wait, fizzle or no
@@ -173,13 +168,13 @@ func (g *Game) stepFor(p *player, act Act) (*step, string) {
 		if p.carry != nil {
 			return nil, FzHandsFull
 		}
-		b := g.pickTarget(p, act)
+		b := g.bombAt(p.x, p.y) // own cell only
 		if b == nil {
 			return nil, FzNoBomb
 		}
 		return &step{a: APickup, x: b.x, y: b.y}, ""
-	case ALoad, AFire:
-		if act.A == ALoad && p.carry == nil {
+	case ALoad:
+		if p.carry == nil {
 			return nil, FzEmptyHands
 		}
 		next := false
@@ -188,45 +183,16 @@ func (g *Game) stepFor(p *player, act Act) (*step, string) {
 				continue
 			}
 			next = true
-			if (act.A == ALoad) == (g.cats[c.ID] == nil) {
-				return &step{a: act.A, cat: c.ID}, ""
+			if g.cats[c.ID] == nil {
+				return &step{a: ALoad, cat: c.ID}, ""
 			}
 		}
-		switch {
-		case !next:
+		if !next {
 			return nil, FzNoCatapult
-		case act.A == ALoad:
-			return nil, FzCatapultFull
 		}
-		return nil, FzCatapultEmpty
+		return nil, FzCatapultFull
 	}
 	return nil, "" // wait
-}
-
-// pickTarget finds the bomb a pickup takes. With a direction: the first bomb
-// along it within reach. Without one (or 0,0): the bomb in the engineer's own
-// cell, else the nearest within reach along the four directions (distance 1
-// before 2; up, right, down, left).
-func (g *Game) pickTarget(p *player, act Act) *bomb {
-	if act.DX != nil && (*act.DX != 0 || *act.DY != 0) {
-		for k := 1; k <= Defs.Reach; k++ {
-			if b := g.bombAt(p.x+k**act.DX, p.y+k**act.DY); b != nil {
-				return b
-			}
-		}
-		return nil
-	}
-	if b := g.bombAt(p.x, p.y); b != nil {
-		return b
-	}
-	for k := 1; k <= Defs.Reach; k++ {
-		for _, d := range Dirs4 {
-			if b := g.bombAt(p.x+k*d[0], p.y+k*d[1]); b != nil {
-				return b
-			}
-		}
-	}
-	return nil
 }
 
 // --- 1. throws ---------------------------------------------------------------------
@@ -383,34 +349,19 @@ func (g *Game) resolveMoves() {
 
 // --- 3. pick-ups and loads ------------------------------------------------------------
 
-// resolveGrabs: pick-ups first (each fails if the picker's hands are full —
-// they caught a throw this slot — or if another engineer picks up the same
-// bomb), then loads (fail if another engineer loads the same catapult).
+// resolveGrabs: pick-ups first (each takes the bomb in the picker's own cell;
+// it fails if their hands are full now — they caught a throw earlier in the
+// slot), then loads (fail if another engineer loads the same catapult).
 func (g *Game) resolveGrabs() {
-	claims := map[[2]int]int{}
-	for _, p := range g.players {
-		if planned(p, APickup) {
-			claims[[2]int{p.cur.x, p.cur.y}]++
-		}
-	}
 	for _, p := range g.players {
 		if !planned(p, APickup) {
 			continue
 		}
-		x, y := p.cur.x, p.cur.y
-		b := g.bombAt(x, y)
-		ev := EvPickup{E: "pickup", S: StGrab, Slot: g.slotP(), PID: p.id, At: [2]int{x, y}}
-		if b != nil {
-			ev.Bomb, ev.Kind = b.id, b.kind
-		}
-		switch {
-		case p.carry != nil:
+		b := g.bombAt(p.cur.x, p.cur.y)
+		ev := EvPickup{E: "pickup", S: StGrab, Slot: g.slotP(), PID: p.id, At: [2]int{p.cur.x, p.cur.y}, Bomb: b.id, Kind: b.kind}
+		if p.carry != nil {
 			ev.Result = "hands_full"
-		case claims[[2]int{x, y}] > 1:
-			ev.Result = "contested"
-		case b == nil:
-			ev.Result = "gone"
-		default:
+		} else {
 			ev.Result = "ok"
 			p.carry = &BombRef{ID: b.id, Kind: b.kind}
 			p.st.pickups++
@@ -429,20 +380,12 @@ func (g *Game) resolveGrabs() {
 			continue
 		}
 		c := p.cur.cat
-		ev := EvLoad{E: "load", S: StGrab, Slot: g.slotP(), PID: p.id, Cat: c}
-		if p.carry != nil {
-			ev.Bomb, ev.Kind = p.carry.ID, p.carry.Kind
-		}
-		switch {
-		case p.carry == nil:
-			ev.Result = "empty_hands"
-		case loads[c] > 1:
+		ev := EvLoad{E: "load", S: StGrab, Slot: g.slotP(), PID: p.id, Cat: c, Bomb: p.carry.ID, Kind: p.carry.Kind}
+		if loads[c] > 1 {
 			ev.Result = "contested"
-		case g.cats[c] != nil:
-			ev.Result = "full"
-		default:
+		} else {
 			ev.Result = "ok"
-			g.cats[c] = p.carry
+			g.cats[c], g.catBy[c] = p.carry, p.id
 			p.carry = nil
 			p.st.loads++
 		}
@@ -452,46 +395,40 @@ func (g *Game) resolveGrabs() {
 
 // --- 4. fires -------------------------------------------------------------------------
 
-// resolveFires fires, in player order, every fire step. A catapult fires
-// once; a later fire on it in the same slot finds it empty.
-func (g *Game) resolveFires() {
-	for _, p := range g.players {
-		if !planned(p, AFire) {
+// autoFire: at the end of the slot every loaded catapult whose lane has a
+// machine fires by itself (catapult id order). The loader is credited.
+func (g *Game) autoFire() {
+	for _, c := range g.keep.Catapults {
+		b := g.cats[c.ID]
+		if b == nil || !slices.ContainsFunc(g.machines, func(m *machine) bool { return m.lane == c.Lane }) {
 			continue
 		}
-		c := p.cur.cat
-		ev := EvFire{E: "fire", S: StFire, Slot: g.slotP(), PID: p.id, Cat: c, Lane: g.keep.Catapults[c].Lane, Hits: []Hit{}}
-		b := g.cats[c]
-		if b == nil {
-			ev.Result = "empty"
-			g.emit(ev)
-			continue
+		by := g.player(g.catBy[c.ID])
+		g.cats[c.ID], g.catBy[c.ID] = nil, ""
+		ev := EvFire{E: "fire", S: StFire, Slot: g.slotP(), Cat: c.ID, Lane: c.Lane, Bomb: b.ID, Kind: b.Kind}
+		if by != nil {
+			ev.PID = by.id
 		}
-		g.cats[c] = nil
-		p.st.fires++
-		ev.Bomb, ev.Kind = b.ID, b.Kind
-		ev.Hits = g.blast(p, ev.Lane, b.Kind)
-		ev.Result = "ok"
-		if len(ev.Hits) == 0 {
-			ev.Result = "wasted"
-		}
+		ev.Hits = g.blast(by, c.Lane, b.Kind)
 		g.emit(ev)
 	}
 }
 
-// blast applies a bomb of kind to a lane and removes destroyed machines.
+// blast applies a bomb of kind to a lane, crediting p (may be nil), and
+// removes destroyed machines.
 func (g *Game) blast(p *player, lane int, kind string) []Hit {
 	def := Defs.Bombs[kind]
+	st := &stats{}
+	if p != nil {
+		st = &p.st
+	}
 	var in []*machine
 	for _, m := range g.machines {
 		if m.lane == lane {
 			in = append(in, m)
 		}
 	}
-	if len(in) == 0 {
-		return []Hit{}
-	}
-	if kind == "keg" {
+	if kind == "keg" && len(in) > 0 {
 		near := in[0]
 		for _, m := range in[1:] {
 			if m.pos < near.pos {
@@ -506,7 +443,7 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 		if def.Dmg > 0 {
 			h.Dmg = min(def.Dmg, m.hp)
 			m.hp -= def.Dmg
-			p.st.dmg += h.Dmg
+			st.dmg += h.Dmg
 		}
 		if def.Freeze > 0 {
 			m.frozen = max(m.frozen, def.Freeze)
@@ -514,7 +451,7 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 		h.HP, h.Frozen = max(0, m.hp), m.frozen
 		if m.hp <= 0 {
 			h.Killed, h.Frozen = true, 0
-			p.st.kills++
+			st.kills++
 		}
 		hits = append(hits, h)
 	}

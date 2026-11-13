@@ -63,7 +63,6 @@ type DefsT struct {
 	StageTime      float64                `json:"stageTime"`
 	MachineTime    float64                `json:"machineTime"`    // length of the machine stage when it has events
 	ThrowRange     int                    `json:"throwRange"`     // cap on a throw's flight; larger than any keep = unlimited
-	Reach          int                    `json:"reach"`          // pick-up distance along a straight line, any height
 	AwayAfter      int                    `json:"awayAfter"`      // missed rounds in a row before an engineer sits down
 	BombsBase      int                    `json:"bombsBase"`      // bombs kept on the ground: bombsBase + bombsPerPlayer × active players
 	BombsPerPlayer int                    `json:"bombsPerPlayer"` //
@@ -88,7 +87,6 @@ var Defs = &DefsT{
 	StageTime:      0.35,
 	MachineTime:    0.6,
 	ThrowRange:     20,
-	Reach:          1,
 	AwayAfter:      2,
 	BombsBase:      2,
 	BombsPerPlayer: 1,
@@ -115,7 +113,7 @@ var Defs = &DefsT{
 			Bombs: map[string]int{"keg": 1},
 			Groups: []Group{
 				//                     players: 1  2  3  4
-				{Kind: "scrap", Counts: []int{3, 3, 3, 3}, Lanes: []int{0, 2}, Start: 0, Every: 1, Batch: 99},
+				{Kind: "scrap", Counts: []int{2, 2, 2, 3}, Lanes: []int{0, 2}, Start: 0, Every: 1, Batch: 99},
 			}},
 		{Name: "Roach Run", Desc: "Clockroach clusters on three lanes. Grapeshot appears.", Layout: "crates",
 			Bombs: map[string]int{"keg": 70, "grapeshot": 30},
@@ -126,22 +124,19 @@ var Defs = &DefsT{
 		{Name: "Brass Arrives", Desc: "All four lanes, and the first Brutes. Stopwatches appear.", Layout: "platform",
 			Bombs: map[string]int{"keg": 60, "grapeshot": 25, "stopwatch": 15},
 			Groups: []Group{
-				{Kind: "scrap", Counts: []int{2, 2, 2, 3}, Lanes: all4, Start: 0, Every: 1, Batch: 99},
+				{Kind: "scrap", Counts: []int{2, 2, 2, 2}, Lanes: all4, Start: 0, Every: 1, Batch: 99},
 				{Kind: "brute", Counts: []int{1, 1, 1, 1}, Lanes: []int{2, 1}, Start: 0, Every: 1, Batch: 99},
 			}},
-		{Name: "Full Tilt", Desc: "Everything, faster.", Layout: "split",
+		{Name: "Full Tilt", Desc: "Scraplings on all four lanes at once.", Layout: "split",
 			Bombs: map[string]int{"keg": 60, "grapeshot": 25, "stopwatch": 15},
 			Groups: []Group{
-				{Kind: "scrap", Counts: []int{3, 3, 3, 3}, Lanes: all4, Start: 0, Every: 1, Batch: 99},
-				{Kind: "roach", Counts: []int{0, 0, 0, 1}, Lanes: []int{2, 0}, Start: 0, Every: 1, Batch: 99, Cluster: 2},
-				{Kind: "brute", Counts: []int{0, 0, 0, 0}, Lanes: []int{1, 3}, Start: 0, Every: 1, Batch: 99},
+				{Kind: "scrap", Counts: []int{2, 2, 2, 3}, Lanes: all4, Start: 0, Every: 1, Batch: 99},
 			}},
 		{Name: "The Iron Baron", Desc: "The Baron himself, with company.", Layout: "split",
 			Bombs: map[string]int{"keg": 60, "grapeshot": 25, "stopwatch": 15},
 			Groups: []Group{
-				{Kind: "baron", Counts: []int{1}, HP: []int{5, 5, 5, 6}, Lanes: []int{1}, Start: 0, Every: 1, Batch: 99},
-				{Kind: "scrap", Counts: []int{2, 2, 3, 2}, Lanes: []int{0, 2, 3}, Start: 0, Every: 1, Batch: 99},
-				{Kind: "roach", Counts: []int{0, 0, 0, 0}, Lanes: []int{3, 2}, Start: 0, Every: 1, Batch: 99, Cluster: 2},
+				{Kind: "baron", Counts: []int{1}, HP: []int{4, 4, 5, 5}, Lanes: []int{1}, Start: 0, Every: 1, Batch: 99},
+				{Kind: "scrap", Counts: []int{2, 2, 2, 2}, Lanes: []int{0, 2, 3}, Start: 0, Every: 1, Batch: 99},
 			}},
 	},
 }

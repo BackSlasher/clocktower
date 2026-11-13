@@ -113,8 +113,9 @@ func TestLayoutsValid(t *testing.T) {
 	}
 }
 
-// The tutorial is flat (no raised courtyard cells) with one bomb next to
-// a cell next to the stairs.
+// The tutorial has no platforms: the only raised cells inside the walkway
+// are rampart ledges (touching the walkway), plus corner stairs. Its one bomb
+// lies next to a stair.
 func TestTutorialLayout(t *testing.T) {
 	for _, k := range Keeps {
 		l := k.LevelLayout(1)
@@ -123,21 +124,61 @@ func TestTutorialLayout(t *testing.T) {
 		}
 		for y := 2; y < l.H; y++ {
 			for x := 2; x < l.W; x++ {
-				if c := l.At(x, y); c.H != 0 || c.Kind == KStairs {
-					t.Errorf("%s tutorial: raised or stairs at (%d,%d)", k.ID, x, y)
+				if c := l.At(x, y); c.Kind == KFloor && c.H > 0 && l.At(x, y-1).H == 0 && l.At(x-1, y).H == 0 {
+					t.Errorf("%s tutorial: platform cell at (%d,%d)", k.ID, x, y)
 				}
 			}
 		}
 		b, near := l.Bombs[0], false
-		for y := 0; y < l.H; y++ {
-			for x := 0; x < l.W; x++ {
-				if l.At(x, y).Kind == KStairs && abs(x-b[0])+abs(y-b[1]) <= 2 {
-					near = true
-				}
+		for _, d := range Dirs4 {
+			if l.At(b[0]+d[0], b[1]+d[1]).Kind == KStairs {
+				near = true
 			}
 		}
 		if !near {
-			t.Errorf("%s tutorial bomb %v not near stairs", k.ID, b)
+			t.Errorf("%s tutorial bomb %v not next to stairs", k.ID, b)
+		}
+	}
+}
+
+// cornerStairs reports whether the stairs at (x, y) sit in an inside corner:
+// exactly two raised walkable neighbours at a right angle and two low ones,
+// none blocked (the TV draws stairs as corner steps).
+func cornerStairs(l *Layout, x, y int) bool {
+	var high [][2]int
+	low := 0
+	for _, d := range Dirs4 {
+		c := l.At(x+d[0], y+d[1])
+		switch {
+		case c.Kind == KFloor && c.H == 1:
+			high = append(high, d)
+		case c.Kind == KFloor && c.H == 0:
+			low++
+		}
+	}
+	return len(high) == 2 && low == 2 && high[0][0]+high[1][0] != 0 && high[0][1]+high[1][1] != 0
+}
+
+// Every stairs cell of every layout is a corner step. (None needs an
+// exception today; list one here with a reason if it ever must.)
+func TestStairsAreCorners(t *testing.T) {
+	for _, k := range Keeps {
+		for id, l := range k.Layouts {
+			n := 0
+			for y := 0; y < l.H; y++ {
+				for x := 0; x < l.W; x++ {
+					if l.At(x, y).Kind != KStairs {
+						continue
+					}
+					n++
+					if !cornerStairs(l, x, y) {
+						t.Errorf("%s/%s: stairs at (%d,%d) are not in an inside corner\n%s", k.ID, id, x, y, l)
+					}
+				}
+			}
+			if n == 0 {
+				t.Errorf("%s/%s has no stairs", k.ID, id)
+			}
 		}
 	}
 }
