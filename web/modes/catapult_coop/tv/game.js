@@ -381,9 +381,16 @@ export class Game {
     g.setTransform(px, 0, 0, px, sx * px, sy * px);
     g.imageSmoothingEnabled = true;
     g.drawImage(S.ground, 0, 0, W, H);
+    // flickering lamp flames on the streets
     g.globalCompositeOperation = 'lighter';
-    g.globalAlpha = 0.85 + 0.08 * Math.sin(tsec * 7.1) * Math.sin(tsec * 2.3);
-    g.drawImage(S.light, 0, 0, W, H);
+    const flame = softSprite('rgba(255,190,90,1)', 32, 0.2);
+    for (const l of S.lamps) {
+      const [lx, ly] = S.p(l.x, l.y, OUT_Z + 1.55);
+      const f = 0.45 + 0.15 * Math.sin(tsec * 9 + l.x * 3.1) * Math.sin(tsec * 2.7 + l.y);
+      const R = 26 * S.k;
+      g.globalAlpha = f;
+      g.drawImage(flame, lx - R, ly - 10 * S.k - R, R * 2, R * 2);
+    }
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
 
@@ -413,7 +420,7 @@ export class Game {
     items.sort((a, b) => a.k - b.k);
     for (const it of items) {
       if (it.b) g.drawImage(it.b.img, it.b.bx, it.b.by, it.b.bw, it.b.bh);
-      else this.drawCat(g, { id: it.c.id, kind: null, phi: -0.28 }, tsec);
+      else this.drawCat(g, { id: it.c.id, kind: null, phi: 0.95 }, tsec);
     }
   }
 
@@ -514,12 +521,22 @@ export class Game {
         const b = it.bomb;
         const [sx, sy] = S.p(b.x, b.y, b.z);
         g.globalAlpha = b.a;
-        // a faint warm ring so bombs on the ground catch the eye
-        g.fillStyle = 'rgba(255,200,110,0.16)';
+        // a pulsing amber ring and glow so bombs on the ground pop against the floor
+        const pulse = 0.5 + 0.5 * Math.sin(tsec * 3 + b.id);
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = b.a * (0.3 + 0.15 * pulse);
+        g.drawImage(softSprite('rgba(255,170,60,1)', 64, 0.25), sx - 34 * k, sy - 20 * k, 68 * k, 40 * k);
+        g.globalCompositeOperation = 'source-over';
+        g.globalAlpha = b.a;
+        g.strokeStyle = 'rgba(20,10,2,0.7)';
+        g.lineWidth = 6 * k;
         g.beginPath();
-        g.ellipse(sx, sy, 24 * k, 12 * k, 0, 0, TAU);
-        g.fill();
-        g.fillStyle = 'rgba(0,0,0,0.4)';
+        g.ellipse(sx, sy, (25 + pulse * 3) * k, (12.5 + pulse * 1.5) * k, 0, 0, TAU);
+        g.stroke();
+        g.strokeStyle = `rgba(255,${190 + Math.round(pulse * 40)},90,0.95)`;
+        g.lineWidth = 3 * k;
+        g.stroke();
+        g.fillStyle = 'rgba(0,0,0,0.45)';
         g.beginPath();
         g.ellipse(sx, sy, 15 * k, 6 * k, 0, 0, TAU);
         g.fill();
@@ -528,13 +545,14 @@ export class Game {
       } else if (it.m) {
         const m = it.m;
         const p = it.p;
-        const top = drawMachine(g, S, { kind: m.kind, x: p.x, y: p.y, z: p.z, a: p.a, t: tsec * (m.frozen > 0 ? 0.15 : 1) + m.id, flash: m.flash, alpha: m.alpha });
+        const bob = m.frozen > 0 ? 0 : Math.abs(Math.sin(tsec * 4.5 + m.id * 1.7)) * 0.07;
+        const top = drawMachine(g, S, { kind: m.kind, x: p.x, y: p.y, z: p.z + bob, a: p.a, t: tsec * (m.frozen > 0 ? 0.15 : 1) + m.id, flash: m.flash, alpha: m.alpha });
         mtop.set(m.id, [S.p(p.x, p.y, p.z)[0], top]);
         if (m.frozen > 0) {
           // frost over the machine
           const [fx, fy] = S.p(p.x, p.y, p.z + 0.25);
           g.globalCompositeOperation = 'lighter';
-          g.globalAlpha = 0.18 + 0.06 * Math.sin(tsec * 3);
+          g.globalAlpha = 0.08 + 0.04 * Math.sin(tsec * 3);
           const r = (MACHINE_CELLS[m.kind] || 0.34) * S.TW * 1.3;
           g.drawImage(softSprite('rgba(120,200,255,1)', 64, 0.3), fx - r, fy - r * 0.6, r * 2, r * 1.2);
           g.globalAlpha = 1;
@@ -575,12 +593,12 @@ export class Game {
     for (const s of v.shots) {
       const [sx, sy] = S.p(s.x, s.y, s.z);
       g.globalCompositeOperation = 'lighter';
-      g.drawImage(softSprite('rgba(255,170,80,1)', 32, 0.2), sx - 22 * k, sy - 22 * k, 44 * k, 44 * k);
+      g.drawImage(softSprite('rgba(255,170,80,1)', 32, 0.2), sx - 36 * k, sy - 36 * k, 72 * k, 72 * k);
       g.globalCompositeOperation = 'source-over';
       g.save();
       g.translate(sx, sy);
       g.rotate(s.spin);
-      drawBomb(g, s.kind, 0, 14 * k, 1.0 * k, tsec);
+      drawBomb(g, s.kind, 0, 18 * k, 1.45 * k, tsec);
       g.restore();
       if (Math.random() < 0.7) this.fx.part('smoke', sx, sy, 0, 0, 0.5, 9 * k, 'rgba(220,220,210,0.35)');
     }
@@ -612,9 +630,11 @@ export class Game {
       const cp = S.p(c.x, c.y, 1.0);
       plate(g, cp[0], cp[1] + 34 * k, num, k);
       if (L) {
+        // beside the road at the far end, clear of the machines
         const [lx, ly] = S.lanePt(L.id, L.len - 1);
-        const fp = S.p(lx, ly, 0);
-        plate(g, fp[0], fp[1] - 14 * k, num, k, 0.8);
+        const side = L.dir[0] !== 0 ? [0, -1.25] : [-1.25, 0];
+        const fp = S.p(lx + side[0], ly + side[1], 0);
+        plate(g, fp[0], fp[1] - 14 * k, num, k, 1);
       }
     }
 

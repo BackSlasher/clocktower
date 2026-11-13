@@ -21,8 +21,8 @@ const WALL_HIT = 0.5;
 const SPAWN_AT = 0.5;
 const BOMB_AT = 0.62;
 
-export const ARM_REST = -0.28;
-const ARM_TOP = 2.35;
+export const ARM_REST = 0.95;
+const ARM_TOP = 2.6;
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const ease = (t) => t * t * (3 - 2 * t);
@@ -289,7 +289,7 @@ export class Playback {
           } else if (ev.result === 'wasted' && L) target = (L.len - 1) * 0.6;
           const cat = S.catapult(ev.cat);
           const [lx, ly] = S.lanePt(lane, target);
-          const shot = { kind: ev.kind, lane, target, from: [cat?.x ?? 0, cat?.y ?? 0, 1.95], to: [lx, ly, -0.1], t0: tf + 0.04, t1: th, h: 1.3 + target * 0.25, ev };
+          const shot = { kind: ev.kind, lane, target, from: [cat?.x ?? 0, cat?.y ?? 0, 1.95], to: [lx, ly, -0.1], t0: tf + 0.04, t1: th, h: 1.6 + Math.hypot(lx - (cat?.x ?? 0), ly - (cat?.y ?? 0)) * 0.28, ev };
           this.shots.push(shot);
           this.cues.push({ t: tf, kind: 'fire', ev });
           this.cues.push({ t: th, kind: 'impact', ev, shot });

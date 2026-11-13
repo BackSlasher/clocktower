@@ -432,112 +432,176 @@ export function star(g, x, y, r, col) {
 export function drawCatapult(g, S, c) {
   const { x, y, dir } = c;
   const z0 = 1;
-  const P = (u, v, z) => S.p(x + dir[0] * u - dir[1] * v, y + dir[1] * u + dir[0] * v, z);
   const k = S.k;
-  // boiler behind (toward the lane side)
-  const [bx, by] = P(0.22, 0.26, z0);
-  const [, bt] = P(0.22, 0.26, z0 + 1.1);
-  const rw = 16 * k;
-  const gr = g.createLinearGradient(bx - rw, 0, bx + rw, 0);
-  gr.addColorStop(0, '#5a2e18');
-  gr.addColorStop(0.4, '#d1794a');
-  gr.addColorStop(1, '#4a2412');
-  g.fillStyle = gr;
-  g.fillRect(bx - rw, bt, rw * 2, by - bt);
-  g.beginPath();
-  g.ellipse(bx, by, rw, rw * 0.5, 0, 0, Math.PI);
-  g.fill();
-  g.fillStyle = '#e09a6a';
-  g.beginPath();
-  g.ellipse(bx, bt, rw, rw * 0.5, 0, 0, TAU);
-  g.fill();
-  g.strokeStyle = '#2a1408';
-  g.lineWidth = 1.5;
-  g.stroke();
-  g.strokeStyle = '#d9b25a';
-  g.lineWidth = 2.5 * k;
-  g.beginPath();
-  g.ellipse(bx, bt + (by - bt) * 0.5, rw, rw * 0.5, 0, 0, Math.PI);
-  g.stroke();
-  // chimney
-  g.fillStyle = '#2b2a28';
-  g.fillRect(bx - 3 * k, bt - 16 * k, 6 * k, 16 * k);
-
-  // A-frame uprights either side of the arm
-  const pz = z0 + 0.74;
-  for (const v of [-0.32, 0.32]) {
-    const [a0, a1] = P(-0.22, v, z0);
-    const [b0, b1] = P(0.18, v, z0);
-    const [t0, t1] = P(0, v, pz);
-    g.strokeStyle = '#3a2410';
-    g.lineWidth = 7 * k;
+  // local frame: u along the lane (outward), v across it, z up
+  const SC = 1.3; // drawn larger than its cell: it is the star of the wall
+  const P = (u, v, z) => S.p(x + (dir[0] * u - dir[1] * v) * SC, y + (dir[1] * u + dir[0] * v) * SC, z);
+  const near = -dir[1] + dir[0] > 0 ? 1 : -1; // which v side faces the camera
+  const beam = (a, b, w, col, dark = '#24140a') => {
     g.lineCap = 'round';
+    g.strokeStyle = dark;
+    g.lineWidth = w + 3;
     g.beginPath();
-    g.moveTo(a0, a1);
-    g.lineTo(t0, t1);
-    g.lineTo(b0, b1);
+    g.moveTo(a[0], a[1]);
+    g.lineTo(b[0], b[1]);
     g.stroke();
-    g.strokeStyle = '#7a5530';
-    g.lineWidth = 3 * k;
+    g.strokeStyle = col;
+    g.lineWidth = w;
+    g.stroke();
+    g.strokeStyle = 'rgba(255,230,180,0.25)';
+    g.lineWidth = Math.max(1, w * 0.25);
+    g.stroke();
+  };
+  const pz = z0 + SC * 1.0; // pivot height
+  const side = (v) => {
+    // sled runner, A-frame and brass caps on one side
+    beam(P(-0.46, v, z0 + SC * 0.07), P(0.46, v, z0 + SC * 0.07), 11 * k, '#8a5c34');
+    beam(P(-0.38, v, z0 + SC * 0.1), P(0, v, pz), 10 * k, '#a87444');
+    beam(P(0.38, v, z0 + SC * 0.1), P(0, v, pz), 10 * k, '#a87444');
+    beam(P(-0.19, v, z0 + SC * 0.5), P(0.19, v, z0 + SC * 0.5), 6 * k, '#8a5c34');
+    const cap = P(0, v, pz);
+    g.fillStyle = '#d9b25a';
+    g.beginPath();
+    g.arc(cap[0], cap[1], 5.5 * k, 0, TAU);
+    g.fill();
+    g.strokeStyle = '#3a2a0c';
+    g.lineWidth = 1.5;
+    g.stroke();
+  };
+  // a gear wheel standing in the u-z plane at v
+  const gear = (u, v, z, rr, teeth, rot) => {
+    g.beginPath();
+    for (let i = 0; i < teeth * 2; i++) {
+      const an = rot + (i / (teeth * 2)) * TAU;
+      const r2 = i % 2 ? rr * 0.82 : rr;
+      const q = P(u + Math.cos(an) * r2, v, z + (SC * Math.sin(an) * r2) / 0.62);
+      if (i) g.lineTo(q[0], q[1]);
+      else g.moveTo(q[0], q[1]);
+    }
+    g.closePath();
+    g.fillStyle = '#b88a34';
+    g.fill();
+    g.strokeStyle = '#3a2a0c';
+    g.lineWidth = 1.6;
+    g.stroke();
+    const hub = P(u, v, z);
+    g.fillStyle = '#5a4520';
+    g.beginPath();
+    g.arc(hub[0], hub[1], rr * S.TW * 0.22, 0, TAU);
+    g.fill();
+  };
+  const vFar = -0.32 * near;
+  const vNear = 0.32 * near;
+
+  // shadow on the deck
+  const sc = P(0, 0, z0);
+  g.fillStyle = 'rgba(20,10,2,0.35)';
+  g.beginPath();
+  g.ellipse(sc[0], sc[1], S.TW * 0.42, S.TH * 0.42, 0, 0, TAU);
+  g.fill();
+  // cross beams of the sled
+  beam(P(-0.4, -0.34, z0 + SC * 0.06), P(-0.4, 0.34, z0 + SC * 0.06), 7 * k, '#6a4426');
+  beam(P(0.4, -0.34, z0 + SC * 0.06), P(0.4, 0.34, z0 + SC * 0.06), 7 * k, '#6a4426');
+  side(vFar);
+  // winch drum between the runners at the keep end, with its rope up to the arm
+  beam(P(-0.3, -0.3, z0 + SC * 0.2), P(-0.3, 0.3, z0 + SC * 0.2), 11 * k, '#5a3a1c');
+  g.strokeStyle = 'rgba(200,170,110,0.6)';
+  g.lineWidth = 2 * k;
+  for (let i = -2; i <= 2; i++) {
+    const a = P(-0.3, i * 0.1, z0 + SC * 0.15);
+    const b = P(-0.3, i * 0.1, z0 + SC * 0.25);
+    g.beginPath();
+    g.moveTo(a[0], a[1]);
+    g.lineTo(b[0], b[1]);
     g.stroke();
   }
-  // axle
-  const [ax0, ay0] = P(0, -0.32, pz);
-  const [ax1, ay1] = P(0, 0.32, pz);
-  g.strokeStyle = '#2b2a28';
-  g.lineWidth = 4 * k;
-  g.beginPath();
-  g.moveTo(ax0, ay0);
-  g.lineTo(ax1, ay1);
-  g.stroke();
 
-  // arm: pivot at (0, 0, pz); bucket at R toward phi; counterweight opposite
-  const R = 0.8;
+  // the arm: pivot at (0, 0, pz); bucket at R toward phi; counterweight opposite
+  const R = 1.1;
   const phi = c.phi;
   const bu = -Math.cos(phi) * R;
-  const bz = pz + Math.sin(phi) * R;
-  const cu = Math.cos(phi) * R * 0.38;
-  const cz = pz - Math.sin(phi) * R * 0.38;
-  const [p0, p1] = P(0, 0, pz);
-  const [q0, q1] = P(bu, 0, bz);
-  const [w0, w1] = P(cu, 0, cz);
-  g.strokeStyle = '#2a1808';
-  g.lineWidth = 7 * k;
+  const bz = pz + (SC * Math.sin(phi) * R) / 0.62;
+  const cu = Math.cos(phi) * R * 0.32;
+  const cz = pz - (SC * Math.sin(phi) * R * 0.32) / 0.62;
+  const piv = P(0, 0, pz);
+  const q = P(bu, 0, bz);
+  const w = P(cu, 0, cz);
+  // rope from the winch to the arm (taut when cocked)
+  const rp = P(bu * 0.45, 0, pz + (bz - pz) * 0.45);
+  const wd = P(-0.3, 0, z0 + SC * 0.22);
+  g.strokeStyle = '#c8a870';
+  g.lineWidth = 2 * k;
   g.beginPath();
-  g.moveTo(w0, w1);
-  g.lineTo(q0, q1);
+  g.moveTo(wd[0], wd[1]);
+  g.lineTo(rp[0], rp[1]);
   g.stroke();
-  g.strokeStyle = '#9a6a3a';
-  g.lineWidth = 4 * k;
-  g.stroke();
-  g.lineCap = 'butt';
-  // counterweight block
+  // axle
+  beam(P(0, -0.36, pz), P(0, 0.36, pz), 5 * k, '#3a3632', '#111');
+  beam(w, q, 13 * k, '#b47a46');
+  // iron bands on the arm
+  g.strokeStyle = '#2b2a28';
+  g.lineWidth = 3 * k;
+  for (const t of [0.35, 0.7]) {
+    const bx = w[0] + (q[0] - w[0]) * t;
+    const by = w[1] + (q[1] - w[1]) * t;
+    const an = Math.atan2(q[1] - w[1], q[0] - w[0]) + Math.PI / 2;
+    g.beginPath();
+    g.moveTo(bx + Math.cos(an) * 7 * k, by + Math.sin(an) * 7 * k);
+    g.lineTo(bx - Math.cos(an) * 7 * k, by - Math.sin(an) * 7 * k);
+    g.stroke();
+  }
+  // counterweight: an iron block with rivets
   g.fillStyle = '#3d3a36';
-  g.fillRect(w0 - 8 * k, w1 - 6 * k, 16 * k, 12 * k);
   g.strokeStyle = '#111';
-  g.lineWidth = 1.2;
-  g.strokeRect(w0 - 8 * k, w1 - 6 * k, 16 * k, 12 * k);
-  // brass pivot cap
-  g.fillStyle = '#d9b25a';
-  circle(g, p0, p1, 4 * k);
-  g.fill();
-  // bucket
-  g.fillStyle = '#2f2c28';
+  g.lineWidth = 1.5;
   g.beginPath();
-  g.ellipse(q0, q1, 15 * k, 8.5 * k, 0, 0, TAU);
+  g.rect(w[0] - 13 * k, w[1] - 9 * k, 26 * k, 20 * k);
+  g.fill();
+  g.stroke();
+  g.fillStyle = 'rgba(255,255,255,0.12)';
+  g.fillRect(w[0] - 13 * k, w[1] - 9 * k, 26 * k, 4 * k);
+  g.fillStyle = '#d9b25a';
+  for (const [a, b] of [[-9, -5], [9, -5], [-9, 7], [9, 7]]) {
+    g.beginPath();
+    g.arc(w[0] + a * k, w[1] + b * k, 1.8 * k, 0, TAU);
+    g.fill();
+  }
+  // pivot hub
+  g.fillStyle = '#d9b25a';
+  g.beginPath();
+  g.arc(piv[0], piv[1], 6 * k, 0, TAU);
+  g.fill();
+  g.strokeStyle = '#3a2a0c';
+  g.stroke();
+  // the bucket: an iron cup on the end of the arm
+  const bw = 23 * k;
+  g.fillStyle = '#2b2a28';
+  g.beginPath();
+  g.moveTo(q[0] - bw, q[1]);
+  g.quadraticCurveTo(q[0], q[1] + bw * 1.25, q[0] + bw, q[1]);
+  g.closePath();
   g.fill();
   g.strokeStyle = '#8a8d90';
   g.lineWidth = 2 * k;
   g.stroke();
-  if (c.kind) drawBomb(g, c.kind, q0, q1 + 5 * k, 0.95 * k, c.t);
-  // loaded: a warm halo so a ready catapult reads from the sofa
+  g.fillStyle = c.kind ? '#2a2420' : '#4a4540';
+  g.beginPath();
+  g.ellipse(q[0], q[1], bw, bw * 0.45, 0, 0, TAU);
+  g.fill();
+  g.strokeStyle = '#a9adb0';
+  g.lineWidth = 2.5 * k;
+  g.stroke();
   if (c.kind) {
+    // loaded: the bomb sits in the bucket, glowing
     g.globalCompositeOperation = 'lighter';
-    g.globalAlpha = 0.25 + 0.12 * Math.sin(c.t * 3);
-    g.drawImage(softSprite('rgba(255,200,110,1)', 64, 0.2), q0 - 34 * k, q1 - 40 * k, 68 * k, 68 * k);
+    g.globalAlpha = 0.35 + 0.15 * Math.sin(c.t * 3);
+    g.drawImage(softSprite('rgba(255,190,90,1)', 64, 0.2), q[0] - 46 * k, q[1] - 56 * k, 92 * k, 92 * k);
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
+    drawBomb(g, c.kind, q[0], q[1] + 6 * k, 1.05 * k, c.t);
   }
+  side(vNear);
+  gear(-0.26, vNear * 1.1, z0 + SC * 0.3, 0.24, 12, (c.phi || 0) * 2);
 }
 
 // ---------------------------------------------------------------- machines
@@ -546,8 +610,8 @@ export function drawCatapult(g, S, c) {
 // is laid along its lane's direction on screen, seen from above at a steep angle (squashed
 // across), raised a little over a dark underside so it reads as a body, not a decal.
 export const MACHINE_R = { scrap: 20, roach: 15, brute: 29, baron: 46 }; // TD radius x its visual scale
-export const MACHINE_CELLS = { scrap: 0.36, roach: 0.3, brute: 0.46, baron: 0.6 }; // radius in cells
-const SQUASH = 0.72;
+export const MACHINE_CELLS = { scrap: 0.46, roach: 0.38, brute: 0.58, baron: 0.74 }; // radius in cells
+const SQUASH = 0.84;
 
 // screen frame for a machine at grid (x, y, z) heading a (grid radians): [hx, hy, nx, ny] unit vectors
 function frame(S, x, y, z, a) {
