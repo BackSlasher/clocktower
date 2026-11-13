@@ -72,10 +72,13 @@ func xyOf(pl *Plan) (int, int) { return *pl.X, *pl.Y }
 // --- 1. throws ---------------------------------------------------------------------
 
 // resolveThrows: every thrower lets go at once, so a thrower can catch in the
-// same stage. In player order, each bomb is caught by the engineer standing
-// on the target cell if their hands are empty at that point, else lands there
-// (or, if that cell is not floor or already has a bomb, on the nearest free
-// floor cell).
+// same stage. In player order, each bomb flies along its throw line (see
+// Layout.ThrowLine) and stops at the first engineer on it (start-of-round
+// positions): caught if that engineer's hands are empty at that point,
+// otherwise blocked, dropping at their feet. With nobody on the line it lands
+// on the furthest walkable cell of the line. A bomb that comes down on a
+// cell that is not floor or already has a bomb settles on the nearest free
+// floor cell.
 func (g *Game) resolveThrows() {
 	type flight struct {
 		p *player
@@ -89,18 +92,35 @@ func (g *Game) resolveThrows() {
 		}
 	}
 	for _, f := range fl {
-		x, y := xyOf(f.p.plan)
+		dx, dy := *f.p.plan.DX, *f.p.plan.DY
+		line := g.lay.ThrowLine(f.p.x, f.p.y, dx, dy, abilities(f.p).Throw)
 		f.p.st.throws++
 		ev := EvThrow{E: "throw", S: StThrow, PID: f.p.id, Bomb: f.b.ID, Kind: f.b.Kind,
-			From: [2]int{f.p.x, f.p.y}, To: [2]int{x, y}}
-		if c := g.engineerAt(x, y); c != nil && c.carry == nil {
-			c.carry = f.b
-			c.st.catches++
-			ev.Result, ev.By, ev.At = "caught", c.id, [2]int{x, y}
-		} else {
-			lx, ly := g.landCell(x, y)
+			From: [2]int{f.p.x, f.p.y}, Dir: [2]int{dx, dy}}
+		var stop *player
+		for _, c := range line {
+			if o := g.engineerAt(c[0], c[1]); o != nil {
+				stop = o
+				break
+			}
+		}
+		switch {
+		case stop != nil && stop.carry == nil:
+			stop.carry = f.b
+			stop.st.catches++
+			ev.Result, ev.By = "caught", stop.id
+			ev.To = [2]int{stop.x, stop.y}
+			ev.At = ev.To
+		default:
+			to, _ := g.lay.Landing(line) // validated: the line has a walkable cell
+			ev.Result = "landed"
+			if stop != nil {
+				to = [2]int{stop.x, stop.y}
+				ev.Result, ev.By = "blocked", stop.id
+			}
+			lx, ly := g.landCell(to[0], to[1])
 			g.bombs = append(g.bombs, &bomb{id: f.b.ID, kind: f.b.Kind, x: lx, y: ly})
-			ev.Result, ev.At = "landed", [2]int{lx, ly}
+			ev.To, ev.At = to, [2]int{lx, ly}
 		}
 		g.emit(ev)
 	}
@@ -340,16 +360,36 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 		}
 		in = []*machine{near}
 	}
+	// Perk bonuses of the firer.
+	dmg, freeze := def.Dmg, def.Freeze
+	if kind == "keg" && has(p, "heavy_keg") {
+		dmg += Defs.Perks["heavy_keg"].Amount
+	}
+	if freeze > 0 && has(p, "long_stop") {
+		freeze += Defs.Perks["long_stop"].Amount
+	}
+	var nearest *machine // Wide Shot's extra target
+	if kind == "grapeshot" && has(p, "wide_shot") {
+		nearest = in[0]
+		for _, m := range in[1:] {
+			if m.pos < nearest.pos {
+				nearest = m
+			}
+		}
+	}
 	hits := []Hit{}
 	for _, m := range in {
 		h := Hit{ID: m.id}
-		if def.Dmg > 0 {
-			h.Dmg = min(def.Dmg, m.hp)
-			m.hp -= def.Dmg
+		if d := dmg; d > 0 {
+			if m == nearest {
+				d += Defs.Perks["wide_shot"].Amount
+			}
+			h.Dmg = min(d, m.hp)
+			m.hp -= d
 			p.st.dmg += h.Dmg
 		}
-		if def.Freeze > 0 {
-			m.frozen = max(m.frozen, def.Freeze)
+		if freeze > 0 {
+			m.frozen = max(m.frozen, freeze)
 		}
 		h.HP, h.Frozen = max(0, m.hp), m.frozen
 		if m.hp <= 0 {

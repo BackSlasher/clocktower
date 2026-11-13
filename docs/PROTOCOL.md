@@ -383,13 +383,22 @@ shared **wall** has hit points; at 0 the game is lost. Clearing level 6 wins.
   `y = 0` and the column `x = 0` are the two far sides, seen from the
   `(w, h)` corner.
 - A **layout** is one level's interior of that keep: every cell's kind and
-  height, and the engineer start cells. Each level names its layout; the
-  outer wall line and the catapults are identical in every layout of a keep.
+  height, and the engineer start cells (courtyard or rampart). Each level
+  names its layout; the outer wall line and the catapults are identical in
+  every layout of a keep.
 - Cell `kind`: `floor` (walkable), `block` (crate, pipe or wall; not
   walkable), `stairs` (walkable; connects both heights), `catapult` (not
   walkable; on the wall, height 1), `void` (outside; not walkable; none today).
   `h` is 0 (courtyard) or 1 (ramparts and raised platforms). Stairs have
-  `h: 0` but connect to both heights.
+  `h: 0` but connect to both heights. Blocks of `h: 1` occur only in the outer
+  wall; crates inside the keep are blocks of `h: 0`.
+- **Throw line.** A bomb thrown from `(x, y)` in direction `(dx, dy)` passes
+  over the cells `(x + k·dx, y + k·dy)` for `k = 1, 2, …`, up to `throwRange`
+  cells, and the line **ends before** the first cell that is off the grid, a
+  `catapult`, `void`, or a `block` with `h: 1` (the outer wall). Everything else
+  is flown over: crates (`block` with `h: 0`), platforms, stairs, height
+  differences. The line's **landing cell** is its furthest walkable cell. A
+  throw whose line has no walkable cell is not allowed.
 - **Walking**: one step goes to a 4-adjacent cell. Both cells must be walkable
   and of equal `h`, unless either is `stairs`. Engineers never block walking
   paths (only the destination cell matters, see resolve).
@@ -411,7 +420,7 @@ Map = { "keeps": [ Keep, … ] }      // smallest first
 Keep = {
   "id": "small", "minPlayers": 1, "maxPlayers": 5, "w": 9, "h": 9,
   "catapults": [ { "id": 0, "x": 3, "y": 0, "lane": 0 }, … ],   // 4, ids 0..3
-  "lanes": [ { "id": 0, "cat": 0, "len": 6, "dir": [0,-1], "x": 3, "y": -1 }, … ] }
+  "lanes": [ { "id": 0, "cat": 0, "len": 6, "dir": [0,-1], "x": 3, "y": -1 }, … ] }   // len is data; read it
 ```
 
 The interior is not in `map`: it comes with the room message (`room.layout`),
@@ -422,13 +431,13 @@ because it changes from level to level.
 ```jsonc
 Defs = {
   "maxPlayers": 8,
-  "wallHP": 10,                 // wall hit points at the start (and maximum)
+  "wallHP": 16,                 // wall hit points at the start (and maximum)
   "planTime": 12,               // seconds of a plan phase
   "breakTime": 15,              // seconds of a break between levels
   "resolveBase": 0.5, "stageTime": 0.5,   // resolve length = resolveBase + stageTime × non-empty stages
-  "move": 2,                    // cells per move, free-handed (before perks)
-  "moveCarry": 1,               // cells per move while carrying
-  "throwRange": 4,              // max throw distance
+  "move": 1,                    // cells per move: always 1 (kept for compatibility)
+  "moveCarry": 1,               // the same while carrying: 1
+  "throwRange": 20,             // cap on a throw line; larger than any keep, i.e. unlimited
   "reach": 1,                   // pick-up distance (Manhattan)
   "awayAfter": 2,               // missed rounds in a row before an engineer is "away"
   "bombsBase": 2, "bombsPerPlayer": 1,    // bombs kept lying on the ground (see "Bombs")
@@ -442,9 +451,9 @@ Defs = {
   "machineOrder": ["scrap", "roach", "brute", "baron"],
   "levels": [ { "name": "Tutorial", "desc": "One Scrapling on one lane.", "layout": "open",
                 "bombs": { "keg": 1 } }, … ],   // 6 levels; bombs = kinds that can appear (spawn weights)
-  "perks": { "strong_arm": { "name": "Strong Arm", "desc": "You throw up to 6 cells instead of 4." }, …,
+  "perks": { "long_reach": { "name": "Long Reach", "desc": "You pick up bombs from up to 2 cells away. …" }, …,
              "mason": { "name": "Mason", "desc": "…", "team": true } },
-  "perkOrder": ["strong_arm", "light_feet", "long_reach", "quick_hands", "mason"] }
+  "perkOrder": ["long_reach", "quick_hands", "heavy_keg", "long_stop", "wide_shot", "mason"] }
 ```
 
 `desc` texts are complete and player-facing; clients show them verbatim.
@@ -476,9 +485,9 @@ coming in change `planned`, so expect one per plan).
       "planned": true,          // has a plan this round (plan phase only; false otherwise)
       "ready": false,           // break phase: pressed ready
       "plan": Plan | null,      // only when openPlans is on, else always null
-      "offer": ["strong_arm", "mason", "light_feet"] | null,  // break: unpicked perk choice
-      "perks": { "strong_arm": 1 },                           // picked perks (never null)
-      "can": { "move": 2, "moveCarry": 1, "throw": 4, "reach": 1, "quickHands": false } } ],
+      "offer": ["heavy_keg", "mason", "long_reach"] | null,   // break: unpicked perk choice
+      "perks": { "heavy_keg": 1 },                            // picked perks (never null)
+      "can": { "move": 1, "moveCarry": 1, "throw": 20, "reach": 1, "quickHands": false } } ],
   "end": End | null }
 ```
 
@@ -494,8 +503,8 @@ Layout = { "id": "crates", "w": 9, "h": 9,
   the `room` message** (and a `level_start` event); a reconnecting client gets
   the current one in the `room` message that follows `welcome`.
 - `can` is that player's engineer abilities with perks applied: move budget
-  free-handed and carrying, throw range, pick-up reach, whether `load` may
-  also fire. Clients use it for highlighting and never compute perk effects.
+  free-handed and carrying (both always 1), throw-line cap, pick-up reach,
+  whether `load` may also fire. Clients use it for highlighting and never compute perk effects.
 - `End = { "won": true, "level": 6, "rounds": 84, "wall": 4, "time": 312.5,
   "stats": { "p1": { "throws", "catches", "pickups", "loads", "fires",
   "kills", "dmg", "steps", "bumps", "perks": {…} } }, "awards": [ { "pid",
@@ -506,7 +515,7 @@ Layout = { "id": "crates", "w": 9, "h": 9,
 ```jsonc
 Plan = { "a": "move", "x": 4, "y": 5, "path": [[4,4],[4,5]] }   // cells walked, start excluded
      | { "a": "pickup", "x": 5, "y": 1 }
-     | { "a": "throw",  "x": 3, "y": 1 }
+     | { "a": "throw",  "dx": 0, "dy": -1 }         // direction; never x/y
      | { "a": "load",   "cat": 0, "fire": true }    // "fire" present only when true (Quick Hands)
      | { "a": "fire",   "cat": 0 }
      | { "a": "wait" }
@@ -567,10 +576,14 @@ Order guarantees:
    // dur = length of this resolve phase in seconds (= snap.left at its start). Only non-empty
    // stages are listed, back to back from resolveBase/2; play each stage's events in its slot.
 { "e": "throw", "s": "throw", "pid": "p1", "bomb": 12, "kind": "keg",
-  "from": [3,5], "to": [3,1], "result": "caught" | "landed", "by": "p2", "at": [3,1] }
-   // to = target cell; at = where the bomb ends up (catcher's cell, or the resting cell, which
-   // differs from `to` when it settled elsewhere); by only when caught
-{ "e": "move", "s": "move", "pid": "p1", "from": [4,4], "to": [4,6], "path": [[4,5],[4,6]],
+  "from": [3,5], "dir": [0,-1], "to": [3,1], "result": "caught" | "blocked" | "landed",
+  "by": "p2", "at": [3,1] }
+   // dir = the throw's (dx, dy). to = where the flight ends: the cell of the engineer who
+   // caught or blocked it, or the line's landing cell. at = where the bomb ends up: the
+   // catcher's cell (caught), else its resting cell, which differs from `to` when it had to
+   // settle elsewhere. by = the engineer who caught (caught) or blocked (blocked) it; absent
+   // when landed. blocked: the bomb hit an engineer with full hands and dropped at their feet.
+{ "e": "move", "s": "move", "pid": "p1", "from": [4,4], "to": [4,5], "path": [[4,5]],
   "result": "ok" | "bump" }        // bump: stays at `from` (animate a step toward path[0] and back)
 { "e": "pickup", "s": "grab", "pid": "p1", "at": [5,1], "bomb": 7, "kind": "keg",
   "result": "ok" | "contested" | "hands_full" | "gone" }
@@ -638,14 +651,17 @@ All plans were validated against the board at the start of the round (the
 board changes only in resolve), so resolve needs only these rules:
 
 1. **Throws.** Every thrower lets go at once. Then, in player order, each bomb
-   is **caught** by the engineer standing on the target cell (positions at
-   the start of the round) if that engineer's hands are empty at that moment,
-   which includes an engineer who threw their own bomb this stage; otherwise it
-   **lands**: on the target cell if it is `floor` without a bomb, else on the
-   nearest such cell by Manhattan distance (ties: smaller `y`, then smaller
-   `x`; any height). A catcher whose plan was a move then makes that move,
-   carrying the bomb. A thrown bomb landing where an engineer will walk to just
-   lies there.
+   flies along its throw line (see "Grid") and stops at the **first engineer
+   on the line** (positions at the start of the round, before any move). If
+   that engineer's hands are empty at that moment (which includes an engineer
+   who threw their own bomb this stage, and excludes one who already caught a
+   bomb this stage) they **catch** it; otherwise it is **blocked** and drops at
+   their feet. With nobody on the line it **lands** on the line's landing
+   cell. A bomb that comes down (blocked or landed) rests on that cell if it is
+   `floor` without a bomb, else on the nearest such cell by Manhattan distance
+   (ties: smaller `y`, then smaller `x`; any height). A catcher whose plan was
+   a move then makes that move, carrying the bomb. Someone walking into the
+   line this round does not stop it.
 2. **Moves.** A move fails (`bump`, engineer stays) if two or more engineers
    planned the same destination (all of them bump), if two engineers swap
    cells, or if the destination holds an engineer who is not leaving or whose
@@ -710,15 +726,15 @@ integer is expected) gets `bad_request`.
 ```jsonc
 { "t": "start" }                          // host, lobby
 { "t": "opt", "openPlans": true }         // host, lobby
-{ "t": "plan", "a": "move",   "x": 4, "y": 6 }
+{ "t": "plan", "a": "move",   "x": 4, "y": 6 }       // a neighbouring cell
 { "t": "plan", "a": "pickup", "x": 5, "y": 1 }
-{ "t": "plan", "a": "throw",  "x": 3, "y": 1 }
+{ "t": "plan", "a": "throw",  "dx": 0, "dy": -1 }    // one of (1,0) (-1,0) (0,1) (0,-1)
 { "t": "plan", "a": "load",   "cat": 0 }             // "cat" optional; "fire": true needs Quick Hands
 { "t": "plan", "a": "fire",   "cat": 0 }             // "cat" optional
 { "t": "plan", "a": "wait" }
 { "t": "plan", "a": "clear" }             // withdraw your plan (planned → false)
 { "t": "ready", "ready": true }           // break; "ready" optional, default true
-{ "t": "perk", "id": "strong_arm" }       // break
+{ "t": "perk", "id": "heavy_keg" }        // break
 { "t": "restart" }                        // host; any phase but lobby
 ```
 
@@ -732,7 +748,7 @@ change nothing):
 | `start` | `not_host` | not the host |
 | | `bad_request` | not in the lobby |
 | `opt` | `not_host` / `bad_request` | not the host / not in the lobby |
-| `plan` | `bad_request` | phase is lobby, won or lost; unknown `a`; `x`/`y` missing for move/pickup/throw; `cat` not a catapult id; `cat` omitted while next to two catapults |
+| `plan` | `bad_request` | phase is lobby, won or lost; unknown `a`; `x`/`y` missing for move/pickup; for throw: `x` or `y` present, `dx`/`dy` missing, or not a unit direction; `cat` not a catapult id; `cat` omitted while next to two catapults |
 | | `too_late` | phase is resolve or break (raced the end of the plan phase) |
 | | `bad_plan` | no engineer yet; any rule below fails (`msg` says why) |
 | `perk` | `bad_request` | not in a break; unknown id; no offer; id not in your offer |
@@ -741,13 +757,13 @@ change nothing):
 `ready` outside a break is ignored. `bad_plan` rules:
 
 - every action: `x, y` (when given) must be on the grid;
-- `move`: destination walkable, not your own cell, and reachable by a walk of
-  at most `can.move` steps (`can.moveCarry` while carrying); the stored
-  plan's `path` is the server's shortest path;
+- `move`: destination is a 4-neighbour of your cell that you can step to
+  (walkable, same height unless either cell is stairs); the stored plan's
+  `path` is `[[x, y]]`;
 - `pickup`: hands empty; a bomb lies on `(x, y)`; Manhattan distance from
   your cell ≤ `can.reach` (any height difference);
-- `throw`: carrying; `(x, y)` in the same row or column, 1 … `can.throw`
-  cells away (over anything, any height); target walkable;
+- `throw`: carrying; the throw line in that direction has a walkable cell
+  (e.g. not straight into the catapult or wall next to you);
 - `load`: carrying; you stand on a loading cell of the catapult; it is empty;
   `fire: true` only with `can.quickHands`;
 - `fire`: you stand on a loading cell of the catapult; it is loaded.
@@ -755,10 +771,21 @@ change nothing):
 ### Perks
 
 At the start of each break every connected player gets an `offer` of up to
-three distinct perks (never one at its cap; Mason only while the wall is below
-`wallHP`). Picking is optional. **Mason** is a team perk: the first pick in a
-break heals the wall (up to `wallHP`) and removes Mason from everyone else's
-offer (an offer left empty becomes `null`). Effects show up in `can` (and the
-wall in snaps). Today: Strong Arm (throw 6), Light Feet (+1 move, also when
-carrying), Long Reach (pick up from 2 cells), Quick Hands (`load` with
-`fire: true`), Mason (wall +2). Each but Mason can be taken once.
+three distinct perks (never one at its cap, never one whose team cap is
+reached; Mason only while the wall is below `wallHP`). Picking is optional,
+and an offer can be shorter than three or `null`. Most perks have a **team
+cap**: once that many engineers of the team hold it, it is offered to nobody
+else, and taking the last allowed one removes it from every other open offer
+(an offer left empty becomes `null`). The `desc` text states the cap.
+
+| id | effect | per player | team cap |
+|----|--------|-----------|----------|
+| `long_reach` | pick up from 2 cells away (`can.reach`) | once | 2 |
+| `quick_hands` | `load` may carry `fire: true` (`can.quickHands`) | once | 1 |
+| `heavy_keg` | kegs you fire deal +1 damage | once | 1 |
+| `long_stop` | stopwatches you fire freeze 1 advance longer | once | 1 |
+| `wide_shot` | grapeshot you fire deals +1 to the machine nearest the wall | once | 1 |
+| `mason` | the wall gets 2 HP back at once (up to `wallHP`) | — | 1 |
+
+Effects on firing show up in the `fire` event's `hits` (damage, frozen);
+the others in `can` and the wall in snaps.

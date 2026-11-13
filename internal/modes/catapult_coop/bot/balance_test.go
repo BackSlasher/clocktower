@@ -84,12 +84,18 @@ func TestBalance(t *testing.T) {
 		rs := RunMany(s.sc, 1000, runs)
 		wins, wallWon, wallAll, rounds := 0, 0, 0, 0
 		lossAt := make([]int, levels+1)
+		lvlR := make([]float64, levels)
+		lvlN := make([]int, levels)
 		after := make([]float64, levels)
 		cnt := make([]int, levels)
 		for _, r := range rs {
 			wallAll += r.Wall
 			rounds += r.Rounds
 			if r.Won {
+				for i, n := range r.LvlRounds {
+					lvlR[i] += float64(n)
+					lvlN[i]++
+				}
 				wins++
 				wallWon += r.Wall
 			} else {
@@ -115,6 +121,12 @@ func TestBalance(t *testing.T) {
 		for i := range after {
 			if cnt[i] > 0 {
 				fmt.Fprintf(&b, " %.1f", after[i]/float64(cnt[i]))
+			}
+		}
+		b.WriteString(" / rounds per level (won):")
+		for i := range lvlR {
+			if lvlN[i] > 0 {
+				fmt.Fprintf(&b, " %.1f", lvlR[i]/float64(lvlN[i]))
 			}
 		}
 		ww := 0.0

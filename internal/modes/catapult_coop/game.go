@@ -134,6 +134,7 @@ func (g *Game) Running() bool {
 func (g *Game) HasPlayer(id string) bool { return g.player(id) != nil }
 func (g *Game) Level() int               { return g.level }
 func (g *Game) Round() int               { return g.round }
+func (g *Game) Rounds() int              { return g.rounds } // rounds resolved this game
 func (g *Game) Wall() int                { return g.wall }
 func (g *Game) Time() float64            { return g.time }
 func (g *Game) End() *End                { return g.end }
@@ -482,21 +483,23 @@ func (g *Game) validate(p *player, c Cmd) (*Plan, error) {
 		}
 		return &Plan{A: APickup, X: IntP(x), Y: IntP(y)}, nil
 	case AThrow:
-		x, y, err := xy()
-		if err != nil {
-			return nil, err
+		if c.X != nil || c.Y != nil {
+			return nil, badReq("Throws take a direction (dx, dy), not a cell")
+		}
+		if c.DX == nil || c.DY == nil {
+			return nil, badReq("Missing direction")
+		}
+		dx, dy := *c.DX, *c.DY
+		if abs(dx)+abs(dy) != 1 {
+			return nil, badReq("Direction must be one of (1,0), (-1,0), (0,1), (0,-1)")
 		}
 		if p.carry == nil {
 			return nil, badPlan("You are not carrying a bomb")
 		}
-		d := abs(x-p.x) + abs(y-p.y)
-		if (x != p.x && y != p.y) || d < 1 || d > can.Throw {
-			return nil, badPlan(fmt.Sprintf("Throw in a straight line, 1–%d cells", can.Throw))
+		if _, ok := l.Landing(l.ThrowLine(p.x, p.y, dx, dy, can.Throw)); !ok {
+			return nil, badPlan("Nothing to throw to that way")
 		}
-		if !l.Walkable(x, y) {
-			return nil, badPlan("Throw to a cell someone can stand on")
-		}
-		return &Plan{A: AThrow, X: IntP(x), Y: IntP(y)}, nil
+		return &Plan{A: AThrow, DX: IntP(dx), DY: IntP(dy)}, nil
 	case ALoad, AFire:
 		cat, err := g.pickCatapult(p, c.Cat)
 		if err != nil {

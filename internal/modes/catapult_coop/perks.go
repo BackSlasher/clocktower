@@ -11,30 +11,37 @@ import (
 
 // PerkDef describes a perk. Only Name, Desc and Team go to clients.
 type PerkDef struct {
-	Name   string `json:"name"`
-	Desc   string `json:"desc"`
-	Team   bool   `json:"team,omitempty"` // the effect is for the whole team (applied at once)
-	Max    int    `json:"-"`              // stack cap (0 = none)
-	Amount int    `json:"-"`
+	Name string `json:"name"`
+	Desc string `json:"desc"`
+	Team bool   `json:"team,omitempty"` // the effect is for the whole team (applied at once)
+	Max  int    `json:"-"`              // stack cap (0 = none)
+	// TeamMax caps how many engineers of the team may hold it (0 = no cap).
+	// Once the cap is reached it is offered to nobody else and leaves the
+	// other open offers.
+	TeamMax int `json:"-"`
+	Amount  int `json:"-"`
 }
 
 const perkOffer = 3
 
-var perkOrder = []string{"strong_arm", "light_feet", "long_reach", "quick_hands", "mason"}
+var perkOrder = []string{"long_reach", "quick_hands", "heavy_keg", "long_stop", "wide_shot", "mason"}
 
 var perkDefs = func() map[string]*PerkDef {
 	m := map[string]*PerkDef{
-		"strong_arm":  {Name: "Strong Arm", Max: 1, Amount: 6},
-		"light_feet":  {Name: "Light Feet", Max: 1, Amount: 1},
-		"long_reach":  {Name: "Long Reach", Max: 1, Amount: 2},
-		"quick_hands": {Name: "Quick Hands", Max: 1},
-		"mason":       {Name: "Mason", Team: true, Amount: 1},
+		"long_reach":  {Name: "Long Reach", Max: 1, Amount: 2, TeamMax: 2},
+		"quick_hands": {Name: "Quick Hands", Max: 1, TeamMax: 1},
+		"heavy_keg":   {Name: "Heavy Keg", Max: 1, Amount: 1, TeamMax: 1},
+		"long_stop":   {Name: "Long Stop", Max: 1, Amount: 1, TeamMax: 1},
+		"wide_shot":   {Name: "Wide Shot", Max: 1, Amount: 1, TeamMax: 1},
+		"mason":       {Name: "Mason", Team: true, Amount: 2, TeamMax: 1},
 	}
-	m["strong_arm"].Desc = fmt.Sprintf("You throw up to %d cells instead of 4.", m["strong_arm"].Amount)
-	m["light_feet"].Desc = fmt.Sprintf("You move %d cell further, carrying or not.", m["light_feet"].Amount)
-	m["long_reach"].Desc = fmt.Sprintf("You pick up bombs from up to %d cells away.", m["long_reach"].Amount)
-	m["quick_hands"].Desc = "Load a catapult and fire it in the same action."
-	m["mason"].Desc = fmt.Sprintf("The wall gets %d hit points back (up to its maximum). One Mason per break for the whole team.", m["mason"].Amount)
+	m["long_reach"].Desc = fmt.Sprintf("You pick up bombs from up to %d cells away. At most %d engineers in the team can have it.", m["long_reach"].Amount, m["long_reach"].TeamMax)
+	one := " Only one engineer in the team can have it."
+	m["quick_hands"].Desc = "Load a catapult and fire it in the same action." + one
+	m["heavy_keg"].Desc = fmt.Sprintf("Powder kegs you fire deal %d more damage.", m["heavy_keg"].Amount) + one
+	m["long_stop"].Desc = fmt.Sprintf("Stopwatches you fire make machines skip %d more move.", m["long_stop"].Amount) + one
+	m["wide_shot"].Desc = fmt.Sprintf("Grapeshot you fire deals %d more damage to the machine nearest the wall.", m["wide_shot"].Amount) + one
+	m["mason"].Desc = fmt.Sprintf("The wall gets %d hit points back (up to its maximum). Only one engineer in the team can take it.", m["mason"].Amount)
 	return m
 }()
 
@@ -52,13 +59,6 @@ type Abilities struct {
 
 func abilities(p *player) Abilities {
 	a := Abilities{Move: Defs.Move, MoveCarry: Defs.MoveCarry, Throw: Defs.ThrowRange, Reach: Defs.Reach}
-	if has(p, "light_feet") {
-		a.Move += Defs.Perks["light_feet"].Amount
-		a.MoveCarry += Defs.Perks["light_feet"].Amount
-	}
-	if has(p, "strong_arm") {
-		a.Throw = max(a.Throw, Defs.Perks["strong_arm"].Amount)
-	}
 	if has(p, "long_reach") {
 		a.Reach = max(a.Reach, Defs.Perks["long_reach"].Amount)
 	}
@@ -72,6 +72,9 @@ func (g *Game) offerable(p *player, id string) bool {
 		return false
 	}
 	if id == "mason" && g.wall >= Defs.WallHP {
+		return false
+	}
+	if d.TeamMax > 0 && g.holders(id) >= d.TeamMax {
 		return false
 	}
 	return true
@@ -122,11 +125,13 @@ func (g *Game) Perk(pid, id string) error {
 	p.offer = nil
 	p.perks[id]++
 	if id == "mason" {
-		// A team perk: one pick per break. It leaves everyone else's offer
-		// (they keep the other choices).
 		g.wall = min(Defs.WallHP, g.wall+Defs.Perks["mason"].Amount)
+	}
+	if d := Defs.Perks[id]; d.TeamMax > 0 && g.holders(id) >= d.TeamMax {
+		// The team cap is reached: it leaves everyone else's offer (they
+		// keep the other choices).
 		for _, o := range g.players {
-			if i := slices.Index(o.offer, "mason"); i >= 0 {
+			if i := slices.Index(o.offer, id); i >= 0 {
 				if o.offer = slices.Delete(o.offer, i, i+1); len(o.offer) == 0 {
 					o.offer = nil
 				}
@@ -136,4 +141,15 @@ func (g *Game) Perk(pid, id string) error {
 	g.emit(EvPerk{E: "perk", PID: pid, ID: id, Wall: g.wall})
 	g.slowVer++
 	return nil
+}
+
+// holders counts the players who hold perk id.
+func (g *Game) holders(id string) int {
+	n := 0
+	for _, p := range g.players {
+		if has(p, id) {
+			n++
+		}
+	}
+	return n
 }

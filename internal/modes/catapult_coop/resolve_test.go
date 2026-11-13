@@ -7,64 +7,127 @@ import (
 
 // --- 1. throws ------------------------------------------------------------------
 
-func TestThrowCaughtAndLanded(t *testing.T) {
-	g, ids := board(t, 3)
-	a, b, c := ids[0], ids[1], ids[2]
-	put(g, a, 3, 5)
-	put(g, b, 3, 2) // free hands: catches
-	put(g, c, 6, 5) // carrying, not throwing: the bomb lands at their feet
+func throwCmd(dx, dy int) Cmd { return Cmd{T: "plan", A: AThrow, DX: IntP(dx), DY: IntP(dy)} }
+
+func TestThrowStopsAtFirstEngineer(t *testing.T) {
+	g, ids := board(t, 4)
+	a, b, c, d := ids[0], ids[1], ids[2], ids[3]
+	put(g, a, 3, 7)
+	put(g, b, 3, 5) // free hands: first on the line, catches
+	put(g, c, 3, 3) // never reached
+	put(g, d, 6, 5)
 	ba := give(g, a, "keg")
-	give(g, c, "keg")
-	mustPlan(t, g, a, cmd(AThrow, 3, 2))
+	mustPlan(t, g, a, throwCmd(0, -1))
 	ev := evs[EvThrow](run(g))
-	if len(ev) != 1 || ev[0].Result != "caught" || ev[0].By != b || ev[0].Bomb != ba.ID {
+	if len(ev) != 1 || ev[0].Result != "caught" || ev[0].By != b || ev[0].To != [2]int{3, 5} || ev[0].Dir != [2]int{0, -1} {
 		t.Fatalf("throw: %+v", ev)
 	}
-	if g.player(b).carry != ba || g.player(a).carry != nil {
-		t.Fatal("bomb not in catcher's hands")
+	if g.player(b).carry != ba || g.player(a).carry != nil || g.player(c).carry != nil {
+		t.Fatal("wrong catcher")
 	}
-
+	// A carrier (not throwing) first on the line blocks it: the bomb drops at
+	// their feet.
 	g.startPlan(2)
-	mustPlan(t, g, b, cmd(AThrow, 6, 2))
-	mustPlan(t, g, c, cmd(AWait, 0, 0))
-	g.player(c).x, g.player(c).y = 6, 2
+	put(g, d, 6, 7)
+	give(g, d, "grapeshot")
+	put(g, a, 6, 5) // first on d's line, hands full
+	g.player(a).carry = &BombRef{ID: 900, Kind: "keg"}
+	mustPlan(t, g, d, throwCmd(0, -1))
 	ev = evs[EvThrow](run(g))
-	if ev[0].Result != "landed" || ev[0].At != [2]int{6, 2} || g.bombAt(6, 2) == nil {
-		t.Fatalf("throw at a carrier: %+v", ev)
+	if ev[0].Result != "blocked" || ev[0].By != a || ev[0].To != [2]int{6, 5} || ev[0].At != [2]int{6, 5} || g.bombAt(6, 5) == nil {
+		t.Fatalf("blocked: %+v", ev)
+	}
+}
+
+func TestThrowLandsAtEndOfLine(t *testing.T) {
+	g, ids := board(t, 4)
+	for i, c := range [][2]int{{3, 7}, {5, 4}, {6, 6}, {5, 5}} {
+		put(g, ids[i], c[0], c[1])
+		give(g, ids[i], "keg")
+	}
+	g.lay.Cells[6][7] = Cell{Kind: KBlock}  // a crate on row 6
+	mustPlan(t, g, ids[0], throwCmd(0, -1)) // up column 3: stops before the catapult (3,0) → (3,1)
+	mustPlan(t, g, ids[1], throwCmd(-1, 0)) // left on row 4: over the height step, stops at the wall → (1,4)
+	mustPlan(t, g, ids[2], throwCmd(1, 0))  // right on row 6: over the crate (7,6) → (8,6)
+	mustPlan(t, g, ids[3], throwCmd(0, 1))  // down column 5 to the grid edge → (5,8)
+	ev := evs[EvThrow](run(g))
+	want := [][2]int{{3, 1}, {1, 4}, {8, 6}, {5, 8}}
+	for i, e := range ev {
+		if e.Result != "landed" || e.To != want[i] {
+			t.Fatalf("throw %d: %+v want %v", i, e, want[i])
+		}
+	}
+}
+
+func TestThrowValidation(t *testing.T) {
+	g, ids := board(t, 1)
+	a := ids[0]
+	p := g.player(a)
+	put(g, a, 4, 5)
+	_, err := g.validate(p, throwCmd(0, -1))
+	wantCode(t, err, "bad_plan") // not carrying
+	give(g, a, "keg")
+	if _, err := g.validate(p, throwCmd(0, -1)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = g.validate(p, throwCmd(1, 1))
+	wantCode(t, err, "bad_request")
+	_, err = g.validate(p, throwCmd(2, 0))
+	wantCode(t, err, "bad_request")
+	_, err = g.validate(p, Cmd{T: "plan", A: AThrow})
+	wantCode(t, err, "bad_request")
+	_, err = g.validate(p, Cmd{T: "plan", A: AThrow, X: IntP(4), Y: IntP(1)}) // cells are not accepted
+	wantCode(t, err, "bad_request")
+	put(g, a, 3, 1) // the catapult is right above: nothing that way
+	_, err = g.validate(p, throwCmd(0, -1))
+	wantCode(t, err, "bad_plan")
+	put(g, a, 6, 6) // only crates that way
+	g.lay.Cells[6][7] = Cell{Kind: KBlock}
+	g.lay.Cells[6][8] = Cell{Kind: KBlock}
+	_, err = g.validate(p, throwCmd(1, 0))
+	wantCode(t, err, "bad_plan")
+	pl, err := g.validate(p, throwCmd(-1, 0))
+	if err != nil || *pl.DX != -1 || *pl.DY != 0 || pl.X != nil {
+		t.Fatalf("%v %+v", err, pl)
 	}
 }
 
 func TestThrowSettlesOnNearestFreeFloor(t *testing.T) {
-	g, ids := board(t, 2)
-	a, b := ids[0], ids[1]
+	g, ids := board(t, 3)
+	a, b, c := ids[0], ids[1], ids[2]
 	put(g, a, 5, 5)
-	put(g, b, 5, 8)
+	put(g, b, 8, 5)
+	put(g, c, 2, 6)
 	give(g, a, "keg")
 	give(g, b, "keg")
-	ground(g, 5, 3, "grapeshot")
-	mustPlan(t, g, a, cmd(AThrow, 5, 3)) // a bomb lies there already
-	mustPlan(t, g, b, cmd(AThrow, 1, 8)) // stairs: not floor
+	give(g, c, "keg")
+	ground(g, 5, 8, "grapeshot")
+	mustPlan(t, g, a, throwCmd(0, 1))  // lands at (5,8), where a bomb lies
+	mustPlan(t, g, b, throwCmd(0, -1)) // ends on the stairs (8,1): not floor
+	mustPlan(t, g, c, throwCmd(1, 0))  // nobody on row 6 → (8,6)
 	ev := evs[EvThrow](run(g))
-	if ev[0].Result != "landed" || ev[0].To != [2]int{5, 3} || ev[0].At != [2]int{5, 2} {
+	if ev[0].To != [2]int{5, 8} || ev[0].At != [2]int{5, 7} {
 		t.Fatalf("onto a bomb: %+v", ev[0])
 	}
-	// Nearest floor to the stairs (1,8): (1,7) rampart is distance 1 and comes
-	// first (smaller y).
-	if ev[1].At != [2]int{1, 7} {
+	// Nearest floor to (8,1): (7,1) on the rampart (smaller y first).
+	if ev[1].To != [2]int{8, 1} || ev[1].At != [2]int{7, 1} {
 		t.Fatalf("onto stairs: %+v", ev[1])
+	}
+	if ev[2].At != [2]int{8, 6} {
+		t.Fatalf("%+v", ev[2])
 	}
 }
 
 func TestThrowChainSameRound(t *testing.T) {
-	// A throws to B while B throws to C: B's hands are free once B lets go.
+	// A throws to B while B throws on to C: B's hands are free once B lets go.
 	g, ids := board(t, 3)
 	a, b, c := ids[0], ids[1], ids[2]
 	put(g, a, 3, 7)
 	put(g, b, 3, 4)
 	put(g, c, 3, 1)
 	ba, bb := give(g, a, "keg"), give(g, b, "grapeshot")
-	mustPlan(t, g, a, cmd(AThrow, 3, 4))
-	mustPlan(t, g, b, cmd(AThrow, 3, 1))
+	mustPlan(t, g, a, throwCmd(0, -1))
+	mustPlan(t, g, b, throwCmd(0, -1))
 	run(g)
 	if g.player(b).carry != ba || g.player(c).carry != bb {
 		t.Fatalf("relay failed: b=%v c=%v", g.player(b).carry, g.player(c).carry)
@@ -72,6 +135,8 @@ func TestThrowChainSameRound(t *testing.T) {
 }
 
 func TestTwoThrowsOneCatcher(t *testing.T) {
+	// a and b throw at each other with c between them: c catches a's bomb
+	// (player order), then blocks b's, which drops at c's feet.
 	g, ids := board(t, 3)
 	a, b, c := ids[0], ids[1], ids[2]
 	put(g, a, 2, 5)
@@ -79,14 +144,11 @@ func TestTwoThrowsOneCatcher(t *testing.T) {
 	put(g, c, 5, 5)
 	ba := give(g, a, "keg")
 	give(g, b, "keg")
-	mustPlan(t, g, a, cmd(AThrow, 5, 5))
-	mustPlan(t, g, b, cmd(AThrow, 5, 5))
+	mustPlan(t, g, a, throwCmd(1, 0))
+	mustPlan(t, g, b, throwCmd(-1, 0))
 	ev := evs[EvThrow](run(g))
-	if ev[0].Result != "caught" || ev[1].Result != "landed" || g.player(c).carry != ba {
+	if ev[0].Result != "caught" || ev[1].Result != "blocked" || ev[1].By != c || g.player(c).carry != ba || ev[1].At != [2]int{5, 5} {
 		t.Fatalf("%+v", ev)
-	}
-	if ev[1].At != [2]int{5, 5} {
-		t.Fatalf("second bomb should land at the catcher's feet: %+v", ev[1])
 	}
 }
 
@@ -98,23 +160,23 @@ func TestThrowThenMove(t *testing.T) {
 	put(g, a, 3, 6)
 	put(g, b, 3, 3)
 	ba := give(g, a, "keg")
-	mustPlan(t, g, a, cmd(AThrow, 3, 3))
-	mustPlan(t, g, b, cmd(AMove, 5, 3))
+	mustPlan(t, g, a, throwCmd(0, -1))
+	mustPlan(t, g, b, cmd(AMove, 4, 3))
 	run(g)
-	if g.player(b).carry != ba || at(g, b) != [2]int{5, 3} {
+	if g.player(b).carry != ba || at(g, b) != [2]int{4, 3} {
 		t.Fatalf("catch-and-walk: carry=%v at=%v", g.player(b).carry, at(g, b))
 	}
-	// "You walk there and I throw to where you will be" does not: the bomb
-	// lands, and B ends up standing on it.
+	// "You walk into my line and I throw" does not: positions are taken at
+	// throw time, so the bomb flies on to the end of the row.
 	g.startPlan(2)
 	put(g, a, 3, 6)
 	give(g, a, "keg")
 	g.player(b).carry = nil
-	put(g, b, 5, 6)
-	mustPlan(t, g, a, cmd(AThrow, 6, 6))
-	mustPlan(t, g, b, cmd(AMove, 6, 6))
+	put(g, b, 5, 5)
+	mustPlan(t, g, a, throwCmd(1, 0))
+	mustPlan(t, g, b, cmd(AMove, 5, 6))
 	ev := evs[EvThrow](run(g))
-	if ev[0].Result != "landed" || g.player(b).carry != nil || at(g, b) != [2]int{6, 6} || g.bombAt(6, 6) == nil {
+	if ev[0].Result != "landed" || ev[0].At != [2]int{8, 6} || g.player(b).carry != nil || at(g, b) != [2]int{5, 6} {
 		t.Fatalf("throw ahead: %+v carry=%v", ev, g.player(b).carry)
 	}
 }
@@ -173,9 +235,9 @@ func TestMoveChainIntoVacatedCell(t *testing.T) {
 	put(g, c, 4, 4)
 	mustPlan(t, g, a, cmd(AMove, 3, 4))
 	mustPlan(t, g, b, cmd(AMove, 4, 4))
-	mustPlan(t, g, c, cmd(AMove, 6, 4))
+	mustPlan(t, g, c, cmd(AMove, 5, 4))
 	r := moveResults(run(g))
-	if r[a] != "ok" || r[b] != "ok" || r[c] != "ok" || at(g, a) != [2]int{3, 4} || at(g, c) != [2]int{6, 4} {
+	if r[a] != "ok" || r[b] != "ok" || r[c] != "ok" || at(g, a) != [2]int{3, 4} || at(g, c) != [2]int{5, 4} {
 		t.Fatalf("%v", r)
 	}
 }
@@ -185,12 +247,12 @@ func TestMoveChainBehindABumpBumps(t *testing.T) {
 	a, b, c, d := ids[0], ids[1], ids[2], ids[3]
 	put(g, a, 2, 4)
 	put(g, b, 3, 4)
-	put(g, c, 5, 3)
-	put(g, d, 5, 5)
+	put(g, c, 4, 3)
+	put(g, d, 4, 5)
 	mustPlan(t, g, a, cmd(AMove, 3, 4)) // into b's cell
-	mustPlan(t, g, b, cmd(AMove, 5, 4)) // b and c and d all want (5,4)
-	mustPlan(t, g, c, cmd(AMove, 5, 4))
-	mustPlan(t, g, d, cmd(AMove, 5, 4))
+	mustPlan(t, g, b, cmd(AMove, 4, 4)) // b and c and d all want (4,4)
+	mustPlan(t, g, c, cmd(AMove, 4, 4))
+	mustPlan(t, g, d, cmd(AMove, 4, 4))
 	r := moveResults(run(g))
 	for _, p := range ids {
 		if r[p] != "bump" {
@@ -199,20 +261,22 @@ func TestMoveChainBehindABumpBumps(t *testing.T) {
 	}
 }
 
-func TestMoveRotationOfThreeSucceeds(t *testing.T) {
+func TestMoveRotationOfFourSucceeds(t *testing.T) {
+	// Four engineers walking round a square: no shared destination, no swap.
 	g, ids := board(t, 4)
-	a, b, c := ids[0], ids[1], ids[2]
-	put(g, a, 3, 3)
-	put(g, b, 4, 3)
-	put(g, c, 4, 4)
-	put(g, ids[3], 7, 7)
-	// a → b's cell, b → c's cell, c → (3,4) → wait: a 3-cycle needs c → a's cell.
-	mustPlan(t, g, a, cmd(AMove, 4, 3))
-	mustPlan(t, g, b, cmd(AMove, 4, 4))
-	mustPlan(t, g, c, cmd(AMove, 3, 3))
+	cells := [][2]int{{3, 3}, {4, 3}, {4, 4}, {3, 4}}
+	for i, c := range cells {
+		put(g, ids[i], c[0], c[1])
+	}
+	for i := range ids {
+		n := cells[(i+1)%4]
+		mustPlan(t, g, ids[i], cmd(AMove, n[0], n[1]))
+	}
 	r := moveResults(run(g))
-	if r[a] != "ok" || r[b] != "ok" || r[c] != "ok" || at(g, c) != [2]int{3, 3} {
-		t.Fatalf("%v", r)
+	for i, p := range ids {
+		if r[p] != "ok" || at(g, p) != cells[(i+1)%4] {
+			t.Fatalf("%v", r)
+		}
 	}
 }
 
@@ -221,31 +285,32 @@ func TestMoveValidation(t *testing.T) {
 	a := ids[0]
 	put(g, a, 3, 4)
 	p := g.player(a)
-	_, err := g.validate(p, cmd(AMove, 3, 7))
-	wantCode(t, err, "bad_plan") // 3 cells
-	if _, err := g.validate(p, cmd(AMove, 4, 5)); err != nil {
+	_, err := g.validate(p, cmd(AMove, 3, 6))
+	wantCode(t, err, "bad_plan") // 2 cells
+	_, err = g.validate(p, cmd(AMove, 4, 5))
+	wantCode(t, err, "bad_plan") // diagonal
+	if _, err := g.validate(p, cmd(AMove, 3, 5)); err != nil {
 		t.Fatal(err)
 	}
 	give(g, a, "keg")
-	_, err = g.validate(p, cmd(AMove, 3, 6))
-	wantCode(t, err, "bad_plan") // carrying: 1 cell
-	if _, err := g.validate(p, cmd(AMove, 3, 5)); err != nil {
+	if _, err := g.validate(p, cmd(AMove, 3, 5)); err != nil { // carrying: still 1
 		t.Fatal(err)
 	}
 	p.carry = nil
 	put(g, a, 3, 2)
 	_, err = g.validate(p, cmd(AMove, 3, 1)) // up the wall without stairs
 	wantCode(t, err, "bad_plan")
-	_, err = g.validate(p, cmd(AMove, 3, 0)) // a wall cell
-	wantCode(t, err, "bad_plan")
 	_, err = g.validate(p, cmd(AMove, 3, 2)) // own cell
 	wantCode(t, err, "bad_plan")
-	put(g, a, 8, 3)
-	pl, err := g.validate(p, cmd(AMove, 8, 1)) // up the stairs
-	if err != nil || len(pl.Path) != 2 {
+	put(g, a, 8, 2)
+	pl, err := g.validate(p, cmd(AMove, 8, 1)) // onto the stairs
+	if err != nil || len(pl.Path) != 1 {
 		t.Fatalf("%v %+v", err, pl)
 	}
-	// Other engineers do not block pathing (only the destination matters at resolve).
+	put(g, a, 8, 1)
+	if _, err := g.validate(p, cmd(AMove, 7, 1)); err != nil { // and off at the top
+		t.Fatal(err)
+	}
 }
 
 // --- 3. pick-ups and loads ------------------------------------------------------------
@@ -266,7 +331,7 @@ func TestPickupContestedAndHandsFull(t *testing.T) {
 	g.startPlan(2)
 	put(g, c, 4, 7)
 	give(g, c, "grapeshot")
-	mustPlan(t, g, c, cmd(AThrow, 4, 4))
+	mustPlan(t, g, c, throwCmd(0, -1)) // up column 4: a at (4,4) is first on the line
 	mustPlan(t, g, a, cmd(APickup, 5, 4))
 	ev = evs[EvPickup](run(g))
 	if ev[0].Result != "hands_full" || g.player(a).carry.Kind != "grapeshot" {
@@ -334,20 +399,6 @@ func TestLoadFireValidation(t *testing.T) {
 	if _, err := g.validate(p, catCmd(AFire, 0)); err != nil {
 		t.Fatal(err)
 	}
-	// Throws: straight lines only, within range, onto walkable cells.
-	put(g, a, 4, 5)
-	_, err = g.validate(p, cmd(AThrow, 5, 6))
-	wantCode(t, err, "bad_plan")
-	_, err = g.validate(p, cmd(AThrow, 4, 0))
-	wantCode(t, err, "bad_plan") // wall cell, and 5 away
-	_, err = g.validate(p, cmd(AThrow, 4, 1))
-	if err != nil {
-		t.Fatal(err) // 4 cells, over the height difference
-	}
-	_, err = g.validate(p, Cmd{T: "plan", A: AThrow})
-	wantCode(t, err, "bad_request")
-	_, err = g.validate(p, Cmd{T: "plan", A: "dance"})
-	wantCode(t, err, "bad_request")
 }
 
 // --- 4. fires ----------------------------------------------------------------------
@@ -500,8 +551,8 @@ func TestResolveEventOrder(t *testing.T) {
 	give(g, ids[0], "keg")
 	addMachine(g, "scrap", 2, 3)
 	g.cats[2] = &BombRef{ID: 77, Kind: "keg"}
-	mustPlan(t, g, ids[0], cmd(AThrow, 3, 2))
-	mustPlan(t, g, ids[1], cmd(AMove, 6, 4))
+	mustPlan(t, g, ids[0], throwCmd(0, -1))
+	mustPlan(t, g, ids[1], cmd(AMove, 6, 5))
 	mustPlan(t, g, ids[2], catCmd(AFire, 2))
 	ev := run(g)
 	var names []string

@@ -3,6 +3,7 @@ package catapultcoop
 import (
 	"encoding/json"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,7 +61,7 @@ func TestPlanPhaseEndsWhenAllPlannedOrOnTimeout(t *testing.T) {
 		t.Fatal("ended early or planned flag missing")
 	}
 	// Replace, then clear, then plan again.
-	if err := g.Apply(ids[0], cmd(AMove, g.lay.Spawns[0][0]+1, g.lay.Spawns[0][1]-1)); err != nil {
+	if err := g.Apply(ids[0], cmd(AMove, g.lay.Spawns[0][0]-1, g.lay.Spawns[0][1])); err != nil {
 		t.Fatal(err)
 	}
 	if err := g.Apply(ids[0], Cmd{T: "plan", A: AClear}); err != nil || g.RoomState().Players[0].Planned {
@@ -253,29 +254,14 @@ func TestPerks(t *testing.T) {
 	a := ids[0]
 	p := g.player(a)
 	put(g, a, 3, 7)
-	give(g, a, "keg")
-	_, err := g.validate(p, cmd(AThrow, 3, 1))
-	wantCode(t, err, "bad_plan") // 6 cells
-	p.perks["strong_arm"] = 1
-	if _, err := g.validate(p, cmd(AThrow, 3, 1)); err != nil {
-		t.Fatal(err)
-	}
-	p.perks["light_feet"] = 1
-	if _, err := g.validate(p, cmd(AMove, 3, 5)); err != nil { // carrying: 2
-		t.Fatal(err)
-	}
-	p.carry = nil
-	if _, err := g.validate(p, cmd(AMove, 3, 4)); err != nil { // free: 3
-		t.Fatal(err)
-	}
 	ground(g, 5, 7, "keg")
-	_, err = g.validate(p, cmd(APickup, 5, 7))
+	_, err := g.validate(p, cmd(APickup, 5, 7))
 	wantCode(t, err, "bad_plan")
 	p.perks["long_reach"] = 1
 	if _, err := g.validate(p, cmd(APickup, 5, 7)); err != nil {
 		t.Fatal(err)
 	}
-	if c := g.RoomState().Players[0].Can; c.Throw != 6 || c.Move != 3 || c.MoveCarry != 2 || c.Reach != 2 || c.QuickHands {
+	if c := g.RoomState().Players[0].Can; c.Throw != Defs.ThrowRange || c.Move != 1 || c.MoveCarry != 1 || c.Reach != 2 || c.QuickHands {
 		t.Fatalf("abilities %+v", c)
 	}
 
@@ -283,9 +269,9 @@ func TestPerks(t *testing.T) {
 	wantCode(t, g.Perk(a, "mason"), "bad_request")
 	g.phase = PhaseBreak
 	g.wall = 5
-	p.offer = []string{"mason", "quick_hands", "light_feet"}
+	p.offer = []string{"mason", "quick_hands", "heavy_keg"}
 	wantCode(t, g.Perk(a, "nope"), "bad_request")
-	wantCode(t, g.Perk(a, "strong_arm"), "bad_request")
+	wantCode(t, g.Perk(a, "strong_arm"), "bad_request") // gone
 	if err := g.Perk(a, "mason"); err != nil || g.wall != 5+Defs.Perks["mason"].Amount || p.offer != nil {
 		t.Fatalf("mason: %v wall %d", err, g.wall)
 	}
@@ -293,23 +279,76 @@ func TestPerks(t *testing.T) {
 	// One Mason per break: taking it removes it from the others' offers.
 	g2, ids2 := started(t, 2)
 	g2.phase, g2.wall = PhaseBreak, 3
-	g2.player(ids2[0]).offer = []string{"mason", "light_feet"}
-	g2.player(ids2[1]).offer = []string{"strong_arm", "mason"}
+	g2.player(ids2[0]).offer = []string{"mason", "heavy_keg"}
+	g2.player(ids2[1]).offer = []string{"long_stop", "mason"}
 	if err := g2.Perk(ids2[0], "mason"); err != nil || g2.wall != 3+Defs.Perks["mason"].Amount {
 		t.Fatal(err)
 	}
-	if o := g2.player(ids2[1]).offer; len(o) != 1 || o[0] != "strong_arm" {
+	if o := g2.player(ids2[1]).offer; len(o) != 1 || o[0] != "long_stop" {
 		t.Fatalf("other offer %v", o)
+	}
+	// Quick Hands: one holder per team. Taking it removes it from the other
+	// offers, and it is never offered again.
+	g3, ids3 := started(t, 2)
+	g3.phase = PhaseBreak
+	g3.player(ids3[0]).offer = []string{"quick_hands", "heavy_keg"}
+	g3.player(ids3[1]).offer = []string{"quick_hands"}
+	if err := g3.Perk(ids3[0], "quick_hands"); err != nil {
+		t.Fatal(err)
+	}
+	if o := g3.player(ids3[1]).offer; o != nil {
+		t.Fatalf("other offer %v", o)
+	}
+	for i := 0; i < 30; i++ {
+		g3.makeOffers()
+		for _, pl := range g3.players {
+			if slices.Contains(pl.offer, "quick_hands") {
+				t.Fatal("quick_hands offered twice in a team")
+			}
+		}
 	}
 	// Maxed perks and Mason at full wall are never offered.
 	g.wall = Defs.WallHP
 	for i := 0; i < 20; i++ {
 		g.makeOffers()
 		for _, id := range p.offer {
-			if id == "mason" || id == "strong_arm" || id == "light_feet" || id == "long_reach" {
+			if id == "mason" || id == "long_reach" {
 				t.Fatalf("offered %s", id)
 			}
 		}
+	}
+}
+
+// Heavy Keg, Long Stop and Wide Shot change what the firer's bombs do.
+func TestFiringPerks(t *testing.T) {
+	g, ids := board(t, 1)
+	a := ids[0]
+	p := g.player(a)
+	put(g, a, 1, 3) // loading cell of catapult 2
+	fire := func(kind string) []Hit {
+		g.cats[2] = &BombRef{ID: 1, Kind: kind}
+		g.startPlan(g.round + 1)
+		mustPlan(t, g, a, catCmd(AFire, 2))
+		return evs[EvFire](run(g))[0].Hits
+	}
+	g.machines = nil
+	addMachine(g, "brute", 2, 1)
+	p.perks["heavy_keg"] = 1
+	if h := fire("keg"); h[0].Dmg != Defs.Bombs["keg"].Dmg+1 {
+		t.Fatalf("heavy keg %+v", h)
+	}
+	g.machines = nil
+	addMachine(g, "brute", 2, 2)
+	p.perks["long_stop"] = 1
+	if h := fire("stopwatch"); h[0].Frozen != Defs.Bombs["stopwatch"].Freeze+1 {
+		t.Fatalf("long stop %+v", h)
+	}
+	g.machines = nil
+	near, far := addMachine(g, "brute", 2, 3), addMachine(g, "brute", 2, 5)
+	p.perks["wide_shot"] = 1
+	h := fire("grapeshot")
+	if len(h) != 2 || near.max-near.hp != 2 || far.max-far.hp != 1 {
+		t.Fatalf("wide shot %+v", h)
 	}
 }
 
@@ -476,5 +515,21 @@ func TestDeterministic(t *testing.T) {
 	}
 	if play() != play() {
 		t.Fatal("not deterministic")
+	}
+}
+
+// With open plans a throw shows its direction (dx, dy; 0 is not omitted).
+func TestOpenPlansThrowDirection(t *testing.T) {
+	g, ids := board(t, 2) // the second player has not planned, so the phase stays open
+	put(g, ids[1], 7, 7)
+	g.openPlans = true
+	put(g, ids[0], 4, 5)
+	give(g, ids[0], "keg")
+	if err := g.Apply(ids[0], Cmd{T: "plan", A: AThrow, DX: IntP(0), DY: IntP(-1)}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(g.RoomState().Players[0].Plan)
+	if string(b) != `{"a":"throw","dx":0,"dy":-1}` {
+		t.Fatalf("plan %s", b)
 	}
 }

@@ -47,8 +47,10 @@ const (
 type Cmd struct {
 	T         string `json:"t"`
 	A         string `json:"a,omitempty"`    // plan: action
-	X         *int   `json:"x,omitempty"`    // plan: target cell
+	X         *int   `json:"x,omitempty"`    // plan: target cell (move, pickup)
 	Y         *int   `json:"y,omitempty"`    //
+	DX        *int   `json:"dx,omitempty"`   // plan throw: direction
+	DY        *int   `json:"dy,omitempty"`   //
 	Cat       *int   `json:"cat,omitempty"`  // plan: catapult id
 	Fire      bool   `json:"fire,omitempty"` // plan load: also fire (Quick Hands)
 	ID        string `json:"id,omitempty"`   // perk
@@ -65,6 +67,8 @@ type Plan struct {
 	A    string   `json:"a"`
 	X    *int     `json:"x,omitempty"`
 	Y    *int     `json:"y,omitempty"`
+	DX   *int     `json:"dx,omitempty"` // throw: direction
+	DY   *int     `json:"dy,omitempty"`
 	Cat  *int     `json:"cat,omitempty"`
 	Fire bool     `json:"fire,omitempty"`
 	Path [][2]int `json:"path,omitempty"` // move: the cells walked, start excluded
@@ -238,10 +242,11 @@ type (
 		Bomb   int    `json:"bomb"`
 		Kind   string `json:"kind"`
 		From   [2]int `json:"from"`
-		To     [2]int `json:"to"`
-		Result string `json:"result"` // caught | landed
-		By     string `json:"by,omitempty"`
-		At     [2]int `json:"at"` // where the bomb ends up (catcher's cell, or resting cell)
+		Dir    [2]int `json:"dir"`          // the throw's direction (dx, dy)
+		To     [2]int `json:"to"`           // where the flight ends: the catcher's cell, or the landing cell
+		Result string `json:"result"`       // caught | blocked | landed
+		By     string `json:"by,omitempty"` // the engineer who caught or blocked it
+		At     [2]int `json:"at"`           // where the bomb ends up (catcher's cell, or resting cell)
 	}
 	EvMove struct {
 		E      string   `json:"e"`

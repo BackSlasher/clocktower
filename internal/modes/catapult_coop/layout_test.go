@@ -42,11 +42,20 @@ func TestLayoutsValid(t *testing.T) {
 					t.Errorf("%s: (0,%d) is not wall", name, y)
 				}
 			}
+			// Throws stop at height-1 blocks, which must therefore only be the
+			// outer wall; interior crates are height 0 and flown over.
+			for y := 1; y < l.H; y++ {
+				for x := 1; x < l.W; x++ {
+					if c := l.Cells[y][x]; c.Kind == KBlock && c.H > 0 {
+						t.Errorf("%s: raised block inside the keep at (%d,%d)", name, x, y)
+					}
+				}
+			}
 			if len(l.Spawns) < Defs.MaxPlayers {
 				t.Errorf("%s: only %d spawns", name, len(l.Spawns))
 			}
 			for _, s := range l.Spawns {
-				if c := l.At(s[0], s[1]); c.Kind != KFloor || c.H != 0 {
+				if c := l.At(s[0], s[1]); c.Kind != KFloor {
 					t.Errorf("%s: spawn %v on %+v", name, s, c)
 				}
 			}

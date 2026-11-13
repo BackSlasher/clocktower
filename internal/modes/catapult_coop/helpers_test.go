@@ -19,7 +19,7 @@ var flatArt = []string{
 	"W=.......",
 	"C=.......",
 	"W=.......",
-	"WS......@",
+	"WS......1",
 }
 
 func newGame(t *testing.T, n int) (*Game, []string) {

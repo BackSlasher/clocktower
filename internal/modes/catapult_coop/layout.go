@@ -74,13 +74,16 @@ type Keep struct {
 	Layouts    map[string]*Layout `json:"-"`
 }
 
-const laneLen = 7
+const laneLen = 6
 
 // Legend of the layout drawings:
 //
 //	W outer wall (block, h1)   C catapult (h1)    = floor h1 (rampart, platform)
 //	. floor h0                 # crate (block h0) S stairs
-//	@ engineer start (floor h0)  o bomb (floor h0)  * bomb (floor h1)  (space) void
+//	o bomb (floor h0)          * bomb (floor h1)  (space) void
+//	1–8 engineer start n (floor h0)   a–h engineer start 1–8 (floor h1)
+//
+// Engineers are seated in start order: player 1 on start 1, and so on.
 var keepArt = []struct {
 	id       string
 	min, max int
@@ -89,58 +92,58 @@ var keepArt = []struct {
 	{"small", 1, 5, map[string][]string{
 		"open": {
 			"WWWCWWCWW",
-			"W=======S",
+			"W====ba=S",
 			"W=.....o.",
 			"C=.......",
-			"W=..@@...",
-			"W=..@@...",
-			"C=..@@...",
-			"W=..@@...",
+			"W=...4...",
+			"Wc..56...",
+			"C=..78...",
+			"W=.......",
 			"WS.......",
 		},
 		"crates": {
 			"WWWCWWCWW",
-			"W=======S",
+			"W====ba=S",
 			"W=..o..#.",
 			"C=.#....o",
-			"W=..@@.#.",
-			"W=o.@@...",
-			"C=..@@.o.",
-			"W=.#@@...",
+			"W=...4.#.",
+			"Wco.56...",
+			"C=..78.o.",
+			"W=.#.....",
 			"WS...o...",
 		},
 		"platform": {
 			"WWWCWWCWW",
-			"W=======S",
+			"W====ba=S",
 			"W=.o.....",
 			"C=...==*.",
 			"W=...=S.o",
-			"W=@@.....",
-			"C=@@..#..",
-			"W=@@..o..",
-			"WS@@.....",
+			"Wc.4.....",
+			"C=56..#..",
+			"W=78..o..",
+			"WS.......",
 		},
 		"split": {
 			"WWWCWWCWW",
-			"W=======S",
+			"W====ba=S",
 			"W=.o.#...",
 			"C=...#.o.",
 			"W=.==S...",
-			"W=.*=#...",
-			"C=...#@@.",
-			"W=o...@@@",
-			"WS....@@@",
+			"Wc.*=#...",
+			"C=...#.4.",
+			"W=o...567",
+			"WS....8..",
 		},
 	}},
 	{"large", 6, 8, map[string][]string{
 		"open": {
 			"WWWCWWWWCWW",
-			"W====S====S",
+			"W==a=Sb=f=S",
 			"W=...o.....",
-			"C=.........",
+			"Cg.........",
 			"W=.........",
-			"W=..@@@@...",
-			"WS..@@@@...",
+			"Wc...45....",
+			"WS...8.....",
 			"W=.........",
 			"C=.........",
 			"W=.........",
@@ -148,42 +151,42 @@ var keepArt = []struct {
 		},
 		"crates": {
 			"WWWCWWWWCWW",
-			"W====S====S",
+			"W==a=Sb=f=S",
 			"W=..o...#..",
 			"C=.#....o..",
 			"W=....#....",
-			"W=.o@@@@.#.",
-			"WS..@@@@..o",
+			"Wc.o.45..#.",
+			"WS...8....o",
 			"W=.#...o...",
-			"C=......#..",
+			"Cg......#..",
 			"W=..o......",
 			"WS.....#...",
 		},
 		"platform": {
 			"WWWCWWWWCWW",
-			"W====S====S",
+			"W==a=Sb=f=S",
 			"W=.o.......",
 			"C=...===*..",
 			"W=...=S=..o",
-			"W=.......#.",
-			"WS..@@@@...",
-			"W=..@@@@.o.",
-			"C=.#.......",
+			"Wc.......#.",
+			"WS...45....",
+			"W=...8...o.",
+			"Cg.#.......",
 			"W=...o.....",
 			"WS.........",
 		},
 		"split": {
 			"WWWCWWWWCWW",
-			"W====S====S",
+			"W==a=Sb=f=S",
 			"W=.o..#....",
 			"C=....#.o..",
 			"W=.==S#....",
-			"W=.*=.#..o.",
+			"Wc.*=.#..o.",
 			"WS....S==..",
 			"W=.o..#=*..",
-			"C=....#....",
-			"W=..@@@@...",
-			"WS..@@@@...",
+			"Cg....#....",
+			"W=...45....",
+			"WS...8.....",
 		},
 	}},
 }
@@ -234,6 +237,7 @@ func (k *Keep) LevelLayout(lv int) *Layout {
 
 func parseLayout(id string, rows []string) *Layout {
 	l := &Layout{ID: id, H: len(rows), W: len(rows[0])}
+	starts := map[int][2]int{}
 	for y, row := range rows {
 		if len(row) != l.W {
 			panic(fmt.Sprintf("layout %s: row %d has length %d", id, y, len(row)))
@@ -253,8 +257,11 @@ func parseLayout(id string, rows []string) *Layout {
 				c.Kind = KBlock
 			case 'S':
 				c.Kind = KStairs
-			case '@':
-				l.Spawns = append(l.Spawns, [2]int{x, y})
+			case '1', '2', '3', '4', '5', '6', '7', '8':
+				starts[int(ch-'0')] = [2]int{x, y}
+			case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h':
+				c.H = 1
+				starts[int(ch-'a')+1] = [2]int{x, y}
 			case 'o':
 				l.Bombs = append(l.Bombs, [2]int{x, y})
 			case '*':
@@ -268,6 +275,13 @@ func parseLayout(id string, rows []string) *Layout {
 			line[x] = c
 		}
 		l.Cells = append(l.Cells, line)
+	}
+	for n := 1; n <= len(starts); n++ {
+		at, ok := starts[n]
+		if !ok {
+			panic(fmt.Sprintf("layout %s: start %d missing", id, n))
+		}
+		l.Spawns = append(l.Spawns, at)
 	}
 	return l
 }
@@ -393,6 +407,35 @@ func (l *Layout) Path(fx, fy, tx, ty int) [][2]int {
 		out = append(out, [2]int{x, y})
 	}
 	return out
+}
+
+// ThrowLine is the flight of a bomb thrown from (x, y) in direction (dx, dy):
+// the cells it passes over, nearest first, at most max of them. The line ends
+// at the grid edge or at a cell that is a catapult, void, or a block of
+// height 1 (the outer wall); crates (blocks of height 0), platforms and
+// height differences are flown over.
+func (l *Layout) ThrowLine(x, y, dx, dy, max int) [][2]int {
+	var out [][2]int
+	for k := 1; k <= max; k++ {
+		cx, cy := x+k*dx, y+k*dy
+		c := l.At(cx, cy)
+		if !l.In(cx, cy) || c.Kind == KCatapult || c.Kind == KVoid || c.Kind == KBlock && c.H > 0 {
+			break
+		}
+		out = append(out, [2]int{cx, cy})
+	}
+	return out
+}
+
+// Landing is the cell an uncaught bomb on line comes down on: the furthest
+// walkable cell of the line (ok = false if it has none).
+func (l *Layout) Landing(line [][2]int) (cell [2]int, ok bool) {
+	for i := len(line) - 1; i >= 0; i-- {
+		if l.Walkable(line[i][0], line[i][1]) {
+			return line[i], true
+		}
+	}
+	return [2]int{}, false
 }
 
 // LoadCell reports whether an engineer at (x, y) can load or fire catapult

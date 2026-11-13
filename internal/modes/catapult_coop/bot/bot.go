@@ -58,7 +58,7 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 		var out []game.Cmd
 		if len(me.Offer) > 0 && !b.NoPerks && b.perkKey != rm.Level {
 			b.perkKey = rm.Level
-			if id := pickPerk(me.Offer, s, b.firstMason(rm)); id != "" {
+			if id := b.choosePerk(rm, s); id != "" {
 				out = append(out, game.Cmd{T: "perk", ID: id})
 			}
 		}
@@ -127,33 +127,52 @@ func (b *Bot) wander(l *game.Layout, s *game.Snap, can game.Abilities) (game.Cmd
 // wait) on its next call.
 func (b *Bot) Rejected() { b.sentKey = [3]int{} }
 
-var perkPref = []string{"strong_arm", "quick_hands", "light_feet", "long_reach", "mason"}
+var perkPref = []string{"quick_hands", "heavy_keg", "wide_shot", "long_stop", "long_reach", "mason"}
 
-// firstMason: this bot is the first player (room order) offered Mason. Only
-// one Mason can be taken per break, so the team leaves it to that player
-// instead of everyone grabbing it at once.
-func (b *Bot) firstMason(rm *game.RoomMsg) bool {
+// choosePerk picks this bot's perk so that teammates choosing at the same
+// moment don't collide on capped perks: it replays, in room order, the picks
+// of everyone with an offer (same rules), counting holders against each
+// perk's team cap, and returns its own.
+func (b *Bot) choosePerk(rm *game.RoomMsg, s *game.Snap) string {
+	held := map[string]int{}
 	for _, p := range rm.Players {
-		if slices.Contains(p.Offer, "mason") {
-			return p.ID == b.ID
+		for id, n := range p.Perks {
+			if n > 0 {
+				held[id]++
+			}
 		}
 	}
-	return false
+	for _, p := range rm.Players {
+		if len(p.Offer) == 0 {
+			continue
+		}
+		id := pickPerk(p.Offer, s, held)
+		if p.ID == b.ID {
+			return id
+		}
+		if id != "" {
+			held[id]++
+		}
+	}
+	return ""
 }
 
-func pickPerk(offer []string, s *game.Snap, mason bool) string {
-	if mason && slices.Contains(offer, "mason") && s.Wall <= s.WallMax-3 {
+// pickPerk: Mason when the wall is hurting, else the first perk in
+// preference order that is on offer and not at its team cap.
+func pickPerk(offer []string, s *game.Snap, held map[string]int) string {
+	free := func(id string) bool {
+		d := game.Defs.Perks[id]
+		return d != nil && slices.Contains(offer, id) && (d.TeamMax == 0 || held[id] < d.TeamMax)
+	}
+	if free("mason") && s.Wall <= s.WallMax-3 {
 		return "mason"
 	}
 	for _, id := range perkPref {
-		if id == "mason" && !mason {
-			continue
-		}
-		if slices.Contains(offer, id) {
+		if free(id) && id != "mason" {
 			return id
 		}
 	}
-	return "" // only Mason left, and it is a teammate's to take
+	return ""
 }
 
 // --- team planner ---------------------------------------------------------------
@@ -189,6 +208,7 @@ type planner struct {
 	landing     map[[2]int]bool // cells a thrown bomb is planned to land on
 	caught      map[*eng]bool   // catchers already targeted
 	gunners     map[*eng]int
+	solo        bool // one engineer plans: nobody can catch, so throwing never pays
 }
 
 // TeamPlan returns a plan command for every present engineer.
@@ -316,26 +336,43 @@ func (p *planner) bfs(src [][2]int) [][]int {
 	return d
 }
 
-// reachDist: walking steps to a cell from which (x, y) is within reach r.
-// Only cells at the bomb's height (or stairs) count: picking a bomb up from
-// another level moves it back to that level, which is never progress.
+// pickCells lists the walkable cells from which a bomb at (x, y) can be
+// picked up with reach r and progress: same height or above (or stairs).
+// Picking a bomb up from below takes it back down, which is never progress;
+// picking it up from the rampart above the courtyard is.
+func (p *planner) pickCells(x, y, r int) [][2]int {
+	var out [][2]int
+	for cy := y - r; cy <= y+r; cy++ {
+		for cx := x - r; cx <= x+r; cx++ {
+			c := p.l.At(cx, cy)
+			if abs(cx-x)+abs(cy-y) <= r && p.l.Walkable(cx, cy) && (c.Kind == game.KStairs || c.H >= p.l.At(x, y).H) {
+				out = append(out, [2]int{cx, cy})
+			}
+		}
+	}
+	return out
+}
+
+// reachDist: walking steps to a cell from which (x, y) can be picked up
+// (see pickCells).
 func (p *planner) reachDist(x, y, r int) [][]int {
 	k := [3]int{x, y, r}
 	if d, ok := p.reachD[k]; ok {
 		return d
 	}
-	var src [][2]int
-	for cy := y - r; cy <= y+r; cy++ {
-		for cx := x - r; cx <= x+r; cx++ {
-			c := p.l.At(cx, cy)
-			if abs(cx-x)+abs(cy-y) <= r && p.l.In(cx, cy) && (c.Kind == game.KStairs || c.H == p.l.At(x, y).H) {
-				src = append(src, [2]int{cx, cy})
-			}
-		}
-	}
-	d := p.bfs(src)
+	d := p.bfs(p.pickCells(x, y, r))
 	p.reachD[k] = d
 	return d
+}
+
+// bombHand: rounds until a bomb lying at (x, y) is loaded once someone holds
+// it, from the best cell to pick it up from.
+func (p *planner) bombHand(x, y, r int) int {
+	best := inf
+	for _, c := range p.pickCells(x, y, r) {
+		best = min(best, p.handCost(c[0], c[1], 1))
+	}
+	return best
 }
 
 func ceilDiv(a, b int) int { return (a + b - 1) / max(1, b) }
@@ -368,36 +405,61 @@ func (p *planner) pickupDelay(x, y int, thrower, skip *eng) int {
 	return best
 }
 
-// throwOptions lists throw targets from (x, y) with their cost in rounds.
-func (p *planner) bestThrow(e *eng, x, y int) (cost int, tx, ty int, catcher *eng) {
-	cost = inf
+// throwRes is the predicted outcome of one throw.
+type throwRes struct {
+	cost    int
+	dir     [2]int
+	stopper *eng   // the engineer who catches (catch) or blocks it
+	catch   bool   // stopper catches
+	land    [2]int // where it comes down when not caught
+}
+
+// bestThrow predicts the four throws e could make from (x, y): the first
+// engineer on the line catches (free hands) or blocks it (full hands; it
+// drops at their feet); with nobody on the line it lands at the line's end.
+// cost is the estimated rounds until the bomb is loaded.
+func (p *planner) bestThrow(e *eng, x, y int) throwRes {
+	best := throwRes{cost: inf}
 	for _, d := range game.Dirs4 {
-		for r := 1; r <= e.can.Throw; r++ {
-			cx, cy := x+d[0]*r, y+d[1]*r
-			if !p.l.In(cx, cy) || !p.l.Walkable(cx, cy) {
-				continue
-			}
-			c := 0
-			o := p.byPos[[2]int{cx, cy}]
-			switch {
-			case o != nil && o != e && o.catch && !p.caught[o]:
-				c = 1 + p.handCost(cx, cy, o.can.MoveCarry)
-			case p.l.At(cx, cy).Kind == game.KFloor && !p.landing[[2]int{cx, cy}] && !p.hasBomb(cx, cy):
-				o = nil
-				pd := p.pickupDelay(cx, cy, e, nil)
-				if pd >= inf {
-					continue
-				}
-				c = 1 + pd + 1 + p.handCost(cx, cy, 1)
-			default:
-				continue
-			}
-			if c < cost {
-				cost, tx, ty, catcher = c, cx, cy, o
+		line := p.l.ThrowLine(x, y, d[0], d[1], e.can.Throw)
+		land, ok := p.l.Landing(line)
+		if !ok {
+			continue
+		}
+		res := throwRes{dir: d}
+		for _, c := range line {
+			if o := p.byPos[c]; o != nil && o != e {
+				res.stopper = o
+				break
 			}
 		}
+		if o := res.stopper; o != nil {
+			if (o.carry == nil || o.plan.A == game.AThrow) && !p.caught[o] {
+				res.catch = true
+				res.cost = 1 + p.handCost(o.x, o.y, o.can.MoveCarry)
+				if o.plan.A == game.APickup {
+					res.cost += 2 // their pick-up will fail
+				}
+			} else {
+				land = [2]int{o.x, o.y}
+			}
+		}
+		if !res.catch {
+			if p.l.At(land[0], land[1]).Kind != game.KFloor || p.landing[land] || p.hasBomb(land[0], land[1]) {
+				continue // it would settle somewhere else; too unpredictable
+			}
+			pd := p.pickupDelay(land[0], land[1], e, nil)
+			if pd >= inf {
+				continue
+			}
+			res.land = land
+			res.cost = 1 + pd + 1 + p.bombHand(land[0], land[1], 1)
+		}
+		if res.cost < best.cost {
+			best = res
+		}
 	}
-	return
+	return best
 }
 
 func (p *planner) hasBomb(x, y int) bool { _, ok := p.bombs[[2]int{x, y}]; return ok }
@@ -455,7 +517,11 @@ func (p *planner) adjacentCats(e *eng) []int {
 
 // tryCatapult fires a loaded adjacent catapult whose lane has machines, or
 // loads an empty adjacent one when carrying.
-func (p *planner) tryCatapult(e *eng) bool {
+func (p *planner) tryCatapult(e *eng) bool { return p.tryCatapultAt(e, -1) }
+
+// tryCatapultAt is tryCatapult for a gunner whose station is catapult own:
+// it also loads its own catapult when that lane is quiet (ready for later).
+func (p *planner) tryCatapultAt(e *eng, own int) bool {
 	cats := p.adjacentCats(e)
 	for _, c := range cats {
 		if p.s.Catapults[c].Bomb != nil && p.machines[c] > 0 {
@@ -470,7 +536,7 @@ func (p *planner) tryCatapult(e *eng) bool {
 	slices.SortStableFunc(cats, func(a, b int) int { return cmpF(p.threat[b], p.threat[a]) })
 	anyThreat := slices.ContainsFunc(p.threat, func(t float64) bool { return t > 0 })
 	for _, c := range cats {
-		if p.s.Catapults[c].Bomb == nil && (p.threat[c] > 0 || !anyThreat) {
+		if p.s.Catapults[c].Bomb == nil && (p.threat[c] > 0 || !anyThreat || c == own) {
 			e.plan = game.Cmd{T: "plan", A: game.ALoad, Cat: game.IntP(c), Fire: e.can.QuickHands && p.machines[c] > 0}
 			e.busy = true
 			return true
@@ -504,10 +570,10 @@ func (p *planner) tryPickup(e *eng, always bool) bool {
 		if !always && c < inf {
 			hold := p.handCost(e.x, e.y, e.can.MoveCarry)
 			held := &eng{pid: e.pid, x: e.x, y: e.y, carry: &game.BombRef{}, can: e.can}
-			if t, _, _, _ := p.bestThrow(held, e.x, e.y); t < hold {
+			if t := p.bestThrow(held, e.x, e.y).cost; t < hold {
 				hold = t
 			}
-			leave := p.pickupDelay(k[0], k[1], nil, e) + 1 + p.handCost(k[0], k[1], 1)
+			leave := p.pickupDelay(k[0], k[1], nil, e) + 1 + p.bombHand(k[0], k[1], 1)
 			if 1+hold >= leave {
 				continue
 			}
@@ -558,9 +624,9 @@ func (p *planner) moveToward(e *eng, dist [][]int, tie [][]int) bool {
 
 func (p *planner) gunnerCount(n int) int {
 	switch {
-	case n <= 1:
+	case n <= 0:
 		return 0
-	case n == 2:
+	case n <= 2:
 		return 1
 	case n <= 6:
 		return 2
@@ -658,10 +724,16 @@ func (p *planner) run() {
 		if !ok {
 			continue
 		}
+		solo := len(free) == 1 // a lone engineer is gunner and fetcher at once
+		p.solo = solo
 		switch {
-		case p.tryCatapult(e):
+		case p.tryCatapultAt(e, c):
 		case p.l.At(e.x, e.y).H > 0 && p.tryPickup(e, true):
 		case e.carry == nil && p.l.At(e.x, e.y).H > 0 && p.gunnerFetch(e):
+		case solo && e.carry != nil:
+			p.carry(e)
+		case solo && p.l.At(e.x, e.y).H == 0 && p.tryPickup(e, true):
+		case solo && p.fetch(e):
 		case p.loadD[c][e.y][e.x] > 0 && p.moveToward(e, p.loadD[c], nil):
 		default:
 			p.setWait(e)
@@ -682,12 +754,14 @@ func (p *planner) run() {
 		}
 		p.carry(e)
 	}
-	// 3. Free-handed fetchers.
+	// 3. Free-handed fetchers (one a carrier is throwing to stays to catch).
 	for _, e := range free {
 		if e.busy {
 			continue
 		}
 		switch {
+		case p.caught[e]:
+			p.setWait(e)
 		case p.tryCatapult(e):
 		case p.tryPickup(e, false):
 		case p.fetch(e):
@@ -697,45 +771,71 @@ func (p *planner) run() {
 	}
 }
 
-// carry decides between throwing now, walking (and maybe throwing later) and
-// holding.
+// carry decides between throwing now, walking (to a better throwing spot or
+// toward a catapult) and holding. value[c] estimates the rounds until the
+// bomb is loaded if e stands on c holding it: carry it on from there, throw
+// from there, or walk further (+1 a step).
 func (p *planner) carry(e *eng) {
-	stay := p.handCost(e.x, e.y, e.can.MoveCarry)
-	tc, tx, ty, catcher := p.bestThrow(e, e.x, e.y)
-	bestMove, mc := [2]int{-1, -1}, inf
-	for _, m := range p.moves(e) {
-		c := p.handCost(m[0], m[1], e.can.MoveCarry)
-		if t, _, _, _ := p.bestThrow(e, m[0], m[1]); t < c {
-			c = t
+	value := p.grid(inf)
+	for y := range p.l.H {
+		for x := range p.l.W {
+			if !p.l.Walkable(x, y) {
+				continue
+			}
+			v := p.handCost(x, y, e.can.MoveCarry)
+			if t := p.bestThrow(e, x, y).cost; t < v && !p.solo {
+				v = t
+			}
+			value[y][x] = v
 		}
-		c++
-		if c < mc || c == mc && c < inf && p.wantD[m[1]][m[0]] < p.wantD[bestMove[1]][bestMove[0]] {
-			bestMove, mc = m, c
+	}
+	for changed := true; changed; {
+		changed = false
+		for y := range p.l.H {
+			for x := range p.l.W {
+				for _, d := range game.Dirs4 {
+					nx, ny := x+d[0], y+d[1]
+					if p.l.In(nx, ny) && p.l.CanStep(x, y, nx, ny) && value[ny][nx] < inf && value[ny][nx]+1 < value[y][x] {
+						value[y][x] = value[ny][nx] + 1
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	th := p.bestThrow(e, e.x, e.y)
+	if p.solo {
+		th.cost = inf
+	}
+	bestMove, mv := [2]int{-1, -1}, inf
+	for _, m := range p.moves(e) {
+		if v := value[m[1]][m[0]] + 1; v < mv {
+			bestMove, mv = m, v
 		}
 	}
 	switch {
-	case tc < inf && tc <= mc && tc < stay+1:
-		e.plan = game.Cmd{T: "plan", A: game.AThrow, X: game.IntP(tx), Y: game.IntP(ty)}
+	case th.cost < inf && th.cost <= mv:
+		e.plan = game.Cmd{T: "plan", A: game.AThrow, DX: game.IntP(th.dir[0]), DY: game.IntP(th.dir[1])}
 		e.busy = true
-		if catcher != nil {
-			p.caught[catcher] = true
+		if th.catch {
+			p.caught[th.stopper] = true
 		} else {
-			p.landing[[2]int{tx, ty}] = true
+			p.landing[th.land] = true
 		}
-	case mc < inf:
+	case mv < inf:
 		p.setMove(e, bestMove[0], bestMove[1])
 	default:
 		p.setWait(e)
 	}
 }
 
-// gunnerFetch steps a free-handed gunner toward an unclaimed bomb lying at
-// its own height that it can reach this round.
+// gunnerFetch steps a free-handed gunner toward an unclaimed bomb at its own
+// height or below (picked up from above) that it can reach this round.
 func (p *planner) gunnerFetch(e *eng) bool {
 	h := p.l.At(e.x, e.y).H
 	best, bd := [2]int{-1, -1}, inf
 	for k := range p.bombs {
-		if p.claimedBomb[k] || p.l.At(k[0], k[1]).H != h {
+		if p.claimedBomb[k] || p.l.At(k[0], k[1]).H > h {
 			continue
 		}
 		d := p.reachDist(k[0], k[1], e.can.Reach)[e.y][e.x]
@@ -770,7 +870,7 @@ func (p *planner) fetch(e *eng) bool {
 			continue
 		}
 		d := p.reachDist(k[0], k[1], e.can.Reach)[e.y][e.x]
-		h := p.handCost(k[0], k[1], e.can.MoveCarry)
+		h := p.bombHand(k[0], k[1], e.can.Reach)
 		if d < 0 || h >= inf {
 			continue
 		}

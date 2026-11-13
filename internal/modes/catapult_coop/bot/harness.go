@@ -21,13 +21,14 @@ type Scenario struct {
 
 // Result summarises a headless game.
 type Result struct {
-	Won    bool
-	Level  int
-	Wall   int
-	Rounds int
-	Time   float64
-	End    *game.End
-	Trace  []int // wall HP after each level
+	Won       bool
+	Level     int
+	Wall      int
+	Rounds    int
+	Time      float64
+	End       *game.End
+	Trace     []int // wall HP after each level
+	LvlRounds []int // rounds played in each level reached
 }
 
 func (r Result) String() string {
@@ -54,13 +55,14 @@ func Run(sc Scenario) Result {
 	if err := g.Start(g.Host()); err != nil {
 		panic(err)
 	}
-	var trace []int
-	level := g.Level()
+	var trace, lvlRounds []int
+	level, startRound := g.Level(), 0
 	for tick := 0; g.Running() && tick < 200000; tick++ {
 		g.Step(0.1)
 		if g.Level() != level || !g.Running() {
 			trace = append(trace, g.Wall())
-			level = g.Level()
+			lvlRounds = append(lvlRounds, g.Rounds()-startRound)
+			level, startRound = g.Level(), g.Rounds()
 		}
 		snap, room := g.Snapshot(), g.RoomState()
 		for _, b := range bots {
@@ -75,7 +77,7 @@ func Run(sc Scenario) Result {
 		}
 	}
 	return Result{Won: g.Phase() == game.PhaseWon, Level: g.Level(), Wall: g.Wall(), Rounds: g.End().Rounds,
-		Time: g.Time(), End: g.End(), Trace: trace}
+		Time: g.Time(), End: g.End(), Trace: trace, LvlRounds: lvlRounds}
 }
 
 // RunMany plays seeds base..base+n-1 in parallel, results in seed order.
