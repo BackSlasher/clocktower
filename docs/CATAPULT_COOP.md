@@ -174,16 +174,19 @@ shares a small set of specialities instead of everyone stacking the strongest.
 
 ## Phone
 
-Landscape. A flat top-down map of the keep fills the screen (the isometric
-view is for the TV), your engineer highlighted.
+A controller, not a map: eyes stay on the TV. Landscape first.
 
-- Tap a highlighted neighbouring cell to move there.
-- Action buttons along the side for what is possible right now (Pick up,
-  Throw, Load, Fire, Wait); Pick up then asks for a cell when there is a
-  choice, Throw for one of the four directions.
-- Your chosen action is drawn on your own phone, changeable until the round
-  resolves.
-- During resolve the phone says "watch the TV".
+- Your colour and name in large type (to find your engineer on the TV), what
+  you are carrying, the countdown and who has committed.
+- A diamond of four arrows matching the TV's diagonals. One tap moves one
+  cell that way.
+- Buttons for Pick up, Throw, Load, Fire and Wait. Throw then takes one
+  arrow. Pick up, Load and Fire ask which one only when there is a choice.
+- The phone predicts nothing: no catcher, no landing spot. An arrow is greyed
+  only when the action is flatly impossible (a wall, a ledge). A later hard
+  mode could stop greying too.
+- Your choice can be changed until the round resolves; during resolve the
+  phone says "watch the TV", then tells you what happened to you.
 
 ## Shared shell
 

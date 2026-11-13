@@ -1,6 +1,7 @@
-// catapult_coop on the phone: the plan rules from docs/PROTOCOL.md ("bad_plan rules"), used to
-// highlight legal targets. Every number comes from the player's `can` abilities and the board;
-// the server stays the judge.
+// catapult_coop on the phone: the plan rules from docs/PROTOCOL.md ("bad_plan rules") that the
+// controller needs to grey out flatly illegal choices. Every number comes from the player's `can`
+// abilities and the board; the server stays the judge. No predictions: where a throw ends up is
+// for the team to read on the TV.
 
 export const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // same neighbour order as the server
 
@@ -19,42 +20,19 @@ export function canStep(lay, ax, ay, bx, by) {
   return a.kind === 'stairs' || b.kind === 'stairs' || a.h === b.h;
 }
 
-// Walking steps from (x, y) to every cell, -1 = unreachable (engineers never block paths).
-export function dists(lay, x, y) {
-  const d = Array.from({ length: lay.h }, () => new Array(lay.w).fill(-1));
-  if (!walkable(lay, x, y)) return d;
-  d[y][x] = 0;
-  const q = [[x, y]];
-  for (let i = 0; i < q.length; i++) {
-    const [cx, cy] = q[i];
-    for (const [dx, dy] of DIRS) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (inGrid(lay, nx, ny) && d[ny][nx] < 0 && canStep(lay, cx, cy, nx, ny)) {
-        d[ny][nx] = d[cy][cx] + 1;
-        q.push([nx, ny]);
-      }
-    }
+// Can a bomb be thrown from (x, y) in direction d at all? The throw line runs up to `range`
+// cells and ends before the first cell off the grid, a catapult, void, or a block of height 1 (the
+// outer wall); everything else (crates, platforms, stairs) is flown over. Legal when the line
+// holds a walkable cell.
+export function canThrow(lay, x, y, d, range) {
+  for (let k = 1; k <= range; k++) {
+    const cx = x + d[0] * k;
+    const cy = y + d[1] * k;
+    const c = cellAt(lay, cx, cy);
+    if (!inGrid(lay, cx, cy) || c.kind === 'catapult' || c.kind === 'void' || (c.kind === 'block' && c.h === 1)) return false;
+    if (walkable(lay, cx, cy)) return true;
   }
-  return d;
-}
-
-// Shortest walk from (fx, fy) to (tx, ty), start excluded, the way the server picks it.
-export function walkPath(lay, fx, fy, tx, ty) {
-  const d = dists(lay, tx, ty);
-  if (!inGrid(lay, fx, fy) || d[fy][fx] < 0) return null;
-  const out = [];
-  let x = fx;
-  let y = fy;
-  while (d[y][x] > 0) {
-    for (const [dx, dy] of DIRS) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (inGrid(lay, nx, ny) && d[ny][nx] === d[y][x] - 1 && canStep(lay, x, y, nx, ny)) { x = nx; y = ny; break; }
-    }
-    out.push([x, y]);
-  }
-  return out;
+  return false;
 }
 
 // Can an engineer on (x, y) load or fire catapult c? 4-adjacent floor cell of the catapult's height.
@@ -64,42 +42,25 @@ export function loadCell(lay, x, y, c) {
 }
 
 // Everything the engineer could plan right now.
-//   b = { lay, keep, me: {x, y, carry}, can, bombs: [{id,kind,x,y}], cats: Map(id -> bomb|null),
-//         engineers: [{pid,x,y,carry}], you }
-// Returns { move, pickup, throw, load, fire } lists of targets: move/pickup/throw have x, y
-// (move: path; pickup: bomb; throw: catcher = engineer standing there with free hands, or the
-// engineer standing there at all as `on`); load/fire have cat and the catapult's x, y.
+//   b = { lay, keep, me: {x, y, carry}, can, bombs: [{id,kind,x,y}], cats: Map(id -> bomb|null) }
+// Returns { move, throw, pickup, load, fire }: move and throw list the legal directions as
+// {dx, dy} (move also has the cell x, y); pickup has x, y and bomb; load/fire have cat and the
+// catapult's x, y.
 export function options(b) {
-  const out = { move: [], pickup: [], throw: [], load: [], fire: [] };
+  const out = { move: [], throw: [], pickup: [], load: [], fire: [] };
   const { lay, keep, me, can } = b;
   if (!lay || !keep || !me || !can) return out;
   const carrying = !!me.carry;
-  // move
-  const budget = carrying ? can.moveCarry : can.move;
-  const d = dists(lay, me.x, me.y);
-  for (let y = 0; y < lay.h; y++) {
-    for (let x = 0; x < lay.w; x++) {
-      if (d[y][x] >= 1 && d[y][x] <= budget) out.move.push({ x, y, steps: d[y][x] });
-    }
+  for (const [dx, dy] of DIRS) {
+    // move: exactly one step
+    if (canStep(lay, me.x, me.y, me.x + dx, me.y + dy)) out.move.push({ dx, dy, x: me.x + dx, y: me.y + dy });
+    // throw: carrying, a direction with somewhere to land
+    if (carrying && canThrow(lay, me.x, me.y, [dx, dy], can.throw)) out.throw.push({ dx, dy });
   }
   // pick up: hands empty, a bomb within reach (Manhattan, any height)
   if (!carrying) {
     for (const bm of b.bombs || []) {
       if (Math.abs(bm.x - me.x) + Math.abs(bm.y - me.y) <= can.reach) out.pickup.push({ x: bm.x, y: bm.y, bomb: bm });
-    }
-  }
-  // throw: carrying, straight line, 1..can.throw cells, onto a walkable cell (over anything)
-  if (carrying) {
-    const byCell = new Map((b.engineers || []).map((e) => [e.x + ',' + e.y, e]));
-    for (const [dx, dy] of DIRS) {
-      for (let k = 1; k <= can.throw; k++) {
-        const x = me.x + dx * k;
-        const y = me.y + dy * k;
-        if (!inGrid(lay, x, y)) break;
-        if (!walkable(lay, x, y)) continue;
-        const on = byCell.get(x + ',' + y) || null;
-        out.throw.push({ x, y, on, catcher: on && !on.carry ? on : null });
-      }
     }
   }
   // load / fire: standing on a loading cell of the catapult

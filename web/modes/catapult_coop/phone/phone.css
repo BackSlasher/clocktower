@@ -1,46 +1,84 @@
-/* catapult_coop on the phone: game screen (map + action column), break, end screen, menu, lobby option. */
+/* catapult_coop on the phone: the controller (identity strip, d-pad, actions), break, end screen, menu, lobby option. */
 
-/* ---- game: portrait fallback (map on top, controls below) ---- */
+/* ---- game: portrait (strip, state, d-pad, actions, who) ---- */
 .ccgame {
-  display: grid; padding: 8px; gap: 6px;
+  --pad: min(calc(100vw - 16px), calc(100dvh - 350px), 420px);
+  display: grid; padding: 8px; gap: 8px;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-  grid-template-areas: "top" "map" "state" "btns" "who";
+  grid-template-rows: auto auto var(--pad) minmax(0, 1fr) auto;
+  grid-template-areas: "top" "state" "pad" "btns" "who";
 }
-.cctop { grid-area: top; position: relative; display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px 12px; min-height: 48px; overflow: hidden; }
-.cclvl, .cctimer { display: flex; flex-direction: column; line-height: 1.05; }
+.cctop { grid-area: top; position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 6px 7px 8px; min-height: 56px; overflow: hidden; }
+.ccident { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
+.ccswatch { width: 44px; height: 44px; flex: none; border-radius: 12px; border: 3px solid rgb(255 255 255 / 0.75); box-shadow: 0 0 0 2px #0b1112, 0 2px 8px rgb(0 0 0 / 0.5); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 800; font-size: 1.35rem; color: #10181a; font-style: normal; }
+.ccidt { display: flex; flex-direction: column; min-width: 0; line-height: 1.1; }
+.ccidt b { font-family: var(--font-display); font-size: 1.55rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.ccidt span { display: flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
+.ccbomb { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--c, #ccc); box-shadow: inset -2px -2px 0 rgb(0 0 0 / 0.35), 0 0 0 1.5px #0b1112; position: relative; vertical-align: -2px; margin-right: 2px; }
+.ccbomb::after { content: ''; position: absolute; right: -3px; top: -4px; width: 5px; height: 5px; border-radius: 50%; background: var(--gas-glow); box-shadow: 0 0 4px var(--gas-glow); }
+.ccidt span:has(.ccbomb) { color: var(--brass-300); }
+.cclvl, .cctimer { display: flex; flex-direction: column; line-height: 1.05; flex: none; }
 .cclvl small, .cctimer small { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-dim); white-space: nowrap; }
 .cclvl b, .cctimer b { font-family: var(--font-display); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
-.cctimer { margin-left: auto; align-items: flex-end; color: var(--gas-glow); min-width: 3.5ch; }
+.cctimer { align-items: flex-end; color: var(--gas-glow); min-width: 3.5ch; }
 .cctimer.hurry b { color: #ff8a70; animation: ccbeat 0.5s ease-in-out infinite alternate; }
 @keyframes ccbeat { to { transform: scale(1.15); } }
 .cctbar { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: var(--gas-glow); transition: width 0.2s linear; border-radius: 0 2px 2px 0; }
 .cctbar.hurry { background: var(--danger); }
 .menubtn { width: 44px; height: 40px; flex: none; border-radius: 10px; border: 2px solid var(--soot-600); background: var(--soot-800); color: var(--brass-300); font-size: 1.6rem; line-height: 1; padding: 0 0 6px; }
 
-.ccmapwrap { grid-area: map; position: relative; min-height: 0; border-radius: 10px; overflow: hidden; background: var(--soot-900); border: 2px solid var(--brass-700); }
-#ccMap { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.ccover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: rgb(5 9 10 / 0.72); color: var(--ink); text-align: center; padding: 16px; border: none; font: inherit; }
+/* the d-pad: four arrows on the TV's diagonals around a hub in my colour */
+.ccpad { grid-area: pad; position: relative; justify-self: center; width: var(--pad); height: var(--pad); display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; touch-action: manipulation; }
+.ccarrow { position: relative; min-height: 0; padding: 0; border-width: 3px; display: flex; border-radius: 22px; touch-action: manipulation; }
+.ccarrow.nw { border-bottom-right-radius: 50%; align-items: flex-start; justify-content: flex-start; }
+.ccarrow.ne { border-bottom-left-radius: 50%; align-items: flex-start; justify-content: flex-end; }
+.ccarrow.sw { border-top-right-radius: 50%; align-items: flex-end; justify-content: flex-start; }
+.ccarrow.se { border-top-left-radius: 50%; align-items: flex-end; justify-content: flex-end; }
+.ccarrow .arw { display: block; width: 58%; height: 58%; margin: 8%; }
+.ccarrow svg { width: 100%; height: 100%; fill: #2a1a06; filter: drop-shadow(0 1px 0 rgb(255 255 255 / 0.45)); }
+.ccarrow.nw svg { transform: rotate(-45deg); }
+.ccarrow.ne svg { transform: rotate(45deg); }
+.ccarrow.se svg { transform: rotate(135deg); }
+.ccarrow.sw svg { transform: rotate(-135deg); }
+.ccarrow:disabled { filter: grayscale(1) brightness(0.38); }
+.ccarrow.chosen { background: linear-gradient(180deg, #8be0c8, var(--verdigris)); border-color: #2a6e5c; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 3px 0 #2a6e5c, 0 0 18px rgb(95 211 168 / 0.55); }
+.ccarrow.chosen svg { fill: #06261d; }
+.ccpad.throwing .ccarrow:not(:disabled) { background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); box-shadow: 0 0 16px rgb(255 182 72 / 0.65), 0 3px 0 var(--brass-700); }
+.cchub { position: absolute; left: 50%; top: 50%; width: 30%; height: 30%; transform: translate(-50%, -50%); border-radius: 50%; background: var(--c, #999); border: 5px solid var(--soot-900); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.7), 0 4px 14px rgb(0 0 0 / 0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; color: #10181a; line-height: 1; }
+.cchub b { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.1rem, calc(var(--pad) * 0.1), 2.2rem); }
+.cchub small { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.8; }
+.ccpad.throwing .cchub { box-shadow: 0 0 0 3px var(--gas-glow), 0 0 18px rgb(255 182 72 / 0.8); }
+
+/* overlays (resolve, away) cover everything under the strip */
+.ccgame > .ccover { grid-row: 2 / 6; grid-column: 1 / -1; z-index: 2; }
+.ccover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: rgb(5 9 10 / 0.86); color: var(--ink); text-align: center; padding: 16px; border: none; border-radius: 12px; font: inherit; }
 .ccover b { font-size: 1.8rem; color: var(--brass-300); }
 .ccover span { font-size: 0.9rem; color: var(--ink-dim); max-width: 26em; }
 .ccover .gear { font-size: 2.4rem; color: var(--brass-400); }
-.ccover.away { background: rgb(5 9 10 / 0.8); }
 .ccover.away b { color: var(--gas-glow); }
 
-.ccstate { grid-area: state; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 2px 4px 2px 10px; border-radius: 10px; background: var(--soot-800); border: 1px solid var(--soot-600); font-size: 0.95rem; line-height: 1.2; }
+.ccstate { grid-area: state; display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 2px 4px 2px 12px; border-radius: 10px; background: var(--soot-800); border: 1px solid var(--soot-600); font-size: 1rem; line-height: 1.2; }
 .ccstate > span { flex: 1; min-width: 0; }
-.ccstate .btn.sm { flex: none; min-height: 38px; padding: 0.2em 0.8em; font-size: 0.85rem; }
+.ccstate .btn.sm { flex: none; min-height: 40px; padding: 0.2em 0.9em; font-size: 0.9rem; }
 .ccstate.done { border-color: var(--verdigris); color: #b6f0dc; background: #12302a; }
 .ccstate.picking { border-color: var(--gas-glow); color: #ffe2a8; }
 
-.ccbtns { grid-area: btns; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.ccact { min-height: 52px; padding: 0.2em 0.4em; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; gap: 1px; }
-.ccact b { font-size: 1.02rem; }
-.ccact small { font-family: var(--font-body); font-weight: 400; font-size: 0.68rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ccbtns { grid-area: btns; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(52px, 1fr); gap: 8px; min-height: 0; }
+.ccbtns.under { visibility: hidden; }
+.ccact { min-height: 0; padding: 0.2em 0.4em; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; gap: 2px; }
+.ccact b { font-size: 1.1rem; }
+.ccact small { font-family: var(--font-body); font-weight: 400; font-size: 0.72rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .ccact:disabled { filter: grayscale(0.9) brightness(0.5); }
 .ccact.armed { background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); box-shadow: 0 0 14px rgb(255 182 72 / 0.7), 0 3px 0 var(--brass-700); }
 .ccact.chosen { background: linear-gradient(180deg, #8be0c8, var(--verdigris)); color: #06261d; border-color: #2a6e5c; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 3px 0 #2a6e5c; }
 .ccact.chosen b::after { content: ' ✓'; }
+
+/* chips: the choices of an armed action, over the action buttons */
+.ccchips { grid-area: btns; z-index: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: minmax(64px, auto); gap: 8px; align-content: start; min-height: 0; overflow: auto; }
+.ccchip { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.1; padding: 0.2em 0.6em; background: linear-gradient(180deg, #ffe2a8, var(--gas-glow)); }
+.ccchip b { font-size: 1.1rem; display: inline-flex; align-items: center; gap: 6px; }
+.ccchip small { font-family: var(--font-body); font-weight: 400; font-size: 0.8rem; }
+.ccchip .gl { font-family: var(--font-body); font-size: 1.9rem; line-height: 0.8; margin-left: 4px; }
 
 .ccwho { grid-area: who; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-height: 26px; }
 .who { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 2px 7px 2px 3px; border-radius: 12px; background: var(--soot-800); border: 1px solid var(--soot-600); color: var(--ink-dim); max-width: 100%; }
@@ -53,28 +91,37 @@
 .who.me { border-color: var(--brass-400); }
 .ccwho.many .who .nm { display: none; }
 
-/* ---- game: landscape (map left at full height, controls right) ---- */
+/* during the game the shell's toast sits over the who-row at the bottom: never over the strip,
+   the state line or the d-pad */
+body:has(#ccGame:not([hidden])) .toast { left: 10px; right: 10px; top: auto; bottom: calc(env(safe-area-inset-bottom) + 6px); height: auto; min-height: 36px; white-space: normal; padding: 4px 10px; font-size: 0.88rem; line-height: 1.2; }
+
+/* ---- game: landscape (strip on top; d-pad left at full height; state, actions, who right) ---- */
 @media (min-aspect-ratio: 5/4) {
   .ccgame {
-    padding: 6px 8px; gap: 6px;
-    grid-template-columns: minmax(0, 1fr) clamp(210px, 33%, 300px);
+    --pad: min(calc(100dvh - 82px), 50vw);
+    padding: 6px 10px 8px; gap: 8px 12px;
+    grid-template-columns: var(--pad) minmax(0, 1fr);
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    grid-template-areas: "map top" "map state" "map btns" "map who";
+    grid-template-areas: "top top" "pad state" "pad btns" "pad who";
   }
-  .cctop { min-height: 0; padding: 2px 4px 5px 10px; }
-  .cclvl b, .cctimer b { font-size: 1.1rem; }
-  .menubtn { width: 40px; height: 34px; }
-  .ccbtns { grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(44px, 1fr); align-content: stretch; }
-  .ccact { min-height: 44px; }
-  .ccstate { min-height: 40px; font-size: 0.85rem; }
-  .ccover b { font-size: 1.5rem; }
-  /* the shell's toast sits over the action column, never over the map */
-  .toast { left: auto; right: 8px; width: clamp(210px, 33%, 300px); height: auto; min-height: 44px; white-space: normal; padding: 6px 10px; font-size: 0.85rem; line-height: 1.2; }
+  .ccpad { align-self: start; }
+  .ccgame > .ccover { grid-row: 2 / 5; }
+  .cctop { min-height: 0; padding: 3px 4px 6px 6px; }
+  .ccbtns { grid-auto-rows: minmax(48px, 1fr); }
+  .ccstate { font-size: 0.95rem; }
+  .ccover b { font-size: 1.6rem; }
+  body:has(#ccGame:not([hidden])) .toast { left: auto; max-width: 55%; } /* bottom right, clear of the d-pad */
 }
-@media (min-aspect-ratio: 5/4) and (max-height: 380px) {
-  .ccact b { font-size: 0.92rem; }
-  .ccact small { font-size: 0.6rem; }
+@media (min-aspect-ratio: 5/4) and (max-height: 400px) {
+  .ccswatch { width: 38px; height: 38px; font-size: 1.15rem; }
+  .ccidt b { font-size: 1.35rem; }
+  .ccidt span { font-size: 0.8rem; }
+  .ccact b { font-size: 1rem; }
+  .ccact small { font-size: 0.66rem; }
+  .ccstate { min-height: 40px; font-size: 0.88rem; }
+  .ccstate .btn.sm { min-height: 36px; }
   .who { font-size: 0.7rem; }
+  .ccchip { min-height: 46px; }
 }
 
 /* ---- break ---- */
@@ -153,13 +200,6 @@
 .myperks li { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: 8px; background: var(--soot-800); border: 1px solid var(--soot-600); }
 .myperks li b { color: var(--brass-300); font-family: var(--font-display); }
 .myperks li span { font-size: 0.8rem; color: var(--ink-dim); line-height: 1.25; }
-.cclegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.82rem; }
-.cclegend span { display: inline-flex; align-items: center; gap: 6px; }
-.cclegend .sw { width: 18px; height: 18px; border-radius: 3px; display: inline-block; flex: none; }
-.cclegend .sw.hi { background: #6d7f75; box-shadow: inset 2px 2px 0 #8a9c90, inset -2px -2px 0 #4f5e56; }
-.cclegend .sw.lo { background: #223436; border: 1px solid #2b4248; }
-.cclegend .sw.edge { background: linear-gradient(90deg, #6d7f75 45%, #05090a 45% 60%, #223436 60%); }
-.cclegend .sw.crate { background: #7a5530; border: 2px solid #3d2814; }
 .mrow { display: flex; gap: 8px; flex-wrap: wrap; }
 .mrow > .btn { flex: 1; }
 .btn.warn { color: #ffb3a6; }
