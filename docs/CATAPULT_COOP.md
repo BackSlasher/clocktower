@@ -1,7 +1,9 @@
 # `catapult_coop` — design
 
 Second mode for Clocktower. Internal id `catapult_coop`; display name
-"Bomb Voyage" (kept in one place, free to change). Status: being built.
+"Bomb Voyage" (kept in one place, free to change). Status: server built
+(`internal/modes/catapult_coop`, behind the server flag `-wip-modes`); web
+clients to come. Wire contract: docs/PROTOCOL.md, "Mode `catapult_coop`".
 
 ## Pitch
 
@@ -32,8 +34,22 @@ corner.
   wall, 6 cells long. Four catapults, four lanes. Machines appear at the far
   end of a lane and step toward the wall.
 
-The keep is larger for big groups; the layout is data, so more keeps can be
-added.
+The keep is larger for big groups (9 × 9 cells with a 7 × 7 courtyard for
+1–5 players, 11 × 11 for 6–8). Its outer shape (size, wall, the four
+catapults and their lanes) is fixed for the whole game, so the TV camera
+never moves.
+
+**The interior belongs to the level.** Each level brings its own layout of
+the keep: which courtyard cells are crates, which are raised platforms
+(height 1, reached by stairs like the ramparts), where the stairs are, where
+the engineers start and where bombs lie when the level begins. At every level
+start the engineers go back to the start cells and the board is cleared of
+bombs (in hands, in catapults, on the ground) before the level's own bombs are
+placed. Layouts are ASCII drawings in the code; a test checks every one (all
+catapults reachable from every start cell, every bomb reachable, no
+walled-off pockets). Today each keep has four layouts: *open* (flat, the
+tutorial), *crates*, *platform* (a raised platform with a bomb on it) and
+*split* (a line of crates splitting the courtyard, two platforms).
 
 ## A round
 
@@ -124,13 +140,22 @@ machines are put on how many lanes:
 5. Everything, faster.
 6. The Iron Baron, with company.
 
-Machine counts scale with the number of players. Wall hit points carry over
-between levels. Clearing the last level wins.
+Each level also lists the bomb kinds that can appear, with weights: levels 1–2
+have powder kegs only, grapeshot arrives with the Clockroaches (level 3), the
+stopwatch with the Brutes (level 4). Each level uses one interior layout
+(tutorial: *open*; 2–3: *crates*; 4: *platform*; 5–6: *split*), and every
+level gives the team a few rounds to get into position before the first
+machine arrives.
+
+Machine counts scale with the number of players (an explicit count per team
+size in the level data, so the curve can be shaped). Wall hit points carry
+over between levels. Clearing the last level wins.
 
 Between levels there is a short break: every player picks one of three perks
 (the same pick-one-of-three as the tower defense), e.g. *Strong Arm* (throw
 6 cells), *Light Feet* (move one cell further), *Long Reach* (pick up from
-two cells away), *Mason* (the wall gets 2 hit points back).
+two cells away), *Quick Hands* (load and fire in one action), *Mason* (the
+wall gets 2 hit points back; one Mason per break for the whole team).
 
 ## Players who are away
 
@@ -159,3 +184,50 @@ No changes to the mode interface are needed. `Step(dt)` runs the plan timer
 and resolve delay; the resolve playback travels as ordered events in the
 snapshot; and because phones only need to know *who* has committed, no
 per-player private messages are needed (a phone remembers its own plan).
+
+## Clarifications
+
+Decisions taken while building the server, where the text above is silent.
+The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
+
+- **Geometry.** The outer wall is the row `y = 0` and the column `x = 0`;
+  the rampart walkway is the next row and column, at height 1. Catapults are
+  wall cells; an engineer loads or fires from the walkway cell next to one.
+  Stairs connect both heights; otherwise a step needs equal height.
+- **Moves** are to a destination cell within the move budget along any walk
+  (other engineers do not block the path, only the destination matters at
+  resolve). Three or more engineers rotating cells all succeed; only a swap of
+  two bumps.
+- **Throws** are straight (row or column), 1–4 cells, onto a cell someone could
+  stand on. All throws leave the hands at once, so a chain of throws in one
+  round works (A to B while B throws on to C). Two throws at one catcher: the
+  first (player order) is caught, the second lands at their feet. A bomb that
+  cannot rest where it lands (stairs, or a bomb already there) settles on the
+  nearest free floor cell. An engineer who catches and also planned a move
+  walks on with the bomb (their move was checked when they were empty-handed).
+- **Pick-up** reaches the own cell and the four neighbours at any height.
+  Contested pick-ups and loads fail for everyone involved; a pick-up also
+  fails if the engineer just caught a bomb.
+- **Firing** an empty lane wastes the bomb. If two engineers fire the same
+  catapult, it fires once.
+- **Stopwatch** freezes do not stack: a machine skips `max(current, 2)` more
+  advances.
+- **Machines** stack freely on lane cells. New machines appear at the far end
+  during the machine stage and first move the round after. The TV gets next
+  round's arrivals (`incoming`) to draw as shadows.
+- **Bombs** on the ground are topped up to *players + 2* after every resolve,
+  on random free courtyard floor cells (no bomb, no engineer); if no keg or
+  grapeshot exists anywhere, the next one drawn is never a stopwatch.
+- **Boss scaling.** The Iron Baron moves every third round and its hit points
+  scale with the team (4 for one player, 9 for four, 13 for eight).
+- **Mason** is one pick per break for the team: the first pick heals and
+  removes Mason from everyone else's offer. Perk offers last only for the
+  break; unpicked ones vanish.
+- **Away.** Two missed rounds in a row (a timed-out round counts) or a
+  disconnect make a player away; any plan, ready or perk stands them back up;
+  reconnecting alone does not. Their engineer stays on the board.
+- **Late joiners and returning players** get an engineer on a free start cell
+  at once, in any phase. A player disconnected at a level start has no engineer
+  until they return.
+- **Restart** (host) works in any phase but the lobby; Open plans survives it.
+- **Keep size** is chosen at the start by the number of players in the room.

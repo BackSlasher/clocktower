@@ -2,9 +2,12 @@
 // websockets and plays. Without -room it first opens a TV connection to
 // create a room (and acts as that TV, counting what it receives).
 //
-//	ctbot -url http://localhost:8080 -room ABCD -n 4 [-skill good|bad|casual|idle] [-name-prefix Bot] [-no-start] [-loop]
+//	ctbot -url http://localhost:8080 -room ABCD -n 4 [-skill good|bad|casual|idle] [-name-prefix Bot] [-no-start] [-loop] [-mode ID]
 //
 // Bots take perks from their offers by sending `perk` like a phone does.
+// They play whatever mode the room is in (`welcome.mode`, `setup.mode`,
+// `room.mode`): tower_defense or catapult_coop. With -mode, the host bot
+// switches the room to that mode in the lobby before starting.
 package main
 
 import (
@@ -24,6 +27,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	cc "clocktower/internal/modes/catapult_coop"
+	ccbot "clocktower/internal/modes/catapult_coop/bot"
 	game "clocktower/internal/modes/tower_defense"
 	"clocktower/internal/modes/tower_defense/bot"
 )
@@ -40,6 +45,8 @@ var (
 	taps       = flag.Float64("taps", 3, "winding taps per second per bot")
 	startWait  = flag.Duration("start-wait", 2*time.Second, "how long the host waits for the other bots before starting")
 	quiet      = flag.Bool("q", false, "less logging")
+	modeID     = flag.String("mode", "", "host switches the room to this mode id in the lobby before starting (e.g. catapult_coop)")
+	planDelay  = flag.Float64("plan-delay", 1.5, "catapult_coop: seconds into a plan phase before a bot commits (staggered per bot)")
 )
 
 type fatalErr struct{ code, msg string }
@@ -89,15 +96,21 @@ func main() {
 		log.Printf("created room %s", code)
 	}
 
-	results := make(chan *game.End, *n)
+	results := make(chan *outcome, *n)
 	var wg sync.WaitGroup
 	for i := 0; i < *n; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			seed := uint64(time.Now().UnixNano()) + uint64(i)*7919
 			p := &player{idx: i, name: botName(i), room: code,
-				bot: bot.New("", skill, uint64(time.Now().UnixNano())+uint64(i)*7919)}
+				bot: bot.New("", skill, seed), cb: ccbot.New("", seed)}
 			p.bot.TapsPerSec = *taps
+			p.cb.Delay = *planDelay + 0.4*float64(i)
+			p.cb.NoPerks = skill == bot.Idle
+			if skill == bot.Bad || skill == bot.Casual {
+				p.cb.Mistake = map[bot.Skill]float64{bot.Bad: 0.4, bot.Casual: 0.1}[skill]
+			}
 			end, err := p.run(ctx)
 			if err != nil && ctx.Err() == nil {
 				log.Printf("[%s] stopped: %v", p.name, err)
@@ -108,7 +121,7 @@ func main() {
 	}
 	wg.Wait()
 	close(results)
-	var end *game.End
+	var end *outcome
 	for e := range results {
 		if e != nil {
 			end = e
@@ -123,9 +136,16 @@ func main() {
 		log.Print("no game result")
 		os.Exit(1)
 	}
-	b, _ := json.Marshal(end)
-	log.Printf("RESULT won=%v wave=%d time=%.0fs", end.Won, end.Wave, end.Time)
-	fmt.Println(string(b))
+	log.Printf("RESULT mode=%s won=%v %s", end.mode, end.won, end.desc)
+	fmt.Println(string(end.raw))
+}
+
+// outcome is a finished game as one bot saw it.
+type outcome struct {
+	mode string
+	won  bool
+	desc string
+	raw  json.RawMessage // the room's `end` object
 }
 
 // --- TV ---------------------------------------------------------------------
@@ -184,10 +204,16 @@ type player struct {
 	room  string
 	token string
 	bot   *bot.Bot
+	cb    *ccbot.Bot
 
 	you       string
+	mode      string     // the room's current mode id
+	keeps     []*cc.Keep // catapult_coop map
 	rm        *game.RoomMsg
 	snap      *game.Snap
+	crm       *cc.RoomMsg // catapult_coop room / snap
+	csnap     *cc.Snap
+	modeAsked time.Time
 	started   time.Time // when this bot first saw the lobby as host
 	restartAt time.Time
 	lastSend  time.Time
@@ -204,7 +230,7 @@ func (p *player) logf(format string, a ...any) {
 
 // run keeps a connection up (reconnecting with the token) until the game
 // ends or a fatal error arrives.
-func (p *player) run(ctx context.Context) (*game.End, error) {
+func (p *player) run(ctx context.Context) (*outcome, error) {
 	backoff := 300 * time.Millisecond
 	for ctx.Err() == nil {
 		end, err := p.session(ctx)
@@ -225,7 +251,7 @@ func (p *player) run(ctx context.Context) (*game.End, error) {
 	return nil, ctx.Err()
 }
 
-func (p *player) session(ctx context.Context) (*game.End, error) {
+func (p *player) session(ctx context.Context) (*outcome, error) {
 	q := url.Values{"role": {"player"}, "room": {p.room}, "name": {p.name}}
 	if p.token != "" {
 		q.Set("token", p.token)
@@ -276,7 +302,7 @@ func (p *player) session(ctx context.Context) (*game.End, error) {
 	}
 }
 
-func (p *player) handle(data []byte) (*game.End, error) {
+func (p *player) handle(data []byte) (*outcome, error) {
 	var head struct {
 		T string `json:"t"`
 	}
@@ -291,9 +317,16 @@ func (p *player) handle(data []byte) (*game.End, error) {
 		}
 		_ = json.Unmarshal(data, &w)
 		p.token, p.you = w.Token, w.You
-		p.bot.ID = w.You
-		p.logf("joined room %s as %s", p.room, p.you)
+		p.bot.ID, p.cb.ID = w.You, w.You
+		p.setup(data)
+		p.logf("joined room %s as %s (mode %s)", p.room, p.you, p.mode)
+	case "setup":
+		p.setup(data)
+		p.logf("mode is now %s", p.mode)
 	case "room":
+		if p.mode == cc.ModeID {
+			return p.handleCCRoom(data)
+		}
 		var rm game.RoomMsg
 		if json.Unmarshal(data, &rm) == nil {
 			prev := p.rm
@@ -303,7 +336,9 @@ func (p *player) handle(data []byte) (*game.End, error) {
 			}
 			if (rm.Phase == game.PhaseWon || rm.Phase == game.PhaseLost) && rm.End != nil {
 				if !*loop {
-					return rm.End, nil
+					raw, _ := json.Marshal(rm.End)
+					return &outcome{mode: game.ModeID, won: rm.End.Won, raw: raw,
+						desc: fmt.Sprintf("wave=%d time=%.0fs", rm.End.Wave, rm.End.Time)}, nil
 				}
 				if p.restartAt.IsZero() {
 					p.restartAt = time.Now().Add(10 * time.Second)
@@ -314,6 +349,13 @@ func (p *player) handle(data []byte) (*game.End, error) {
 			}
 		}
 	case "snap":
+		if p.mode == cc.ModeID {
+			var s cc.Snap
+			if json.Unmarshal(data, &s) == nil {
+				p.csnap = &s
+			}
+			return nil, nil
+		}
 		var s game.Snap
 		if json.Unmarshal(data, &s) == nil {
 			p.snap = &s
@@ -329,6 +371,11 @@ func (p *player) handle(data []byte) (*game.End, error) {
 			return nil, fatalErr{e.Code, e.Msg}
 		case "occupied", "poor":
 			// races with teammates; harmless
+		case "too_late":
+			// a plan raced the end of the plan phase; harmless
+		case "bad_plan":
+			p.logf("plan refused: %s", e.Msg)
+			p.cb.Rejected()
 		default:
 			p.logf("error %s: %s", e.Code, e.Msg)
 		}
@@ -336,10 +383,24 @@ func (p *player) handle(data []byte) (*game.End, error) {
 	return nil, nil
 }
 
-func (p *player) decide() []game.Cmd {
+func (p *player) decide() []any {
+	if p.mode == cc.ModeID {
+		return p.decideCC()
+	}
 	if p.rm == nil || p.you == "" {
 		return nil
 	}
+	if c := p.switchMode(p.rm.Phase == game.PhaseLobby, p.rm.Host == p.you); c != nil {
+		return []any{c}
+	}
+	var out []any
+	for _, c := range p.decideTD() {
+		out = append(out, c)
+	}
+	return out
+}
+
+func (p *player) decideTD() []game.Cmd {
 	now := time.Now()
 	var out []game.Cmd
 	isHost := p.rm.Host == p.you
@@ -348,7 +409,7 @@ func (p *player) decide() []game.Cmd {
 		if p.started.IsZero() {
 			p.started = now
 		}
-		if isHost && !*noStart && (len(p.rm.Players) >= *n || now.Sub(p.started) > *startWait) && now.Sub(p.lastSend) > time.Second {
+		if isHost && !*noStart && (*modeID == "" || *modeID == p.mode) && (len(p.rm.Players) >= *n || now.Sub(p.started) > *startWait) && now.Sub(p.lastSend) > time.Second {
 			p.lastSend = now
 			p.logf("starting the game with %d players", len(p.rm.Players))
 			out = append(out, game.Cmd{T: "start"})
@@ -403,4 +464,113 @@ func botName(i int) string {
 		return strings.TrimSpace(list[i])
 	}
 	return fmt.Sprintf("%s%d", *namePrefix, i+1)
+}
+
+// --- catapult_coop -------------------------------------------------------------
+
+// setup reads `mode` and `map` from a welcome or setup message.
+func (p *player) setup(data []byte) {
+	var m struct {
+		Mode string          `json:"mode"`
+		Map  json.RawMessage `json:"map"`
+	}
+	if json.Unmarshal(data, &m) != nil {
+		return
+	}
+	if m.Mode != p.mode {
+		p.rm, p.snap, p.crm, p.csnap = nil, nil, nil, nil
+	}
+	p.mode = m.Mode
+	p.keeps = nil
+	if m.Mode == cc.ModeID {
+		var mp cc.MapT
+		if json.Unmarshal(m.Map, &mp) == nil {
+			p.keeps = mp.Keeps
+		}
+	}
+}
+
+// switchMode asks for -mode once a second while this bot is the host in
+// the lobby and the room is in another mode.
+func (p *player) switchMode(lobby, host bool) *map[string]string {
+	if *modeID == "" || *modeID == p.mode || !lobby || !host || time.Since(p.modeAsked) < time.Second {
+		return nil
+	}
+	p.modeAsked = time.Now()
+	p.logf("switching the room to %s", *modeID)
+	return &map[string]string{"t": "mode", "id": *modeID}
+}
+
+func (p *player) handleCCRoom(data []byte) (*outcome, error) {
+	var rm cc.RoomMsg
+	if json.Unmarshal(data, &rm) != nil {
+		return nil, nil
+	}
+	prev := p.crm
+	p.crm = &rm
+	if prev == nil || prev.Phase != rm.Phase || prev.Level != rm.Level {
+		p.logf("phase %s level %d", rm.Phase, rm.Level)
+	}
+	if (rm.Phase == cc.PhaseWon || rm.Phase == cc.PhaseLost) && rm.End != nil {
+		if !*loop {
+			raw, _ := json.Marshal(rm.End)
+			return &outcome{mode: cc.ModeID, won: rm.End.Won, raw: raw,
+				desc: fmt.Sprintf("level=%d wall=%d rounds=%d time=%.0fs", rm.End.Level, rm.End.Wall, rm.End.Rounds, rm.End.Time)}, nil
+		}
+		if p.restartAt.IsZero() {
+			p.restartAt = time.Now().Add(10 * time.Second)
+		}
+	}
+	if rm.Phase == cc.PhaseLobby {
+		p.restartAt = time.Time{}
+	}
+	return nil, nil
+}
+
+func (p *player) decideCC() []any {
+	rm := p.crm
+	if rm == nil || p.you == "" {
+		return nil
+	}
+	now := time.Now()
+	isHost := rm.Host == p.you
+	switch rm.Phase {
+	case cc.PhaseLobby:
+		if p.started.IsZero() {
+			p.started = now
+		}
+		if c := p.switchMode(true, isHost); c != nil {
+			return []any{c}
+		}
+		if isHost && !*noStart && (*modeID == "" || *modeID == p.mode) && (len(rm.Players) >= *n || now.Sub(p.started) > *startWait) && now.Sub(p.lastSend) > time.Second {
+			p.lastSend = now
+			p.logf("starting the game with %d players", len(rm.Players))
+			return []any{cc.Cmd{T: "start"}}
+		}
+		return nil
+	case cc.PhaseWon, cc.PhaseLost:
+		if isHost && !p.restartAt.IsZero() && now.After(p.restartAt) && now.Sub(p.lastSend) > time.Second {
+			p.lastSend = now
+			p.started = time.Time{}
+			return []any{cc.Cmd{T: "restart"}}
+		}
+		return nil
+	}
+	var keep *cc.Keep
+	for _, k := range p.keeps {
+		if k.ID == rm.Keep {
+			keep = k
+		}
+	}
+	if p.bot.Skill == bot.Idle || keep == nil {
+		return nil
+	}
+	var out []any
+	for _, c := range p.cb.Act(rm, p.csnap, keep) {
+		if c.T == "perk" {
+			p.logf("takes perk %s", c.ID)
+		}
+		out = append(out, c)
+	}
+	return out
 }

@@ -6,11 +6,12 @@ import (
 	"sync"
 
 	"clocktower/internal/mode"
+	catapultcoop "clocktower/internal/modes/catapult_coop"
 	"clocktower/internal/modes/stub"
 	towerdefense "clocktower/internal/modes/tower_defense"
 )
 
-var once, stubOnce sync.Once
+var once, stubOnce, wipOnce sync.Once
 
 // RegisterTo registers the product modes in r, plus the dev-only stub mode
 // when withStub is set. The stub always comes after the real modes.
@@ -19,6 +20,20 @@ func RegisterTo(r *mode.Registry, withStub bool) {
 	if withStub {
 		stub.RegisterTo(r)
 	}
+}
+
+// RegisterWIPTo registers the work-in-progress modes (the server's
+// -wip-modes flag) in r: catapult_coop. Call it after RegisterTo's product
+// modes and before the stub.
+func RegisterWIPTo(r *mode.Registry) {
+	catapultcoop.RegisterTo(r)
+}
+
+// RegisterWIP additionally registers the work-in-progress modes in the
+// default registry, after the product modes; safe to call more than once.
+func RegisterWIP() {
+	Register()
+	wipOnce.Do(func() { RegisterWIPTo(mode.Default) })
 }
 
 // Register registers all product modes; safe to call more than once.

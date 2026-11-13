@@ -41,3 +41,19 @@ func TestDefaultRegisterHasNoStub(t *testing.T) {
 		t.Fatal("tower_defense missing")
 	}
 }
+
+// The work-in-progress modes come after the product modes and only on request.
+func TestWIPModesOrder(t *testing.T) {
+	r := mode.NewRegistry()
+	RegisterTo(r, false)
+	RegisterWIPTo(r)
+	if got := ids(r); len(got) != 2 || got[0] != "tower_defense" || got[1] != "catapult_coop" {
+		t.Fatalf("with wip: %v", got)
+	}
+	if m, _ := r.Get("catapult_coop"); m.Name != "Bomb Voyage" || m.Tagline != "Bombs up, machines down" {
+		t.Fatalf("catapult_coop info: %+v", m.Info)
+	}
+	if _, ok := mode.Get("catapult_coop"); ok {
+		t.Fatal("catapult_coop registered by default")
+	}
+}
