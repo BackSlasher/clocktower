@@ -63,16 +63,6 @@ export function actIcon(act) {
     case 'load':
       body = `<g class="ld"><path d="M0 -36V2M-14 -12L0 2L14 -12" fill="none" stroke-width="8"/><path d="M-26 10l6 22h40l6-22" fill="none" stroke-width="7"/></g>`;
       break;
-    case 'fire': {
-      let pts = '';
-      for (let i = 0; i < 16; i++) {
-        const an = (i / 16) * Math.PI * 2;
-        const r = i % 2 ? 14 : 34;
-        pts += `${(Math.cos(an) * r).toFixed(1)},${(Math.sin(an) * r).toFixed(1)} `;
-      }
-      body = `<g class="fi"><polygon points="${pts}"/><circle r="9"/></g>`;
-      break;
-    }
     case 'wait':
     default:
       body = `<g class="wt"><path d="M-17 -28h34L-17 28h34Z" fill="none" stroke-width="6" stroke-linejoin="round"/><path d="M-8 22h16l-8-9z"/></g>`;
@@ -432,7 +422,6 @@ export class UI {
     const cols = [
       ['kills', 'Kills'],
       ['dmg', 'Damage'],
-      ['fires', 'Fires'],
       ['loads', 'Loads'],
       ['throws', 'Throws'],
       ['catches', 'Catches'],

@@ -21,6 +21,9 @@ const WALL_HIT = 0.5;
 const SPAWN_AT = 0.5;
 const BOMB_AT = 0.62;
 
+// ground bombs sit toward the front corner of their tile, so an engineer can stand behind them
+export const BOMB_OFF = 0.2;
+
 export const ARM_REST = 0.95;
 const ARM_TOP = 2.6;
 
@@ -158,6 +161,7 @@ export class Playback {
 
     const handZ = (x, y) => S.standZ(x, y) + 0.95;
     let bombIdx = 0;
+    const loadedIn = new Set(); // "pid|slot|cat" of successful loads
     // events arrive in time order, so an engineer's position at an event's time is known from
     // the moves recorded so far
     for (const ev of evs) {
@@ -233,7 +237,7 @@ export class Playback {
             groundTake(ev.bomb, T(ev, 0.18));
             const [bx, by] = ev.at;
             const p = this.engPos(ev.pid, T(ev, 0));
-            this.flights.push({ kind: ev.kind, from: [bx, by, S.topZ(bx, by)], to: [p[0], p[1], handZ(p[0], p[1])], t0: T(ev, 0.18), t1: tg, h: 0.45 });
+            this.flights.push({ kind: ev.kind, from: [bx + BOMB_OFF, by + BOMB_OFF, S.topZ(bx, by)], to: [p[0], p[1], handZ(p[0], p[1])], t0: T(ev, 0.18), t1: tg, h: 0.45 });
             if (e) e.carry.push([tg, ev.kind]);
             this.cues.push({ t: tg, kind: 'pickup', ev, p });
             mark(ev.pid, ev.slot, tg, 'ok', 'Got it');
@@ -255,6 +259,7 @@ export class Playback {
             this.flights.push({ kind: ev.kind, from: [p[0], p[1], handZ(p[0], p[1])], to: [cat.x, cat.y, 1.25], t0: T(ev, 0.15), t1: tg, h: 0.5 });
             if (this.cats[ev.cat]) this.cats[ev.cat].load.push([tg, ev.kind]);
             this.cues.push({ t: tg, kind: 'load', ev });
+            loadedIn.add(`${ev.pid}|${ev.slot}|${ev.cat}`);
             mark(ev.pid, ev.slot, tg, 'ok', 'Loaded');
           } else {
             this.cues.push({ t: tg, kind: 'fizzle', ev, at: cat ? [cat.x, cat.y] : null, z: 1.3 });
@@ -267,14 +272,7 @@ export class Playback {
           const c = this.cats[ev.cat];
           const tf = T(ev, FIRE_GO);
           const th = T(ev, FIRE_HIT);
-          const e = eng(ev.pid);
-          if (e) e.poses.push({ pose: 'reach', t0: T(ev, 0), t1: T(ev, 0.35) });
-          if (ev.result === 'empty') {
-            if (c) c.swings.push([tf, 0.25]);
-            this.cues.push({ t: tf, kind: 'fizzle', ev, at: this.catXY(ev.cat), z: 1.4 });
-            mark(ev.pid, ev.slot, tf, 'fizzle', 'Empty', 3);
-            break;
-          }
+          // catapults fire by themselves at the end of a slot (pid = who loaded the bomb)
           if (c) {
             c.load.push([tf, null]);
             c.swings.push([tf, 1]);
@@ -286,7 +284,7 @@ export class Playback {
           if (hits.length) {
             const ps = hits.map((h) => this.machs.get(h.id)?.pos0).filter((v) => v !== undefined);
             if (ps.length) target = ev.kind === 'keg' ? Math.min(...ps) : (Math.min(...ps) + Math.max(...ps)) / 2;
-          } else if (ev.result === 'wasted' && L) target = (L.len - 1) * 0.6;
+          }
           const cat = S.catapult(ev.cat);
           const [lx, ly] = S.lanePt(lane, target);
           const shot = { kind: ev.kind, lane, target, from: [cat?.x ?? 0, cat?.y ?? 0, 1.95], to: [lx, ly, -0.1], t0: tf + 0.04, t1: th, h: 1.6 + Math.hypot(lx - (cat?.x ?? 0), ly - (cat?.y ?? 0)) * 0.28, ev };
@@ -307,8 +305,8 @@ export class Playback {
             }
             this.cues.push({ t: tt, kind: h.killed ? 'kill' : 'hit', ev, hit: h, m });
           }
-          if (ev.result === 'wasted') mark(ev.pid, ev.slot, th, 'warn', 'Wasted');
-          else mark(ev.pid, ev.slot, th, 'ok', kills ? (kills > 1 ? `${kills} kills` : 'Kill!') : ev.kind === 'stopwatch' ? 'Frozen' : 'Hit');
+          // a load that fired in the same slot: the loader's slot reads "Loaded → Fired!"
+          if (ev.pid && loadedIn.has(`${ev.pid}|${ev.slot}|${ev.cat}`)) mark(ev.pid, ev.slot, th, 'ok', kills ? 'Fired! Kill' : 'Fired!', 2.5);
           break;
         }
         case 'advance': {

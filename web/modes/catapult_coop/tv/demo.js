@@ -5,16 +5,18 @@
 // # crate, S stairs). `ctDebug.game.freezeT = 1.35` holds a resolve playback at 1.35 s
 // (the middle of step 2 in the resolve scene).
 
+// corner stairs in two orientations: (2,2) climbs to the rampart corner, (6,4) climbs onto a
+// platform to its right and behind
 const ART = [
     'WWWCWWCWW',
-    'W=======S',
-    'W=.o.....',
-    'C=...==*.',
-    'W=...=S.o',
+    'W========',
+    'W=S......',
+    'C=...===.',
+    'W=....S=.',
     'W=.......',
     'C=....#..',
-    'W=....o..',
-    'WS.......',
+    'W=.......',
+    'W=.......',
 ];
 
 function layoutFrom(rows, id) {
@@ -65,19 +67,19 @@ export function startDemo(kind, setup, deliver) {
 
   // the queues (resolve scene: see the batch below)
   const Q = [
-    { acts: [mv(1, 0), { a: 'load' }, { a: 'fire' }, W8], done: true },
+    { acts: [mv(1, 0), { a: 'load' }, W8, W8], done: true },
     { acts: [W8, { a: 'pickup' }, mv(-1, 0)], done: true },
     { acts: [W8, th(0, -1), mv(1, 0)], done: true },
     { acts: [mv(0, -1), mv(0, -1), th(0, -1), W8], done: true },
-    { acts: [mv(-1, 0), { a: 'pickup', dx: 0, dy: -1 }, th(-1, 0)], done: true },
+    { acts: [mv(-1, 0), { a: 'pickup' }, th(-1, 0)], done: true },
     { acts: [mv(0, 1), W8, W8, W8], done: true },
     { acts: [], done: false },
     { acts: [mv(0, -1), mv(1, 0)], done: true },
   ];
   // the plan scene: queues being filled
   const QP = [
-    { acts: [mv(1, 0), { a: 'load' }, { a: 'fire' }, W8], done: true },
-    { acts: [{ a: 'pickup', dx: 0, dy: 1 }, th(-1, 0)], done: false },
+    { acts: [mv(1, 0), { a: 'load' }, W8, W8], done: true },
+    { acts: [{ a: 'pickup' }, th(-1, 0)], done: false },
     { acts: [th(0, -1), mv(1, 0), mv(0, -1)], done: true },
     { acts: [], done: false },
     { acts: [mv(-1, 0), mv(-1, 0), { a: 'pickup' }], done: false },
@@ -95,7 +97,7 @@ export function startDemo(kind, setup, deliver) {
           rounds: kind === 'won' ? 31 : 17,
           wall: kind === 'won' ? 5 : 0,
           time: 912.5,
-          stats: Object.fromEntries(players.map((p, i) => [p.id, { throws: 30 - i * 3, catches: 12 + i, pickups: 20 - i, loads: 9 - i, fires: 8 - i, kills: 14 - i * 2, dmg: 22 - i * 3, steps: 120 + i * 9, bumps: i % 3, fizzles: (i * 5) % 9 }])),
+          stats: Object.fromEntries(players.map((p, i) => [p.id, { throws: 30 - i * 3, catches: 12 + i, pickups: 20 - i, loads: 9 - i, kills: 14 - i * 2, dmg: 22 - i * 3, steps: 120 + i * 9, bumps: i % 3, fizzles: (i * 5) % 9 }])),
           awards: [
             { pid: 'p1', title: 'Sharpshooter', detail: '14 kills' },
             { pid: 'p2', title: 'Safe Hands', detail: '13 catches' },
@@ -121,15 +123,17 @@ export function startDemo(kind, setup, deliver) {
           { id: 2, kind: 'brute', lane: 1, pos: far(1), hp: 3, max: 4, frozen: 1 },
           { id: 3, kind: 'roach', lane: 2, pos: far(2), hp: 1, max: 1, frozen: 0 },
           { id: 4, kind: 'roach', lane: 2, pos: far(2), hp: 1, max: 1, frozen: 0 },
-          { id: 5, kind: 'scrap', lane: 3, pos: 0, hp: 1, max: 1, frozen: 0 },
         ];
   const engineers = players.map((p, i) => ({ pid: p.id, x: P[i][0], y: P[i][1], carry: carry[i] ? { id: 100 + i, kind: carry[i] } : null }));
+  // a bomb under Brunel's feet in the plan scene (pick-up works on your own cell)
   const bombs = [
-    { id: 1, kind: 'keg', x: 3, y: 2 },
+    { id: 1, kind: 'keg', x: 4, y: 2 },
     { id: 2, kind: 'grapeshot', x: 8, y: 4 },
     { id: 3, kind: 'stopwatch', x: 6, y: 7 },
+    ...(kind === 'plan' ? [{ id: 4, kind: 'keg', x: 5, y: 1 }] : []),
   ];
-  const catapults = cats.map((c) => ({ id: c.id, bomb: null }));
+  // catapult 4 is loaded and its lane is empty: armed, waiting for a machine
+  const catapults = cats.map((c, i) => ({ id: c.id, bomb: i === 3 ? { id: 50, kind: 'stopwatch' } : null }));
   const A = {
     t: 'snap', phase, time: 100, level, round: 4, left: kind === 'break' ? 5 : 14.4, untimed: false, wall: kind === 'lost' ? 0 : kind === 'boss' ? 4 : 11, wallMax: defs.wallHP,
     engineers, bombs, catapults, machines,
@@ -171,8 +175,8 @@ export function startDemo(kind, setup, deliver) {
           slots.push({ slot, at: s0, dur: T.at - s0, stages });
         };
         stage(0, ['move']);
-        stage(1, ['throw', 'move', 'grab']);
-        stage(2, ['throw', 'move', 'fire']);
+        stage(1, ['throw', 'move', 'grab', 'fire']);
+        stage(2, ['throw', 'move']);
         const machinesAt = T.at;
         const dur = machinesAt + (defs.machineTime || 0.6) + (defs.resolveBase || 0.4) / 2;
         const pid = (i) => players[i]?.id;
@@ -187,16 +191,16 @@ export function startDemo(kind, setup, deliver) {
         if (N > 3) ev.push({ e: 'move', s: 'move', slot: 1, pid: pid(3), from: [6, 4], to: [6, 3], result: 'ok' });
         ev.push({ e: 'fizzle', s: 'grab', slot: 1, pid: pid(1), a: 'pickup', at: [5, 1], reason: 'no_bomb' });
         ev.push({ e: 'load', s: 'grab', slot: 1, pid: pid(0), cat: c0.id, bomb: 100, kind: 'keg', result: 'ok' });
-        // slot 3 (index 2): Babbage throws up into the empty rampart; Brunel steps; Ada fires
+        // its lane has a machine, so catapult 1 fires by itself at the end of the slot
+        ev.push({ e: 'fire', s: 'fire', slot: 1, pid: pid(0), cat: c0.id, lane: c0.lane, bomb: 100, kind: 'keg', hits: [{ id: 1, dmg: 2, hp: 0, killed: true, frozen: 0 }] });
+        // slot 3 (index 2): Babbage throws up into the empty rampart; Brunel steps
         if (N > 3) ev.push({ e: 'throw', s: 'throw', slot: 2, pid: pid(3), bomb: 103, kind: 'grapeshot', from: [6, 3], dir: [0, -1], to: [6, 1], result: 'landed', at: [6, 1] });
         ev.push({ e: 'move', s: 'move', slot: 2, pid: pid(1), from: [5, 1], to: [4, 1], result: 'ok' });
         ev.push({ e: 'move', s: 'move', slot: 2, pid: pid(2), from: [3, 5], to: [4, 5], result: 'ok' });
-        ev.push({ e: 'fire', s: 'fire', slot: 2, pid: pid(0), cat: c0.id, lane: c0.lane, bomb: 100, kind: 'keg', result: 'ok', hits: [{ id: 1, dmg: 2, hp: 0, killed: true, frozen: 0 }] });
         // machines
         ev.push({ e: 'stall', s: 'machines', id: 2, lane: 1, pos: far(1), frozen: 0 });
         ev.push({ e: 'advance', s: 'machines', id: 3, kind: 'roach', lane: 2, from: far(2), to: Math.max(0, far(2) - 2) });
         ev.push({ e: 'advance', s: 'machines', id: 4, kind: 'roach', lane: 2, from: far(2), to: Math.max(0, far(2) - 2) });
-        ev.push({ e: 'wall', s: 'machines', id: 5, kind: 'scrap', lane: 3, from: 0, dmg: 1, wall: A.wall - 1 });
         ev.push({ e: 'spawn', s: 'machines', id: 40, kind: 'scrap', lane: 0, pos: far(0), hp: 1 });
         ev.push({ e: 'bomb', s: 'machines', id: 60, kind: 'keg', x: 7, y: 8 });
 
@@ -212,7 +216,7 @@ export function startDemo(kind, setup, deliver) {
           { id: 40, kind: 'scrap', lane: 0, pos: far(0), hp: 1, max: 1, frozen: 0 },
         ];
         deliver({ ...room, phase: 'resolve' });
-        deliver({ ...A, time: time + 0.5, phase: 'resolve', left: dur, wall: A.wall - 1, engineers: engB, bombs: bB, catapults, machines: mB, ev });
+        deliver({ ...A, time: time + 0.5, phase: 'resolve', left: dur, engineers: engB, bombs: bB, catapults, machines: mB, ev });
       }, 500),
     );
   };

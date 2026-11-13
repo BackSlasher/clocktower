@@ -215,7 +215,7 @@ export class Scene {
           else this.props.push({ x, y, kind: (x * 7 + y * 13) % 4 === 1 ? 'pipes' : 'crate', seed: r() });
         } else if (c.kind === 'catapult') this.props.push({ x, y, kind: 'wall', cat: true });
         else if (c.kind === 'floor' && c.h) this.props.push({ x, y, kind: 'raised' });
-        else if (c.kind === 'stairs') this.props.push({ x, y, kind: 'stairs', dir: this.stairDir(x, y) });
+        else if (c.kind === 'stairs') this.props.push({ x, y, kind: 'stairs', highs: this.stairHighs(x, y) });
       }
     }
     // a street lamp beside every lane position, alternating sides
@@ -229,6 +229,17 @@ export class Scene {
         this.lamps.push({ x: x + perp[0] * off * s, y: y + perp[1] * off * s, kind: 'lamp' });
       }
     }
+  }
+
+  // the directions of a stairs cell's raised neighbours (walkable h1 first, else any h1)
+  stairHighs(x, y) {
+    const dirs = [[0, -1], [-1, 0], [1, 0], [0, 1]];
+    let out = dirs.filter(([dx, dy]) => {
+      const n = this.cell(x + dx, y + dy);
+      return n && n.kind === 'floor' && n.h;
+    });
+    if (!out.length) out = dirs.filter(([dx, dy]) => (this.cell(x + dx, y + dy)?.h || 0) > 0);
+    return out.length ? out : [[0, -1]];
   }
 
   // stairs rise toward a walkable h1 neighbour; returns that direction [dx, dy]
@@ -333,14 +344,14 @@ function flagstones(g, r, x0, y0, w, h, pal, mortar, opts = {}) {
   };
   split(x0, y0, w, h, opts.depth ?? 0);
   for (const [x, y, sw, sh] of slabs) {
-    const f = (opts.light ?? 1) * (0.9 + r() * 0.16);
+    const f = (opts.light ?? 1) * (0.95 + r() * 0.08);
     g.fillStyle = tone(pal, r, f);
     g.fillRect(x + m, y + m, sw - 2 * m, sh - 2 * m);
     // lit edges toward −x and −y (screen up), shade toward +x and +y
-    g.fillStyle = 'rgba(255,240,205,0.22)';
+    g.fillStyle = 'rgba(255,240,205,0.13)';
     g.fillRect(x + m, y + m, sw - 2 * m, 0.022);
     g.fillRect(x + m, y + m, 0.022, sh - 2 * m);
-    g.fillStyle = 'rgba(30,18,6,0.22)';
+    g.fillStyle = 'rgba(30,18,6,0.13)';
     g.fillRect(x + m, y + sh - m - 0.026, sw - 2 * m, 0.026);
     g.fillRect(x + sw - m - 0.026, y + m, 0.026, sh - 2 * m);
     // specks
@@ -377,6 +388,36 @@ function flagstones(g, r, x0, y0, w, h, pal, mortar, opts = {}) {
       g.stroke();
     }
   }
+}
+
+// The frame of a walkable tile (in the tile's plane, centred on 0,0): a dark inset joint with
+// a lit inner edge, and a small brass stud in the middle. Drawn on every walkable cell at its
+// own height, so tiles read as tiles on the courtyard, the platforms and the wall-walks.
+export function tileFrame(g, opts = {}) {
+  const i = 0.045;
+  g.lineJoin = 'miter';
+  g.strokeStyle = opts.dark || 'rgba(46,26,8,0.72)';
+  g.lineWidth = 0.05;
+  g.strokeRect(-0.5 + i, -0.5 + i, 1 - 2 * i, 1 - 2 * i);
+  g.strokeStyle = 'rgba(255,236,196,0.22)';
+  g.lineWidth = 0.018;
+  g.strokeRect(-0.5 + i + 0.035, -0.5 + i + 0.035, 1 - 2 * i - 0.07, 1 - 2 * i - 0.07);
+  if (opts.stud !== false) stud(g);
+}
+
+function stud(g) {
+  g.fillStyle = 'rgba(30,16,4,0.55)';
+  g.beginPath();
+  g.ellipse(0.012, 0.012, 0.07, 0.07, 0, 0, TAU);
+  g.fill();
+  const gr = g.createRadialGradient(-0.02, -0.02, 0.005, 0, 0, 0.06);
+  gr.addColorStop(0, '#fff1c2');
+  gr.addColorStop(0.45, '#d9b25a');
+  gr.addColorStop(1, '#6e5120');
+  g.fillStyle = gr;
+  g.beginPath();
+  g.ellipse(0, 0, 0.058, 0.058, 0, 0, TAU);
+  g.fill();
 }
 
 // Coursed masonry on a vertical face: u along [0, len], v up [0, hgt] (local units).
@@ -524,6 +565,7 @@ function drawGround(S, px) {
       g.save();
       S.planeAt(g, x, y, 0);
       flagstones(g, r, -0.5, -0.5, 1, 1, worn ? PAL.worn : PAL.floor, PAL.mortar, { cracks: true, depth: 1 });
+      if (cell.kind === 'floor' && !cell.h) tileFrame(g);
       g.restore();
     }
   }
@@ -860,7 +902,7 @@ function propSprite(S, pr, px) {
       drawPipes(S, g, r, x, y);
       break;
     case 'stairs':
-      drawStairs(S, g, r, x, y, pr.dir);
+      drawStairs(S, g, r, x, y, pr.highs);
       break;
     case 'lamp':
       drawLamp(S, g, x, y);
@@ -880,7 +922,7 @@ function lowerAt(S, x, y, z) {
 }
 
 // a textured stone column: visible faces in masonry, top in slabs
-function stoneColumn(S, g, r, x, y, z0, z1, topPal, topMortar) {
+function stoneColumn(S, g, r, x, y, z0, z1, topPal, topMortar, walkable = false) {
   if (lowerAt(S, x + 1, y, z1)) {
     g.save();
     S.faceX(g, x + 0.5, y - 0.5, z0);
@@ -898,6 +940,7 @@ function stoneColumn(S, g, r, x, y, z0, z1, topPal, topMortar) {
   g.save();
   S.planeAt(g, x, y, z1);
   flagstones(g, r, -0.5, -0.5, 1, 1, topPal, topMortar, { m: 0.022, depth: 1 });
+  if (walkable) tileFrame(g, { dark: 'rgba(90,66,36,0.75)' });
   // bright lip along the edges that drop away: the platform reads as raised at a glance
   g.fillStyle = 'rgba(255,240,200,0.55)';
   if (lowerAt(S, x + 1, y, z1)) g.fillRect(0.44, -0.5, 0.06, 1);
@@ -928,7 +971,7 @@ function stoneColumn(S, g, r, x, y, z0, z1, topPal, topMortar) {
 }
 
 function drawRaised(S, g, r, x, y, pillar) {
-  stoneColumn(S, g, r, x, y, 0, 1, pillar ? PAL.wallL : PAL.raised, PAL.raisedMortar);
+  stoneColumn(S, g, r, x, y, 0, 1, pillar ? PAL.wallL : PAL.raised, PAL.raisedMortar, !pillar);
 }
 
 // a stone box (merlon) with masonry faces
@@ -1203,61 +1246,71 @@ function drawPipes(S, g, r, x, y) {
   g.stroke();
 }
 
-function drawStairs(S, g, r, x, y, dir) {
-  // steps rise toward dir (the h1 neighbour); the cell is h0
-  const n = 4;
-  const [dx, dy] = dir;
-  const ax = [-dy, dx];
-  const P = (u, v, z) => S.p(x + dx * u + ax[0] * v, y + dy * u + ax[1] * v, z);
+// Corner steps: the cell climbs toward its raised neighbours. With two raised neighbours at a
+// right angle (A and B) the height is max(sa, sb) in steps (sa runs 0..1 toward A, sb toward
+// B): L-shaped treads whose top runs along both raised sides and which descend toward the
+// corner between the two low sides, so the stairs can be entered from either low neighbour
+// and left onto either high one. With one raised neighbour (or two opposite ones) it is a
+// straight flight. Each tread is drawn as up to two boxes standing on the tread below.
+const STEP_AT = [0, 0.27, 0.55, 0.8]; // where each tread starts (0 = low side, 1 = high side)
+function drawStairs(S, g, r, x, y, highs) {
+  const A = highs[0];
+  const B = highs.find((d) => d[0] * A[0] + d[1] * A[1] === 0) || null;
+  const C = B || [A[1], A[0]]; // the across direction of a straight flight
+  const n = STEP_AT.length;
+  const pt = (sa, sb) => [x + A[0] * (sa - 0.5) + C[0] * (sb - 0.5), y + A[1] * (sa - 0.5) + C[1] * (sb - 0.5)];
+  const rect = (sa0, sa1, sb0, sb1, z0, z1, lvl) => {
+    const a = pt(sa0, sb0);
+    const b = pt(sa1, sb1);
+    return { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]), z0, z: z1, lvl };
+  };
   const steps = [];
   for (let i = 0; i < n; i++) {
-    const u0 = -0.5 + i / n;
-    const u1 = u0 + 1 / n;
-    const z = (i + 1) / n;
-    const xs = [x + dx * u0 + ax[0] * -0.5, x + dx * u1 + ax[0] * 0.5];
-    const ys = [y + dy * u0 + ax[1] * -0.5, y + dy * u1 + ax[1] * 0.5];
-    steps.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), z });
+    const s0 = STEP_AT[i];
+    const z0 = i / n;
+    const z1 = (i + 1) / n;
+    steps.push(rect(s0, 1, 0, 1, z0, z1, i)); // the slab along A
+    if (B && s0 > 0) steps.push(rect(0, s0, s0, 1, z0, z1, i)); // the rest of the L, along B
   }
-  steps.sort((a, b) => a.x0 + a.y0 - (b.x0 + b.y0));
-  for (const s of steps) {
+  // lower treads first; within a tread, back to front
+  steps.sort((p, q) => p.lvl - q.lvl || p.x0 + p.y0 - (q.x0 + q.y0));
+  // outer (low, large) treads first; each higher tread sits on the one below
+  for (const st of steps) {
+    const hz = st.z - st.z0;
     g.save();
-    S.faceX(g, s.x1, s.y0, 0);
-    masonry(g, r, s.y1 - s.y0, s.z, PAL.wallR, { course: 0.125 });
-    faceShade(g, s.y1 - s.y0, s.z, 0.12, 0.3);
+    S.faceX(g, st.x1, st.y0, st.z0);
+    masonry(g, r, st.y1 - st.y0, hz, PAL.wallR, { course: 0.125 });
+    faceShade(g, st.y1 - st.y0, hz, 0.14, 0.12);
     g.restore();
     g.save();
-    S.faceY(g, s.x0, s.y1, 0);
-    masonry(g, r, s.x1 - s.x0, s.z, PAL.wallL, { course: 0.125 });
-    faceShade(g, s.x1 - s.x0, s.z, 0.02, 0.3);
+    S.faceY(g, st.x0, st.y1, st.z0);
+    masonry(g, r, st.x1 - st.x0, hz, PAL.wallL, { course: 0.125 });
+    faceShade(g, st.x1 - st.x0, hz, 0.02, 0.12);
     g.restore();
-    // tread: light, worn stone with a bright nosing
-    const top = [S.p(s.x0, s.y0, s.z), S.p(s.x1, s.y0, s.z), S.p(s.x1, s.y1, s.z), S.p(s.x0, s.y1, s.z)];
+    const top = [S.p(st.x0, st.y0, st.z), S.p(st.x1, st.y0, st.z), S.p(st.x1, st.y1, st.z), S.p(st.x0, st.y1, st.z)];
     poly(g, top);
-    g.fillStyle = tone(PAL.worn, r, 1.08);
+    g.fillStyle = tone(PAL.raised, r, 0.98);
     g.fill();
-    g.strokeStyle = 'rgba(30,18,6,0.55)';
-    g.lineWidth = 1;
+    g.strokeStyle = 'rgba(46,26,8,0.6)';
+    g.lineWidth = 1.1;
     g.stroke();
-  }
-  // a brass handrail on one side
-  g.strokeStyle = '#d9b25a';
-  g.lineWidth = 3 * S.k;
-  const a = P(-0.5, 0.46, 0.45);
-  const b = P(0.5, 0.46, 1.45);
-  g.beginPath();
-  g.moveTo(a[0], a[1]);
-  g.lineTo(b[0], b[1]);
-  g.stroke();
-  g.lineWidth = 2 * S.k;
-  g.strokeStyle = '#8a6420';
-  for (const u of [-0.4, 0.4]) {
-    const t = P(u, 0.46, u + 0.5 + 0.45);
-    const bt = P(u, 0.46, u + 0.5);
+    // a bright nosing on the tread's front edges
+    g.strokeStyle = 'rgba(255,240,205,0.5)';
+    g.lineWidth = 1.6 * S.k;
     g.beginPath();
-    g.moveTo(t[0], t[1]);
-    g.lineTo(bt[0], bt[1]);
+    const e1 = S.p(st.x1, st.y0, st.z);
+    const e2 = S.p(st.x1, st.y1, st.z);
+    const e3 = S.p(st.x0, st.y1, st.z);
+    g.moveTo(e1[0], e1[1]);
+    g.lineTo(e2[0], e2[1]);
+    g.lineTo(e3[0], e3[1]);
     g.stroke();
   }
+  // the stud on the tread underfoot (the centre of the cell)
+  g.save();
+  S.planeAt(g, x, y, 0.5);
+  stud(g);
+  g.restore();
 }
 
 // a cast-iron street lamp

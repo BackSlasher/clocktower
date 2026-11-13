@@ -5,7 +5,7 @@
 import { TAU, clamp, softSprite } from '../../tower_defense/tv/geom.js';
 import { FX } from '../../tower_defense/tv/fx.js';
 import { Scene, W, H, OUT_Z } from './scene.js';
-import { boardFromSnap, viewOf, Playback, FIZZLE_TEXT } from './board.js';
+import { boardFromSnap, viewOf, Playback, FIZZLE_TEXT, BOMB_OFF } from './board.js';
 import { drawBomb, drawEngineer, drawCatapult, drawMachine, drawMachineShadow, drawStars, MACHINE_CELLS } from './sprites.js';
 
 const ENG_K = 1.15; // engineers are drawn a little larger than the tile scale
@@ -462,6 +462,26 @@ export class Game {
       }
     }
 
+    // armed catapults: a pulsing amber track down their lane (it fires when something comes)
+    for (const c of v.cats) {
+      if (!c.kind) continue;
+      const L = S.laneOfCat(c.id);
+      if (!L) continue;
+      const a0 = S.p(...S.lanePt(L.id, -0.3), OUT_Z);
+      const a1 = S.p(...S.lanePt(L.id, L.len - 1 + 0.3), OUT_Z);
+      g.save();
+      g.setLineDash([14 * k, 12 * k]);
+      g.lineDashOffset = -tsec * 40 * k;
+      g.lineCap = 'round';
+      g.lineWidth = 6 * k;
+      g.strokeStyle = `rgba(255,196,96,${0.55 + 0.25 * Math.sin(tsec * 4)})`;
+      g.beginPath();
+      g.moveTo(a0[0], a0[1]);
+      g.lineTo(a1[0], a1[1]);
+      g.stroke();
+      g.restore();
+    }
+
     // ground shadows of things in the air
     g.fillStyle = 'rgba(0,0,0,0.35)';
     for (const f of [...v.flying, ...v.shots]) {
@@ -480,7 +500,8 @@ export class Game {
       const cat = S.catapult(c.id);
       if (cat) items.push({ k: cat.x + cat.y - 0.005, c });
     }
-    for (const b of v.bombs) items.push({ k: b.x + b.y - 0.003, bomb: b });
+    // ground bombs sit toward the tile's front corner: drawn after an engineer on the same cell
+    for (const b of v.bombs) items.push({ k: b.x + b.y + BOMB_OFF * 1.5, bomb: b });
     // machines: stacked ones side by side
     const groups = new Map();
     for (const m of v.machs) {
@@ -519,28 +540,28 @@ export class Game {
         this.drawCat(g, it.c, tsec);
       } else if (it.bomb) {
         const b = it.bomb;
-        const [sx, sy] = S.p(b.x, b.y, b.z);
+        const [sx, sy] = S.p(b.x + BOMB_OFF, b.y + BOMB_OFF, b.z);
         g.globalAlpha = b.a;
         // a pulsing amber ring and glow so bombs on the ground pop against the floor
         const pulse = 0.5 + 0.5 * Math.sin(tsec * 3 + b.id);
         g.globalCompositeOperation = 'lighter';
         g.globalAlpha = b.a * (0.3 + 0.15 * pulse);
-        g.drawImage(softSprite('rgba(255,170,60,1)', 64, 0.25), sx - 34 * k, sy - 20 * k, 68 * k, 40 * k);
+        g.drawImage(softSprite('rgba(255,170,60,1)', 64, 0.25), sx - 24 * k, sy - 14 * k, 48 * k, 28 * k);
         g.globalCompositeOperation = 'source-over';
         g.globalAlpha = b.a;
         g.strokeStyle = 'rgba(20,10,2,0.7)';
-        g.lineWidth = 6 * k;
+        g.lineWidth = 5 * k;
         g.beginPath();
-        g.ellipse(sx, sy, (25 + pulse * 3) * k, (12.5 + pulse * 1.5) * k, 0, 0, TAU);
+        g.ellipse(sx, sy, (17 + pulse * 2) * k, (8.5 + pulse * 1) * k, 0, 0, TAU);
         g.stroke();
         g.strokeStyle = `rgba(255,${190 + Math.round(pulse * 40)},90,0.95)`;
-        g.lineWidth = 3 * k;
+        g.lineWidth = 2.5 * k;
         g.stroke();
         g.fillStyle = 'rgba(0,0,0,0.45)';
         g.beginPath();
-        g.ellipse(sx, sy, 15 * k, 6 * k, 0, 0, TAU);
+        g.ellipse(sx, sy, 11 * k, 4.5 * k, 0, 0, TAU);
         g.fill();
-        drawBomb(g, b.kind, sx, sy, 1.05 * k, tsec + b.id);
+        drawBomb(g, b.kind, sx, sy + 1 * k, 0.72 * k, tsec + b.id);
         g.globalAlpha = 1;
       } else if (it.m) {
         const m = it.m;
@@ -632,7 +653,10 @@ export class Game {
       if (L) {
         // beside the road at the far end, clear of the machines
         const [lx, ly] = S.lanePt(L.id, L.len - 1);
-        const side = L.dir[0] !== 0 ? [0, -1.25] : [-1.25, 0];
+        // on the outer side of the road, away from the neighbouring lane
+        const twin = S.keep.lanes.find((o) => o !== L && o.dir[0] === L.dir[0] && o.dir[1] === L.dir[1]);
+        const sg = twin ? Math.sign(L.dir[0] !== 0 ? L.y - twin.y : L.x - twin.x) || -1 : -1;
+        const side = L.dir[0] !== 0 ? [0, 1.25 * sg] : [1.25 * sg, 0];
         const fp = S.p(lx + side[0], ly + side[1], 0);
         plate(g, fp[0], fp[1] - 14 * k, num, k, 1);
       }

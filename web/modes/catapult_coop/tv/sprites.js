@@ -529,8 +529,9 @@ export function drawCatapult(g, S, c) {
   // rope from the winch to the arm (taut when cocked)
   const rp = P(bu * 0.45, 0, pz + (bz - pz) * 0.45);
   const wd = P(-0.3, 0, z0 + SC * 0.22);
-  g.strokeStyle = '#c8a870';
-  g.lineWidth = 2 * k;
+  // armed: the rope is drawn taut and bright
+  g.strokeStyle = c.kind ? '#f0d48a' : '#a88a5a';
+  g.lineWidth = (c.kind ? 3 : 2) * k;
   g.beginPath();
   g.moveTo(wd[0], wd[1]);
   g.lineTo(rp[0], rp[1]);
@@ -599,6 +600,13 @@ export function drawCatapult(g, S, c) {
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
     drawBomb(g, c.kind, q[0], q[1] + 6 * k, 1.05 * k, c.t);
+    // a pulsing ring: armed and waiting for something to come down the lane
+    const pr = 0.5 + 0.5 * Math.sin(c.t * 4);
+    g.strokeStyle = `rgba(255,${180 + Math.round(pr * 50)},80,${0.55 + 0.4 * pr})`;
+    g.lineWidth = 3 * k;
+    g.beginPath();
+    g.ellipse(q[0], q[1] - 4 * k, bw * (1.35 + pr * 0.2), bw * (0.75 + pr * 0.1), 0, 0, TAU);
+    g.stroke();
   }
   side(vNear);
   gear(-0.26, vNear * 1.1, z0 + SC * 0.3, 0.24, 12, (c.phi || 0) * 2);
