@@ -159,6 +159,9 @@
 .confirm { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; }
 .confirm span { flex: 1; font-size: 0.95rem; }
 .confirm .btn { flex: 0 0 72px; }
+.kickrow > .btn { flex: 1 1 100%; justify-content: flex-start; }
+.kickrow .who { display: inline-flex; align-items: center; gap: 8px; }
+.kickrow .who small { color: var(--ink-dim); }
 
 .card.free .cost { color: var(--gas-glow); font-weight: 800; }
 .perklist { padding: 8px 10px; border-radius: 10px; background: var(--soot-800); border: 1px solid var(--soot-600); }

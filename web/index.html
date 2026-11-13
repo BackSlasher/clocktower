@@ -63,6 +63,18 @@
   <div id="toast" class="toast" hidden></div>
   <div id="banner" class="banner" hidden>Connection lost &mdash; reconnecting&hellip;</div>
 
+  <!-- Paused by the host (room-layer `paused` message), over the mode -->
+  <div id="hostPaused" class="overlay paused" hidden>
+    <div class="plate ovl-body">
+      <h2 class="display">Paused</h2>
+      <p id="pausedBy" class="dim"></p>
+      <button id="resumeBtn" class="btn big-btn" type="button">Resume</button>
+      <p id="pausedWait" class="dim small" hidden></p>
+      <ul id="pausedList" class="plist kicklist" hidden></ul>
+      <div id="pausedLeave"></div>
+    </div>
+  </div>
+
   <!-- Replaced -->
   <div id="replaced" class="overlay" hidden>
     <div class="plate ovl-body">

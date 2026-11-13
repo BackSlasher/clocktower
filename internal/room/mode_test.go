@@ -27,6 +27,7 @@ type stubGame struct {
 	next    int
 	phase   mode.Phase
 	slow    uint64
+	steps   int
 }
 
 func newStub(id string) mode.Factory {
@@ -69,6 +70,18 @@ func (g *stubGame) SetConnected(pid string, on bool) {
 	}
 	g.slow++
 }
+func (g *stubGame) RemovePlayer(pid string) {
+	for i, p := range g.players {
+		if p.ID == pid {
+			g.players = append(g.players[:i], g.players[i+1:]...)
+			if p.Host && len(g.players) > 0 {
+				g.players[0].Host = true
+			}
+			g.slow++
+			return
+		}
+	}
+}
 func (g *stubGame) Host() string {
 	for _, p := range g.players {
 		if p.Host {
@@ -79,13 +92,17 @@ func (g *stubGame) Host() string {
 }
 func (g *stubGame) Roster() []mode.Member { return append([]mode.Member(nil), g.players...) }
 func (g *stubGame) Command(pid, typ string, raw []byte) error {
-	if typ == "go" {
+	switch typ {
+	case "go":
 		g.phase = "play"
+		g.slow++
+	case "restart":
+		g.phase = mode.PhaseLobby
 		g.slow++
 	}
 	return nil
 }
-func (g *stubGame) Step(float64)        {}
+func (g *stubGame) Step(float64)        { g.steps++ }
 func (g *stubGame) Running() bool       { return g.phase == "play" }
 func (g *stubGame) Phase() mode.Phase   { return g.phase }
 func (g *stubGame) SlowVersion() uint64 { return g.slow }
@@ -103,14 +120,15 @@ func (g *stubGame) RoomState() any {
 	}
 	return map[string]any{"t": "room", "mode": g.id, "phase": string(g.phase), "host": g.Host(), "players": ps}
 }
-func (g *stubGame) Snapshot() any { return map[string]any{"t": "snap"} }
+func (g *stubGame) Snapshot() any { return map[string]any{"t": "snap", "steps": g.steps} }
 func (g *stubGame) View() any     { return g.Snapshot() }
 
 // conn reads in a goroutine (a read timeout would close a websocket).
 type conn struct {
-	t  *testing.T
-	c  *websocket.Conn
-	in chan map[string]any
+	t   *testing.T
+	c   *websocket.Conn
+	in  chan map[string]any
+	err error // the read error, once in is closed
 }
 
 func newConn(t *testing.T, c *websocket.Conn) *conn {
@@ -120,6 +138,7 @@ func newConn(t *testing.T, c *websocket.Conn) *conn {
 		for {
 			_, data, err := c.Read(context.Background())
 			if err != nil {
+				w.err = err
 				return
 			}
 			var m map[string]any

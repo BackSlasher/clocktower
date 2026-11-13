@@ -29,9 +29,13 @@ is imported from `/shared/` (`dom.js` has `$`, `esc`, `h`, `GEAR_SVG`, `CROWN_SV
   list, host marker, waiting text; with 2+ modes the current mode's name and tagline), the
   reconnecting / replaced badge, the audio engine with volume keys, mute and the "sound is off"
   hint, the Back-twice quit shortcut, the `?fps=1` readout, `?demo=` plumbing.
-* **Phone**: connection and session (token, resume, "opened in another tab"), the join form,
-  the lobby (players, Start for the host, Leave, mode cards for the host with 2+ modes), toasts,
-  the reconnecting banner, the screen wake lock.
+* **Phone**: connection and session (token, resume, "opened in another tab", removed by the
+  host), the join form, the lobby (players, Start for the host, Leave, the host's Remove on other
+  players, mode cards for the host with 2+ modes), toasts, the reconnecting banner, the screen
+  wake lock, and the "Paused" overlay (with Resume for the host).
+* **Both**: the host pause (`paused` messages, docs/PROTOCOL.md "Room commands"). The TV shows a
+  "Paused" overlay above the mode and ducks the music; the phone covers the mode with its own
+  overlay. The module is not told and needs no code for it.
 * The shell shows its lobby while `room.phase === "lobby"`. **Any other phase belongs to the
   mode**: its container is shown instead, so the mode draws the running game and its own end
   screen. A mode returns to the lobby by having the server move the room to phase `lobby`.
@@ -46,7 +50,7 @@ export function mount(ctx) {          // may be async
   return {
     onRoom(room) {},                  // every `room` message, in every phase, lobby included
     onSnap(snap, now) {},             // every `snap` message (now = performance.now() on receipt)
-    onStatus(status) {},              // optional: 'connecting' | 'open' | 'closed' | 'replaced'
+    onStatus(status) {},              // optional: 'connecting' | 'open' | 'closed' | 'replaced' | 'kicked' | 'left'
     unmount() {},                     // remove listeners and timers, stop sound
     // optional, TV only:
     frame(now, dt) {},                // every animation frame (rAF, with a 33 ms timer fallback)
@@ -79,6 +83,28 @@ remount: the server sends `welcome`, `room` and a `snap` again, and the mode jus
 `onRoom` and `onSnap`. A mode must therefore treat `onRoom`/`onSnap` as full state, not deltas
 (snap `ev` events aside).
 
+### Players come and go
+
+A module must treat `room.players` as the whole truth on every `onRoom`, mid-game included:
+
+* **Players vanish.** The host can remove a player (`kick`) and anyone can `leave`, in any
+  phase. The next `room` simply lacks them and later snaps stop mentioning them. Anything keyed
+  by player id (purses, engineers, plans, tower owners, award and stats entries, a selected gift
+  recipient, an open "remove" list) must cope with an id that is no longer in `room.players`:
+  fall back to a neutral colour and a neutral label rather than throwing. In `tower_defense` a
+  removed player's towers stay with `owner: ""`.
+* **The phone's own removal is the shell's business.** When this phone is removed the shell
+  unmounts the module and shows the join form; `onStatus` may see `'kicked'` or `'left'` first.
+* **Pause.** While the host has paused the game, snaps keep arriving but nothing in them moves
+  (time stands still) and game commands come back as `error` `paused`, which the shell toasts
+  (phone `onError` sees it too). Nothing else changes; don't treat frozen snaps as a lost
+  connection.
+* **What a module's menu may send** (phone): `{ t: 'kick', id }` (host only, not yourself),
+  `{ t: 'pause', on: true }` (host, while the game runs; the shell's overlay offers Resume) and
+  `ctx.leave()` for "Leave game" (it sends `leave` and returns to the join form). A mode's
+  in-game menu should offer the host "Pause game" and "Remove a player…" (a list of the other
+  players, each with a confirmation), like `tower_defense`'s ⋯ menu.
+
 ### `ctx`
 
 Both pages:
@@ -94,8 +120,8 @@ Both pages:
 | `loadCSS(href)` | add a stylesheet for the lifetime of the mount; resolves when applied |
 
 Phone: `you` (my player id; read it when needed, it is a live getter), `toast(msg, kind, ms)`
-(`kind` is `'ok'` or `'err'`), `buzz(pattern)`, `wake(on)` (keep the screen on), `leave()` (leave
-the room and return to the join form; used by the in-game menu).
+(`kind` is `'ok'` or `'err'`), `buzz(pattern)`, `wake(on)` (keep the screen on), `leave()` (send `leave`,
+forget the session and return to the join form; used by the in-game menu).
 
 TV: `stage` (the 1920x1080 stage element), `px`, `audio` (the shared engine from
 `/shared/audio.js`; always an object, `audio.supported` says if there is Web Audio),

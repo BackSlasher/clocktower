@@ -213,6 +213,7 @@ type player struct {
 	crm       *cc.RoomMsg // catapult_coop room / snap
 	csnap     *cc.Snap
 	idleDone  bool // idle skill: pressed done on the untimed first turn
+	paused    bool // the host paused the game: send nothing
 	modeAsked time.Time
 	started   time.Time // when this bot first saw the lobby as host
 	restartAt time.Time
@@ -282,6 +283,11 @@ func (p *player) session(ctx context.Context) (*outcome, error) {
 	for {
 		select {
 		case err := <-rerr:
+			// Removed from the room (kick or leave): stop, don't come back.
+			var ce websocket.CloseError
+			if errors.As(err, &ce) && (ce.Reason == "kicked" || ce.Reason == "left") {
+				return nil, fatalErr{ce.Reason, "removed from the room"}
+			}
 			return nil, err
 		case data := <-msgs:
 			end, err := p.handle(data)
@@ -320,6 +326,15 @@ func (p *player) handle(data []byte) (*outcome, error) {
 		p.bot.ID, p.cb.ID = w.You, w.You
 		p.setup(data)
 		p.logf("joined room %s as %s (mode %s)", p.room, p.you, p.mode)
+	case "paused":
+		var m struct {
+			On bool `json:"on"`
+		}
+		_ = json.Unmarshal(data, &m)
+		if p.paused != m.On {
+			p.logf("paused: %v", m.On)
+		}
+		p.paused = m.On
 	case "setup":
 		p.setup(data)
 		p.logf("mode is now %s", p.mode)
@@ -367,10 +382,15 @@ func (p *player) handle(data []byte) (*outcome, error) {
 		}
 		_ = json.Unmarshal(data, &e)
 		switch e.Code {
-		case "no_room", "room_full", "bad_name":
+		case "no_room", "room_full", "bad_name", "kicked":
 			return nil, fatalErr{e.Code, e.Msg}
 		case "occupied", "poor":
 			// races with teammates; harmless
+		case "paused":
+			// raced the pause; file the plan again once it is over
+			if p.mode == cc.ModeID {
+				p.cb.Resend()
+			}
 		case "too_late":
 			// a plan raced the end of the plan phase; harmless
 		case "bad_request":
@@ -386,6 +406,9 @@ func (p *player) handle(data []byte) (*outcome, error) {
 }
 
 func (p *player) decide() []any {
+	if p.paused {
+		return nil
+	}
 	if p.mode == cc.ModeID {
 		return p.decideCC()
 	}

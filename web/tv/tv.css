@@ -347,6 +347,40 @@ body {
   50% { border-color: var(--brass-400); }
 }
 
+/* ------------------------------------------------------------------ paused (host pause) */
+
+#hostPaused {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(5 9 10 / 0.55);
+}
+
+#hostPaused[hidden] {
+  display: none;
+}
+
+#hostPaused .pbox {
+  padding: 40px 120px;
+  text-align: center;
+}
+
+#hostPaused .ptitle {
+  font-size: 140px;
+  line-height: 1;
+  color: var(--brass-300);
+  letter-spacing: 0.04em;
+}
+
+#hostPaused .pby {
+  margin-top: 16px;
+  font-size: 40px;
+  color: var(--ink-dim);
+}
+
 /* ------------------------------------------------------------------ fps (?fps=1) */
 
 #fps {

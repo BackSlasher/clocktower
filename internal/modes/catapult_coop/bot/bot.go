@@ -84,6 +84,10 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 // empty queue marked done (so a bad queue can't loop).
 func (b *Bot) Rejected() { b.sentKey, b.rejected = [2]int{}, true }
 
+// Resend tells the bot its last queue never arrived (refused while the game
+// was paused): it files the same plan again on its next decision.
+func (b *Bot) Resend() { b.sentKey = [2]int{} }
+
 // wander is a legal but pointless step from c (a wait if there is none).
 func (b *Bot) wander(l *game.Layout, c [2]int) game.Act {
 	var ok [][2]int

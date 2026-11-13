@@ -300,7 +300,7 @@ func (g *Game) catchUpPurse() float64 {
 		worth[p.id] = p.purse
 	}
 	for _, t := range g.towers {
-		if t != nil {
+		if t != nil && t.owner != "" { // a removed player's towers belong to nobody
 			worth[t.owner] += float64(t.spent)
 		}
 	}
@@ -331,16 +331,66 @@ func (g *Game) SetConnected(pid string, on bool) {
 		return
 	}
 	if g.host == pid {
-		var best *player
-		for _, o := range g.players {
-			if o.connected && (best == nil || o.connSeq < best.connSeq) {
-				best = o
-			}
-		}
-		if best != nil {
-			g.host = best.id
+		g.migrateHost()
+	}
+	if g.phase == PhaseBuild {
+		g.checkAllReady()
+	}
+}
+
+// migrateHost hands the host to the longest-connected connected player. If
+// nobody is connected the host stays (it may be disconnected), unless it is
+// no longer a player at all: then the first player, or "" with nobody left.
+func (g *Game) migrateHost() {
+	var best *player
+	for _, o := range g.players {
+		if o.connected && (best == nil || o.connSeq < best.connSeq) {
+			best = o
 		}
 	}
+	switch {
+	case best != nil:
+		g.host = best.id
+	case g.player(g.host) != nil:
+	case len(g.players) > 0:
+		g.host = g.players[0].id
+	default:
+		g.host = ""
+	}
+}
+
+// RemovePlayer takes a player out of the game for good (the room's kick and
+// leave), in any phase. Their towers stay and keep working but belong to
+// nobody (owner ""): anyone may still upgrade and wind them, nobody can sell
+// them, and the former owner's perks no longer apply to them. Their purse
+// and any pending perk offer go with them. Ready checks, bounty splits and
+// the HP scaling of later waves simply follow the remaining players. After
+// the game has ended they also drop out of the end screen's stats and
+// awards. With nobody left the game pauses, as with nobody connected.
+func (g *Game) RemovePlayer(pid string) {
+	i := slices.IndexFunc(g.players, func(p *player) bool { return p.id == pid })
+	if i < 0 {
+		return
+	}
+	g.players = slices.Delete(g.players, i, i+1)
+	for _, t := range g.towers {
+		if t != nil && t.owner == pid {
+			t.owner = ""
+		}
+	}
+	for k := range g.windSeen {
+		if k.pid == pid {
+			delete(g.windSeen, k)
+		}
+	}
+	if g.end != nil {
+		delete(g.end.Stats, pid)
+		g.end.Awards = slices.DeleteFunc(g.end.Awards, func(a Award) bool { return a.PID == pid })
+	}
+	if g.host == pid {
+		g.migrateHost()
+	}
+	g.slowVer++
 	if g.phase == PhaseBuild {
 		g.checkAllReady()
 	}

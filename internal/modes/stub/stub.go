@@ -173,6 +173,20 @@ func (g *Game) SetConnected(pid string, on bool) {
 	g.slowVer++
 }
 
+// RemovePlayer drops a player for good; the host moves on as on a disconnect.
+func (g *Game) RemovePlayer(pid string) {
+	i := g.index(pid)
+	if i < 0 {
+		return
+	}
+	g.players = append(g.players[:i], g.players[i+1:]...)
+	if g.host == pid {
+		g.host = ""
+		g.fixHost()
+	}
+	g.slowVer++
+}
+
 func (g *Game) Host() string { return g.host }
 
 func (g *Game) Roster() []mode.Member {

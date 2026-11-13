@@ -24,10 +24,12 @@ type Room struct {
 	tv        *client
 	players   map[string]*client // pid → current connection
 	tokens    map[string]string  // token → pid
+	revoked   map[string]bool    // tokens of kicked players: refused with `kicked`
 	lastSlow  uint64
 	lastPhase mode.Phase
 	idleSince time.Time
 	tick      int
+	pausedBy  string // pid of the host who paused the game; "" = not paused
 }
 
 type joinReq struct {
@@ -56,6 +58,20 @@ type cmdReq struct {
 	raw []byte
 }
 
+// removeReq is a `kick` (target set) or a `leave` (target empty).
+type removeReq struct {
+	c      *client
+	pid    string
+	target string
+	kick   bool
+}
+
+type pauseReq struct {
+	c   *client
+	pid string
+	on  bool
+}
+
 type modeReq struct {
 	c   *client
 	pid string
@@ -67,7 +83,7 @@ func newRoom(reg *Registry, code string) *Room {
 	rm := &Room{
 		code: code, tvToken: newToken(), reg: reg,
 		inbox: make(chan any, 256), closed: make(chan struct{}),
-		players: map[string]*client{}, tokens: map[string]string{},
+		players: map[string]*client{}, tokens: map[string]string{}, revoked: map[string]bool{},
 		idleSince: time.Now(), lastPhase: mode.PhaseLobby,
 	}
 	rm.modeID = def
@@ -128,6 +144,7 @@ func (rm *Room) run() {
 			rm.step(dt.Seconds())
 		}
 		rm.flushSlow()
+		rm.checkPause()
 	}
 }
 
@@ -150,7 +167,7 @@ func (rm *Room) closeAll(code websocket.StatusCode, reason string) {
 
 func (rm *Room) step(dt float64) {
 	g := rm.game
-	for i := 0; i < rm.reg.cfg.Speed && g.Running(); i++ {
+	for i := 0; i < rm.reg.cfg.Speed && g.Running() && rm.pausedBy == ""; i++ {
 		g.Step(dt)
 	}
 	rm.tick++
@@ -205,6 +222,10 @@ func (rm *Room) handle(m any) {
 		if rm.players[m.pid] != m.c {
 			return // superseded connection
 		}
+		if rm.pausedBy != "" && m.typ != "restart" {
+			m.c.sendError(ErrPaused)
+			return
+		}
 		if err := rm.game.Command(m.pid, m.typ, m.raw); err != nil {
 			m.c.sendError(err)
 		}
@@ -215,8 +236,115 @@ func (rm *Room) handle(m any) {
 		if err := rm.switchMode(m.pid, m.id); err != nil {
 			m.c.sendError(err)
 		}
+	case pauseReq:
+		if rm.players[m.pid] != m.c {
+			return
+		}
+		if err := rm.setPause(m.pid, m.on); err != nil {
+			m.c.sendError(err)
+		}
+	case removeReq:
+		if rm.players[m.pid] != m.c {
+			return
+		}
+		if err := rm.removePlayer(m); err != nil {
+			m.c.sendError(err)
+		}
 	}
 }
+
+// ErrPaused refuses game commands while the host has paused the game.
+var ErrPaused = &mode.Error{Code: "paused", Msg: "The game is paused"}
+
+type pausedMsg struct {
+	T  string `json:"t"`
+	On bool   `json:"on"`
+	By string `json:"by,omitempty"`
+}
+
+// setPause handles `pause` (host only, only while the game is running).
+func (rm *Room) setPause(pid string, on bool) error {
+	g := rm.game
+	if pid != g.Host() {
+		return mode.ErrNotHost
+	}
+	if !g.Running() {
+		return &mode.Error{Code: "bad_request", Msg: "No game is running"}
+	}
+	switch {
+	case on && rm.pausedBy == "":
+		rm.pausedBy = pid
+	case !on && rm.pausedBy != "":
+		rm.pausedBy = ""
+	default:
+		return nil
+	}
+	rm.broadcastJSON(pausedMsg{T: "paused", On: on, By: rm.pausedBy})
+	return nil
+}
+
+// checkPause clears the pause once it no longer applies: the game left the
+// running phases (ended, restarted, mode switched) or the player who paused
+// is no longer the host (removed, or disconnected while others were
+// connected so the host moved on; a reconnect that keeps the host keeps the
+// pause).
+func (rm *Room) checkPause() {
+	if rm.pausedBy == "" {
+		return
+	}
+	if g := rm.game; !g.Running() || g.Host() != rm.pausedBy {
+		rm.pausedBy = ""
+		rm.broadcastJSON(pausedMsg{T: "paused"})
+	}
+}
+
+// Close reasons of a removed player's socket.
+const (
+	ReasonKicked = "kicked"
+	ReasonLeft   = "left"
+)
+
+// removePlayer handles `kick` (host only, not themselves, any phase) and
+// `leave`: the game drops the player, their session token stops working (a
+// kicked player's token is refused with `kicked` from then on; the person
+// may still join again as a new player) and their socket is closed with
+// reason `kicked` or `left`. The new room state goes out via flushSlow.
+func (rm *Room) removePlayer(m removeReq) error {
+	g := rm.game
+	target, reason := m.pid, ReasonLeft
+	if m.kick {
+		if m.pid != g.Host() {
+			return mode.ErrNotHost
+		}
+		if m.target == m.pid {
+			return &mode.Error{Code: "bad_request", Msg: "You can't remove yourself; use Leave"}
+		}
+		if m.target == "" || !g.HasPlayer(m.target) {
+			return &mode.Error{Code: "bad_request", Msg: "No such player"}
+		}
+		target, reason = m.target, ReasonKicked
+	}
+	g.RemovePlayer(target)
+	for t, p := range rm.tokens {
+		if p == target {
+			delete(rm.tokens, t)
+			if m.kick {
+				rm.revoked[t] = true
+			}
+		}
+	}
+	if c := rm.players[target]; c != nil {
+		delete(rm.players, target)
+		c.kill(websocket.StatusNormalClosure, reason)
+	}
+	if rm.connCount() == 0 {
+		rm.idleSince = time.Now()
+	}
+	return nil
+}
+
+// ErrKicked refuses a connection that presents a kicked player's token.
+var ErrKicked = &mode.Error{Code: "kicked", Msg: "The host removed you from the game"}
 
 type setupMsg struct {
 	T    string          `json:"t"`
@@ -297,6 +425,9 @@ func (rm *Room) handleJoin(j joinReq) joinResp {
 		w.Role, w.Token = "tv", rm.tvToken
 	} else {
 		token := j.token
+		if rm.revoked[token] {
+			return joinResp{err: ErrKicked}
+		}
 		pid = rm.tokens[token]
 		if pid != "" && !g.HasPlayer(pid) {
 			delete(rm.tokens, token) // evicted from the lobby earlier
@@ -347,5 +478,6 @@ func (rm *Room) handleJoin(j joinReq) joinResp {
 	if g.Running() || g.Phase() == mode.PhaseWon || g.Phase() == mode.PhaseLost {
 		j.c.sendJSON(g.View())
 	}
+	j.c.sendJSON(pausedMsg{T: "paused", On: rm.pausedBy != "", By: rm.pausedBy})
 	return joinResp{pid: pid}
 }

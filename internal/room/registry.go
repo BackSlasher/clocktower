@@ -364,6 +364,32 @@ func (r *Registry) readLoop(c *client, rm *Room, pid string) {
 			}
 			continue
 		}
+		if head.T == "pause" {
+			var req struct {
+				On bool `json:"on"`
+			}
+			if err := json.Unmarshal(data, &req); err != nil {
+				c.sendJSON(errorMsg{T: "error", Code: "bad_request", Msg: "Malformed message"})
+				continue
+			}
+			if !rm.post(pauseReq{c: c, pid: pid, on: req.On}) {
+				return
+			}
+			continue
+		}
+		if head.T == "kick" || head.T == "leave" {
+			var req struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(data, &req); err != nil {
+				c.sendJSON(errorMsg{T: "error", Code: "bad_request", Msg: "Malformed message"})
+				continue
+			}
+			if !rm.post(removeReq{c: c, pid: pid, target: req.ID, kick: head.T == "kick"}) {
+				return
+			}
+			continue
+		}
 		// Everything else goes to the game, which ignores types it does not know.
 		if !rm.post(cmdReq{c: c, pid: pid, typ: head.T, raw: data}) {
 			return

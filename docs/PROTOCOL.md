@@ -70,7 +70,8 @@ no external network requests** (no CDNs, no web fonts).
   1–12 characters, control characters stripped.
 
 Refusals are sent as an `error` message followed by a close:
-`no_room`, `room_full` (8 players), `bad_name`.
+`no_room`, `room_full` (8 players), `bad_name`, `kicked` (the token belongs
+to a player the host removed; see "Room commands").
 
 All messages are JSON text frames: an object with a `t` field. Server sends a
 ws ping every 15 s; clients reconnect with backoff on close (see
@@ -157,7 +158,7 @@ Player colors are assigned by the server from a fixed 8-color palette.
   "left": 12.3,                  // build: seconds until the wave starts; wave: 0
   "lives": 18,
   "purses": { "p1": 140, "p2": 75 },
-  "towers": [ { "plot": 4, "kind": "rivet", "lvl": 1, "owner": "p1",
+  "towers": [ { "plot": 4, "kind": "rivet", "lvl": 1, "owner": "p1",   // "" = its builder was removed
                 "tension": 0.42, "aim": 1.57, "spent": 110 } ],
   "enemies": [ [id, kindIndex, pathIndex, dist, hpFrac, flags] ],
   "ev": [ Event, … ] }           // everything that happened since the last snap
@@ -191,7 +192,8 @@ Events:
 
 ```jsonc
 { "t": "error", "code": "poor" | "occupied" | "not_owner" | "max_level" | "not_host"
-                      | "bad_request" | "no_room" | "room_full" | "bad_name",
+                      | "bad_request" | "no_room" | "room_full" | "bad_name"
+                      | "paused" | "kicked",
   "msg": "Not enough cogs" }     // human-readable, phones show it as a toast
 ```
 
@@ -260,7 +262,9 @@ Additive details; nothing above changed meaning.
   IP) is reported as a non-fatal `bad_request` "Server busy", then a close, so
   net.js retries with backoff.
 - **Replaced connections** (same token connects again) are closed with a
-  normal closure, reason `replaced`.
+  normal closure, reason `replaced`. Other close reasons the room layer uses:
+  `kicked` and `left` (see "Room commands"), `no seat in this mode` (a mode
+  switch could not seat the player).
 - **Limits**: frames over 4 KiB close the connection; more than ~20
   messages/s per connection are dropped and sustained flooding disconnects.
   Websocket upgrades must be same-origin (Origin host = Host, X-Forwarded-Host
@@ -301,8 +305,92 @@ protocol.
 - The server's `-stub-mode` flag registers a second, do-nothing mode
   (`stub`: lobby, host `start`, a "running" phase whose snaps carry `seconds`,
   host `restart` back to the lobby) so this path can be tested.
-- Messages other than `ping` and `mode` are handed to the current mode; types it
-  does not know are ignored.
+- Messages other than `ping`, `mode`, `kick`, `leave` and `pause` are handed
+  to the current mode; types it does not know are ignored.
+
+## Room commands: kick, leave, pause
+
+Mode-independent; the room layer handles them like `mode` and `ping` (the
+game never sees them). Players only.
+
+```jsonc
+{ "t": "kick", "id": "p3" }     // host: remove another player
+{ "t": "leave" }                // remove yourself
+{ "t": "pause", "on": true }    // host: pause (true) or resume (false) a running game
+```
+
+**Removing a player** (`kick`, `leave`):
+
+- `kick`: host only (`not_host`), any phase; `bad_request` for yourself (use
+  `leave`), a missing id or an id that is not a player.
+- The mode drops the player at once (`mode.Game.RemovePlayer`, see below), the
+  player's session token stops working, their socket (if connected) is closed
+  with a normal closure and reason `kicked` or `left`, and everyone gets the
+  new `room` message. The host leaving or being removed migrates the host as
+  on a disconnect (longest-connected remaining player; `""` once the room is
+  empty). If the last player goes mid-game, the game pauses as it does with
+  nobody connected.
+- A kicked player's token is remembered by the room: connecting with it is
+  refused with `error` `kicked` ("The host removed you from the game") and a
+  close, so an old tab cannot sneak back in. A `left` token is simply
+  forgotten (a connection presenting it becomes a new player). Either way the
+  person may join again with the room code and a name, as a brand-new player
+  (new id, new token).
+- Clients: a close with reason `kicked` or `left` (like `replaced`) must not
+  reconnect. The phone shell on `kicked` forgets the session and shows the
+  join form, room code filled in, with "The host removed you from the game".
+  Its Leave sends `leave` and then forgets the session (if the socket is down
+  the seat stays as a disconnected player until the host removes it or a full
+  lobby evicts it).
+
+What each mode does on removal:
+
+- `tower_defense`: the player's towers stay and keep working but belong to
+  nobody (`owner: ""` in `snap.towers`): anyone may upgrade and wind them,
+  nobody can sell them (`not_owner`), and the former owner's perks no longer
+  apply to them. The purse is discarded (and drops out of `snap.purses`), a
+  pending perk offer goes with the player, the build-phase ready check is
+  re-run (a wave waiting only for them starts), bounty splits and the HP
+  scaling of later waves follow the remaining players. Late joiners' catch-up
+  purses ignore ownerless towers. After the game has ended the player also
+  drops out of `end.stats` and `end.awards`.
+- `catapult_coop`: the engineer leaves the board (`snap.engineers`,
+  `snap.plans`); a bomb they carried drops on their cell, settling like a
+  landing bomb (nearest free floor cell), with a `bomb` event (no `s`). Their
+  queue is discarded, so a plan phase (the untimed first turn included) or a
+  break that was waiting only for them ends at once, as if they had pressed
+  done / ready. A removal during the resolve playback changes nothing already
+  resolved. After the game has ended they drop out of `end.stats` and
+  `end.awards`.
+- `stub`: the player is dropped.
+
+**Pausing** (`pause`):
+
+- Host only (`not_host`); only while the game is running (the mode's
+  `Running()`: build/wave, plan/resolve/break, stub's running), otherwise
+  `bad_request`. Pausing a paused game or resuming a running one does
+  nothing.
+- While paused the room does not advance the game at all (no `Step`: build
+  countdowns, waves, plan timers and resolve playback delays all freeze).
+  Snaps keep coming at the usual rate (unchanged state), so (re)connecting
+  clients work normally. Game commands from players are refused with `error`
+  `paused`; `restart`, `kick`, `leave`, `pause`, `mode` and `ping` still work.
+- Every connection gets `{ "t": "paused", "on": true, "by": "p1" }` when the
+  host pauses and `{ "t": "paused", "on": false }` when the pause ends. Every
+  new connection also gets the current state right after `welcome`, `room`
+  (and the mid-game `snap`), so the flag never lives inside a mode's `room`.
+- The pause clears by itself (with a `paused` `on: false`) when the game
+  leaves the running phases (restart, game over; a mode switch can only
+  happen from the lobby anyway), or when the player who paused is no longer
+  the host: removed, or disconnected while others were connected so the host
+  moved on. A reconnect that keeps them host (e.g. nobody else connected)
+  keeps the pause.
+- Independent of this, every mode still pauses by itself while no player is
+  connected.
+- Shells: the TV shows a large "Paused" overlay above the mode and ducks the
+  music; the phone shows "Paused by <name>" over the mode, with Resume (and
+  Remove buttons for the other players) for the host, and Leave for
+  everyone. Modes need no code for it.
 
 ## Perks
 
@@ -754,6 +842,9 @@ Their engineer stays on the board (keeping what it carries).
   the first free start cell of the current layout (`place` event), with no
   missed turns.
 - Host migration on disconnect: the longest-connected remaining player.
+- `kick` / `leave` remove a player for good, `pause` freezes the game: see
+  "Room commands" (engineer off the board, carried bomb dropped, a phase
+  waiting only for them ends).
 - `restart` keeps the players and their colours and clears stats and the board.
 
 ### Client → server

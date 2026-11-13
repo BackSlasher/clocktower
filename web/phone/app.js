@@ -24,6 +24,10 @@ let joinInfo = null; // {room, name}
 let welcomed = false;
 let screen = '';
 let toastTimer = null;
+let paused = null; // the room-layer `paused` message while the host has paused the game, else null
+let armedKick = null; // the player whose Remove is awaiting confirmation (lobby list / pause overlay)
+let armedLeave = false; // Leave on the pause overlay is awaiting confirmation
+let armTimer = null;
 
 const me = () => players.get(you);
 const isHost = () => !!room && room.host === you;
@@ -36,6 +40,7 @@ function show(name) {
   screen = name;
   for (const s of ['splash', 'join', 'lobby']) $('s-' + s).hidden = s !== name;
   $('mode').hidden = name !== 'mode';
+  renderPaused();
 }
 
 function toast(msg, kind = 'ok', ms = 2200) {
@@ -152,6 +157,8 @@ function startConn(roomCode, name) {
 }
 
 function onStatus(s) {
+  if (s === 'kicked') return kickedOut();
+  if (s === 'left') return; // our own `leave`: leaveRoom already tidied up
   const lost = s === 'closed' || (s === 'connecting' && (welcomed || screen === 'splash'));
   $('banner').hidden = !(lost && s !== 'replaced' && (welcomed || screen === 'splash'));
   $('replaced').hidden = s !== 'replaced';
@@ -167,8 +174,16 @@ function joinFail(msg) {
   const c = joinInfo?.room;
   if (c) store.del(tokKey(c));
   unmountMode();
-  room = null; welcome = null; setup = null;
+  room = null; welcome = null; setup = null; paused = null;
   showJoin(msg, c);
+}
+
+// The host removed this player: the session is gone (the server refuses the token from now on).
+// Back to the join form with the room code filled in, so joining again as a new player is a tap.
+function kickedOut() {
+  store.del('ct.room');
+  joinFail('The host removed you from the game.');
+  buzz([60, 60, 60]);
 }
 
 function onMessage(m) {
@@ -178,6 +193,11 @@ function onMessage(m) {
       loadMode(m.mode, { mode: m.mode, map: m.map, defs: m.defs });
       return;
     case 'room': return onRoom(m);
+    case 'paused':
+      paused = m.on ? m : null;
+      armedKick = null; armedLeave = false;
+      renderPaused();
+      return;
     case 'snap':
       if (loading) queue.push(m); else dispatch(m);
       return;
@@ -185,6 +205,7 @@ function onMessage(m) {
       if (m.code === 'no_room') return joinFail(`No room "${joinInfo?.room}" found. Check the code on the TV.`);
       if (m.code === 'room_full') return joinFail(m.msg || 'That room is full.');
       if (m.code === 'bad_name') return joinFail(m.msg || 'Pick another name (1-12 characters).');
+      if (m.code === 'kicked') return kickedOut();
       toast(m.msg || m.code, 'err');
       buzz([30, 40, 30]);
       mod?.onError?.(m);
@@ -213,7 +234,55 @@ function onRoom(m) {
   players = new Map(m.players.map((p) => [p.id, p]));
   show(m.phase === 'lobby' ? 'lobby' : 'mode');
   if (m.phase === 'lobby') renderLobby();
+  renderPaused();
   if (loading) queue.push(m); else dispatch(m);
+}
+
+// ---------------------------------------------------------------- removing players
+// One row per player: dot, name, tags; for the host, a × on everyone else that turns into an
+// inline "Remove <name>?" confirmation. Used by the lobby list and the pause overlay.
+function arm(fn) {
+  fn();
+  clearTimeout(armTimer);
+  armTimer = setTimeout(() => { armedKick = null; armedLeave = false; renderLobby(); renderPaused(); }, 5000);
+  renderLobby(); renderPaused();
+}
+function playerRow(p) {
+  const canKick = isHost() && p.id !== you;
+  if (canKick && armedKick === p.id) {
+    return h('li', { class: 'confirm' },
+      h('span', {}, `Remove ${p.name}?`),
+      h('button', { class: 'btn sm danger', type: 'button', onclick: () => { armedKick = null; send({ t: 'kick', id: p.id }); } }, 'Remove'),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => arm(() => (armedKick = null)) }, 'Cancel'));
+  }
+  return h('li', { class: p.connected ? '' : 'off' },
+    h('i', { class: 'dot', style: `background:${p.color}` }),
+    h('span', {}, p.name),
+    h('span', { class: 'tag' }, [p.id === room.host ? 'host' : '', p.id === you ? 'you' : '', p.connected ? '' : 'offline'].filter(Boolean).join(' · ')),
+    canKick ? h('button', { class: 'kick', type: 'button', 'aria-label': `Remove ${p.name}`, title: 'Remove', onclick: () => arm(() => (armedKick = p.id)) }, '×') : null);
+}
+
+// ---------------------------------------------------------------- pause overlay
+// Shown over the mode while the host has paused the game. The host gets Resume (and can remove
+// players from here, since the mode's own menu is underneath); everyone can leave.
+function renderPaused() {
+  const box = $('hostPaused');
+  const on = !!paused && !!room && screen === 'mode';
+  box.hidden = !on;
+  if (!on) return;
+  const by = players.get(paused.by);
+  $('pausedBy').textContent = by ? (paused.by === you ? 'You paused the game' : `Paused by ${by.name}`) : 'Paused';
+  $('resumeBtn').hidden = !isHost();
+  $('pausedWait').hidden = isHost();
+  $('pausedWait').textContent = `Waiting for ${pname(room.host)} to resume…`;
+  const others = room.players.filter((p) => p.id !== you);
+  $('pausedList').hidden = !isHost() || !others.length;
+  if (isHost()) $('pausedList').replaceChildren(...others.map(playerRow));
+  $('pausedLeave').replaceChildren(armedLeave
+    ? h('span', { class: 'confirm' }, h('span', {}, 'Leave this game?'),
+      h('button', { class: 'btn sm danger', type: 'button', onclick: () => { armedLeave = false; leaveRoom(); } }, 'Leave'),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => arm(() => (armedLeave = false)) }, 'Cancel'))
+    : h('button', { class: 'link', type: 'button', onclick: () => arm(() => (armedLeave = true)) }, 'Leave game'));
 }
 
 // ---------------------------------------------------------------- join form
@@ -250,11 +319,8 @@ function renderLobby() {
   $('lobbyName').textContent = mine?.name || '';
   $('lobbyDot').style.background = mine?.color || '';
   $('lobbyRoom').textContent = code;
-  const ul = $('lobbyList');
-  ul.replaceChildren(...room.players.map((p) => h('li', { class: p.connected ? '' : 'off' },
-    h('i', { class: 'dot', style: `background:${p.color}` }),
-    h('span', {}, p.name),
-    h('span', { class: 'tag' }, [p.id === room.host ? 'host' : '', p.id === you ? 'you' : '', p.connected ? '' : 'offline'].filter(Boolean).join(' · ')))));
+  if (armedKick && !players.has(armedKick)) armedKick = null;
+  $('lobbyList').replaceChildren(...room.players.map(playerRow));
   $('startBtn').hidden = !isHost();
   const w = $('waitMsg');
   w.hidden = isHost();
@@ -292,15 +358,20 @@ function renderModes() {
 }
 const send = (m) => conn?.send(m);
 $('startBtn').onclick = () => send({ t: 'start' });
+// Leave: tell the server (it frees the seat and closes with `left`), then forget the session.
+// Works with the socket down too: the server then keeps a disconnected seat until the host
+// removes it (or a full lobby evicts it).
 function leaveRoom() {
+  conn?.send({ t: 'leave' });
   conn?.close(); conn = null;
   store.del(tokKey(code)); store.del('ct.room');
   unmountMode();
-  room = null; welcomed = false; welcome = null; setup = null; players = new Map();
+  room = null; welcomed = false; welcome = null; setup = null; players = new Map(); paused = null;
   $('banner').hidden = true;
   showJoin('', '');
 }
 $('leaveBtn').onclick = leaveRoom;
+$('resumeBtn').onclick = () => send({ t: 'pause', on: false });
 $('takeBtn').onclick = () => { $('replaced').hidden = true; if (joinInfo) startConn(joinInfo.room, joinInfo.name); };
 
 // ---------------------------------------------------------------- boot

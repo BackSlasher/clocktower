@@ -29,7 +29,8 @@ export class Minimap {
     this.lens = null;
     this.running = false;
     this._bind();
-    new ResizeObserver(() => this.resize()).observe(canvas);
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(canvas);
   }
 
   setMap() {
@@ -165,6 +166,11 @@ export class Minimap {
   }
   stop() {
     this.running = false;
+  }
+  // For unmount: the observer would otherwise fire on the detached canvas.
+  destroy() {
+    this.stop();
+    this.ro.disconnect();
   }
 
   enemyPos(e, dtSec) {

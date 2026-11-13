@@ -68,6 +68,13 @@ type Game interface {
 	AddPlayer(name string) (pid, evicted string, err error)
 	HasPlayer(pid string) bool
 	SetConnected(pid string, on bool)
+	// RemovePlayer takes a player out of the game for good, in any phase
+	// (the room's `kick` and `leave`; the room has already checked who may
+	// do it). The mode tidies up whatever the player had (board pieces,
+	// queues, ready checks, end-screen stats), migrates the host if needed
+	// (as on a disconnect; "" once nobody is left) and bumps SlowVersion.
+	// An unknown pid is a no-op.
+	RemovePlayer(pid string)
 	Host() string
 	// Roster lists the players in join order, for carrying over to another
 	// mode's factory.

@@ -1,14 +1,17 @@
 // Websocket connection with automatic reconnect. Used by both TV and phone.
 //
 //   const conn = connect(() => ({ role: 'player', room, name, token }), {
-//     onMessage(msg) {}, onStatus(status) {}   // 'connecting' | 'open' | 'closed' | 'replaced'
+//     onMessage(msg) {}, onStatus(status) {}   // 'connecting' | 'open' | 'closed' | 'replaced' | 'kicked' | 'left'
 //   });
 //   conn.send({ t: 'build', plot: 4, kind: 'rivet' });
 //   conn.close();
 //
 // `params` is a function so each reconnect can pick up a freshly stored token.
-// A server `error` with a fatal code (no_room, room_full, bad_name) stops
-// reconnecting; the message is still delivered to onMessage.
+// A server `error` with a fatal code (no_room, room_full, bad_name, kicked) stops
+// reconnecting; the message is still delivered to onMessage. So does a close
+// with reason `replaced` (another tab took the session), `kicked` (the host
+// removed this player) or `left` (this player sent `leave`); the reason is
+// reported as the status.
 //
 // Watchdog: a ping goes out every PING_MS while open; if nothing at all has
 // arrived for DEAD_MS the socket is abandoned (status 'closed', handlers
@@ -16,7 +19,8 @@
 // Throttled timers or a hidden page are not evidence of a dead connection, so
 // in that case the clock is reset and a ping is sent first.
 
-const FATAL = new Set(['no_room', 'room_full', 'bad_name']);
+const FATAL = new Set(['no_room', 'room_full', 'bad_name', 'kicked']);
+const FINAL_CLOSE = new Set(['replaced', 'kicked', 'left']); // close reasons that end the session
 const PING_MS = 5000;
 const DEAD_MS = 12000;
 const TICK_MS = 1000;
@@ -97,9 +101,11 @@ export function connect(params, { onMessage, onStatus } = {}) {
     sock.onclose = (ev) => {
       if (ws !== sock) return; // abandoned by the watchdog
       ws = null;
-      // Another tab took over this session; reconnecting would start a tug of war.
-      if (ev.reason === 'replaced') stopped = true;
-      onStatus?.(ev.reason === 'replaced' ? 'replaced' : 'closed');
+      // Another tab took over this session (reconnecting would start a tug of war), or the
+      // player was removed from the room.
+      const final = FINAL_CLOSE.has(ev.reason);
+      if (final) stopped = true;
+      onStatus?.(final ? ev.reason : 'closed');
       if (stopped) return;
       scheduleReconnect();
     };

@@ -132,3 +132,21 @@ func TestRosterCarriedBothWays(t *testing.T) {
 		t.Fatalf("next id after carry-over: %q", c)
 	}
 }
+
+func TestRemovePlayer(t *testing.T) {
+	g := New(rand.New(rand.NewPCG(1, 2)), nil)
+	a, _, _ := g.AddPlayer("Ada")
+	b, _, _ := g.AddPlayer("Bea")
+	g.SetConnected(a, true)
+	g.SetConnected(b, true)
+	v := g.SlowVersion()
+	g.RemovePlayer(a)
+	if g.HasPlayer(a) || g.Host() != b || g.SlowVersion() == v {
+		t.Fatalf("host %s", g.Host())
+	}
+	g.RemovePlayer(b)
+	if g.Host() != "" || len(g.Roster()) != 0 {
+		t.Fatalf("host %q", g.Host())
+	}
+	g.RemovePlayer("p9")
+}

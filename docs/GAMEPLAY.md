@@ -94,7 +94,9 @@ Waves 8 and 15 are boss waves led by the Iron Baron. Wave 8 has one and is the h
 ## Ending or leaving a game
 
 - **End game:** the host opens the menu (the ⋯ button on the phone) and chooses End game. After a confirmation everyone returns to the lobby with the same players, and the host can start again.
-- **Leave:** any player can choose Leave game from the same menu. Their towers stay and keep firing; the phone forgets the room and goes back to the join screen.
+- **Leave:** any player can choose Leave game from the same menu. Their seat disappears for everyone; their towers stay and keep firing (they now belong to nobody: anyone can upgrade or wind them, nobody can sell them); the phone forgets the room and goes back to the join screen.
+- **Removing a player:** the host can remove someone who has wandered off, so they stop holding up the Ready check: in the lobby with the × next to their name, mid-game from the menu (Remove a player…). Their phone goes back to the join screen with "The host removed you from the game"; they can join again with the room code as a new player.
+- **Pause:** the host can pause from the menu. Everything freezes and the TV and phones show Paused until the host taps Resume.
 - **On the TV:** press Back (or Escape) twice to quit. Where the browser does not allow a page to close its own window, the TV says so and you close it yourself.
 - A game with nobody connected pauses, and the room is removed after 10 minutes.
 

@@ -335,7 +335,7 @@ export async function mount(ctx) {
     P.replaceChildren(
       h('div', { class: 'trow' },
         h('i', { class: 'dot', style: `background:${owner?.color || '#999'}` }),
-        h('div', {}, h('div', { class: 'nm' }, def.name), h('div', { class: 'sub' }, `Level ${t.lvl} · ${own ? 'yours' : owner?.name || '?'} · ${statStr(lv, ['dmg', 'rate', 'range', 'slow'])}`)),
+        h('div', {}, h('div', { class: 'nm' }, def.name), h('div', { class: 'sub' }, `Level ${t.lvl} · ${own ? 'yours' : t.owner === '' ? 'no owner' : owner?.name || '?'} · ${statStr(lv, ['dmg', 'rate', 'range', 'slow'])}`)),
         h('span', { class: 'pips' }, '★'.repeat(t.lvl))),
       h('div', { class: 'brow' }, brow),
       refs.crank);
@@ -526,7 +526,8 @@ export async function mount(ctx) {
 
   // ---------------------------------------------------------------- menu
   let armed = null; let armTimer = null;
-  function openMenu() { armed = null; $('menuSheet').hidden = false; renderMenu(); }
+  let menuView = 'main'; // 'main' | 'kick' (host: pick a player to remove)
+  function openMenu() { armed = null; menuView = 'main'; $('menuSheet').hidden = false; renderMenu(); }
   $('menuBtn').onclick = openMenu;
   $('menuClose').onclick = () => ($('menuSheet').hidden = true);
   $('menuSheet').addEventListener('click', (e) => { if (e.target === $('menuSheet')) $('menuSheet').hidden = true; });
@@ -543,8 +544,21 @@ export async function mount(ctx) {
         class: 'btn sm ' + (danger ? 'ghost warn' : 'ghost'), type: 'button',
         onclick: () => { armed = key; clearTimeout(armTimer); armTimer = setTimeout(() => { armed = null; if (!$('menuSheet').hidden) renderMenu(); }, 5000); renderMenu(); },
       }, label);
+    if (!isHost()) menuView = 'main';
+    if (menuView === 'kick') {
+      // Remove a player: one confirm button per other player; the server closes their phone.
+      const others = st.room.players.filter((p) => p.id !== ctx.you);
+      const rows = others.map((p) => confirmItem('kick:' + p.id, h('span', { class: 'who' }, h('i', { class: 'dot', style: `background:${p.color}` }), p.name, p.connected ? '' : h('small', {}, ' (offline)')),
+        `Remove ${p.name}? Their towers stay.`, true, () => { armed = null; menuView = 'main'; $('menuSheet').hidden = true; ctx.send({ t: 'kick', id: p.id }); }));
+      $('menuBody').replaceChildren(h('div', { class: 'ttl' }, 'Remove a player'),
+        h('div', { class: 'mrow kickrow' }, rows.length ? rows : [h('p', { class: 'dim small' }, 'No one else is here.')]),
+        h('div', { class: 'mrow' }, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { armed = null; menuView = 'main'; renderMenu(); } }, 'Back')));
+      return;
+    }
     const items = [];
     if (isHost()) {
+      items.push(h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { $('menuSheet').hidden = true; ctx.send({ t: 'pause', on: true }); } }, 'Pause game'));
+      if (st.room.players.length > 1) items.push(h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { armed = null; menuView = 'kick'; renderMenu(); } }, 'Remove a player…'));
       items.push(confirmItem('end', 'End game', 'End the game for everyone?', true, () => { armed = null; $('menuSheet').hidden = true; ctx.send({ t: 'restart' }); }));
     }
     items.push(confirmItem('leave', 'Leave game', 'Leave this game?', true, () => { $('menuSheet').hidden = true; ctx.leave(); }));
@@ -561,7 +575,7 @@ export async function mount(ctx) {
     onStatus(s) { if (s === 'replaced') flushWind(); },
     onError() { if (picked) { picked = null; if (!$('perkSheet').hidden) renderOffer(); } },
     unmount() {
-      map.stop();
+      map.destroy();
       landscape.removeEventListener?.('change', onLandscape);
       for (const t of [windTimer, deferTimer, sellTimer, armTimer]) clearTimeout(t);
       ctx.wake(false);

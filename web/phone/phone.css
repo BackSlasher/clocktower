@@ -66,6 +66,17 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
 .plist li:last-child { border: none; }
 .plist .tag { margin-left: auto; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); }
 .plist li.off { opacity: 0.5; }
+/* host: remove a player (× then an inline confirmation) */
+.plist .kick { flex: none; width: 44px; height: 44px; margin: -8px -6px -8px -4px; background: none; border: none; color: var(--ink-dim); font-size: 1.6rem; line-height: 1; }
+.plist .tag + .kick { margin-left: 0; }
+.plist li.confirm { gap: 8px; font-size: 1rem; }
+.plist li.confirm > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plist li.confirm .btn.sm { flex: none; }
+/* pause overlay */
+.overlay.paused { z-index: 25; } /* under the toast and the banner, over the mode and its sheets */
+.paused .ovl-body { width: 100%; max-height: 100%; overflow: auto; }
+.paused .kicklist { text-align: left; padding: 0 4px; border-top: 1px solid var(--soot-600); }
+.paused .confirm { display: inline-flex; align-items: center; gap: 8px; }
 .lobby-foot { display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: auto; }
 
 /* Sheets, toast, banner */

@@ -292,6 +292,7 @@ let demoPending = false;
 let demoOn = false;
 
 // room and snap go to the mode (queued while it loads)
+let lastRoom = null; // latest room message (names for the pause overlay)
 function dispatch(m, now) {
   if (m.t === 'room') mod?.onRoom?.(m);
   else if (m.t === 'snap') mod?.onSnap?.(m, now);
@@ -318,6 +319,7 @@ function handle(m) {
       loadMode(m.mode, { mode: m.mode, map: m.map, defs: m.defs }, welcome);
       break;
     case 'room':
+      lastRoom = m;
       document.body.dataset.phase = m.phase;
       $('lobby').classList.toggle('on', m.phase === 'lobby');
       renderLobby(m);
@@ -328,9 +330,27 @@ function handle(m) {
       if (loading) queue.push(m);
       else dispatch(m, now);
       break;
+    case 'paused':
+      renderPaused(m);
+      break;
     case 'error':
       console.warn('server:', m.code, m.msg);
       break;
+  }
+}
+
+// The host paused the game (a room-layer message, any mode): a big overlay above the mode, and
+// the music ducked while it lasts. The mode itself just stops getting snaps that move.
+let pausedOn = false;
+function renderPaused(m) {
+  const on = !!m.on;
+  const by = lastRoom?.players?.find((p) => p.id === m.by);
+  $('pausedBy').textContent = by ? `by ${by.name}` : '';
+  $('hostPaused').hidden = !on;
+  if (on !== pausedOn) {
+    pausedOn = on;
+    if (on) audio.duck(0.25, 24 * 3600, 0.6);
+    else audio.duck(1, 0, 0.6);
   }
 }
 
