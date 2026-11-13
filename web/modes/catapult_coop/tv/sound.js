@@ -160,7 +160,8 @@ export async function createTVSound({ audio, ready }) {
   S.stop = () => {
     S.ready = false;
     clearTimeout(S.endTimer);
-    audio.music(null, { fade: 0.3 });
+    // The music is left alone: the next mode asks for its own track, and if that is the
+    // same one (the lobby track on a mode switch) it simply keeps playing.
     audio.ambience(null, { fade: 0.3 });
   };
   return S;

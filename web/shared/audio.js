@@ -275,9 +275,13 @@ export function createAudio(opts = {}) {
       const bus = kind === 'music' ? musicBus : ambBus;
       const src = ctx.createBufferSource(); src.buffer = s.buffers[0]; src.loop = true;
       const g = ctx.createGain(); g.gain.value = 0;
-      src.connect(g); g.connect(bus); src.start();
+      // A second gain used only for the fade-out. The first may still be running its
+      // fade-in curve when the track is retired, and scheduling over a running curve throws
+      // in some browsers, which used to leave the old track playing under the new one.
+      const out = ctx.createGain(); out.gain.value = 1;
+      src.connect(g); g.connect(out); out.connect(bus); src.start();
       if (fade > 0.01) ramp(g, curveIn, t0, fade, peak); else g.gain.value = peak;
-      const old = c.cur; c.cur = { id, src, g, peak };
+      const old = c.cur; c.cur = { id, src, g, out, peak };
       if (old) retire(old, fade);
     } catch (e) {
       warnOnce('loop:' + id, 'loop failed', id, e && e.message);
@@ -285,12 +289,16 @@ export function createAudio(opts = {}) {
   }
 
   function retire(v, fade) {
+    const t0 = ctx.currentTime, f = Math.max(fade, 0.01);
     try {
-      const t0 = ctx.currentTime, cur = v.g.gain.value;
-      if (fade > 0.01) ramp(v.g, curveOut, t0, fade, Math.max(cur, 0.0001)); else v.g.gain.value = 0;
-      v.src.stop(t0 + Math.max(fade, 0.01) + 0.1);
-      v.src.onended = () => { try { v.src.disconnect(); v.g.disconnect(); } catch { /* ignore */ } };
-    } catch { /* ignore */ }
+      v.out.gain.setValueAtTime(1, t0);
+      v.out.gain.linearRampToValueAtTime(0, t0 + f);
+    } catch {
+      try { v.out.gain.value = 0; } catch { /* ignore */ }
+    }
+    // Whatever happened to the fade, the source must stop.
+    try { v.src.stop(t0 + f + 0.1); } catch { /* ignore */ }
+    v.src.onended = () => { try { v.src.disconnect(); v.g.disconnect(); v.out.disconnect(); } catch { /* ignore */ } };
   }
 
   function loop(kind, id, o = {}) {
