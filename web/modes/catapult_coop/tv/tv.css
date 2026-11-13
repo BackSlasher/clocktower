@@ -1,0 +1,835 @@
+/* catapult_coop on the TV: keep canvas, HUD, level card, banners, break panel, end screen.
+   Everything is scoped under .cc-root / #cc* so it cannot leak into the shell or another mode. */
+
+.cc-root {
+  position: absolute;
+  inset: 0;
+}
+
+#ccCv {
+  position: absolute;
+  inset: 0;
+  width: 1920px;
+  height: 1080px;
+  z-index: -1; /* below the shell's lobby overlay */
+}
+
+/* ------------------------------------------------------------------ HUD */
+
+#ccHud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+#ccHud.on {
+  opacity: 1;
+}
+
+#ccTop {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: linear-gradient(170deg, rgb(29 46 51 / 0.93), rgb(13 20 22 / 0.93));
+  border: 3px solid var(--brass-500);
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+#ccTop > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 26px 10px;
+  min-width: 210px;
+}
+
+#ccTop > div + div {
+  border-left: 2px solid rgb(110 81 32 / 0.6);
+}
+
+.cc-lbl {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cc-big {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 58px;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.cc-of {
+  font-size: 30px;
+  color: var(--ink-dim);
+  margin-left: 6px;
+}
+
+.cc-sub {
+  font-size: 24px;
+  font-style: italic;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.cc-sub:empty {
+  display: none;
+}
+
+.cc-phase {
+  min-width: 300px !important;
+}
+
+.cc-count {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 66px;
+  line-height: 1;
+  color: var(--gas-glow);
+  text-shadow: 0 0 20px rgb(255 182 72 / 0.45);
+  min-height: 0.2em;
+}
+
+.cc-count:empty {
+  display: none;
+}
+
+#ccTop[data-ph='resolve'] .cc-lbl#ccPhaseLbl {
+  font-size: 34px;
+  color: var(--gas-glow);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-style: italic;
+}
+
+#ccTop.hurry .cc-count {
+  color: #ff6a4a;
+  animation: cc-throb 1s ease-in-out infinite;
+}
+
+@keyframes cc-throb {
+  50% { transform: scale(1.2); }
+}
+
+.cc-brick {
+  width: 28px;
+  height: 24px;
+  fill: #c86a4a;
+}
+
+.cc-bar {
+  width: 190px;
+  height: 14px;
+  margin-top: 6px;
+  background: #2a1612;
+  border: 2px solid var(--brass-700);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+#ccWallBar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(180deg, #8ff0c8, #4fb39a);
+  transition: width 0.6s ease-out;
+}
+
+#ccTop.low #ccWallBar {
+  background: linear-gradient(180deg, #ff8a6a, #c23a24);
+}
+
+#ccTop.low .cc-wall .cc-big {
+  color: #ff6a4a;
+}
+
+#ccTop.hit {
+  animation: cc-hit 0.7s ease-out;
+}
+
+@keyframes cc-hit {
+  0% { box-shadow: 0 0 0 0 rgb(255 70 40 / 0.9); border-color: #ff5a3f; }
+  30% { box-shadow: 0 0 40px 10px rgb(255 70 40 / 0.7); border-color: #ff5a3f; }
+  100% { box-shadow: 0 6px 20px rgb(0 0 0 / 0.55); }
+}
+
+/* ------------------------------------------------------------------ players */
+
+.cc-players {
+  position: absolute;
+  left: 20px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.cc-players.right {
+  left: auto;
+  right: 20px;
+  align-items: flex-end;
+}
+
+.cc-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding: 0 16px 0 12px;
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(180deg, rgb(29 46 51 / 0.94), rgb(13 20 22 / 0.94));
+  border: 2px solid var(--brass-700);
+  border-left: 8px solid var(--pc);
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.5);
+  transition: opacity 0.4s, filter 0.4s, border-color 0.3s;
+}
+
+.cc-players.right .cc-chip {
+  flex-direction: row-reverse;
+  border-left: 2px solid var(--brass-700);
+  border-right: 8px solid var(--pc);
+  padding: 0 12px 0 16px;
+}
+
+.cc-chip .cc-sw {
+  color: var(--pc);
+  font-size: 38px;
+  display: flex;
+}
+
+.cc-chip .cc-nm {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-chip .cc-host {
+  display: none;
+}
+
+.cc-chip.isHost .cc-host {
+  display: flex;
+}
+
+.cc-host .crown {
+  width: 30px;
+  height: 24px;
+  fill: var(--brass-300);
+}
+
+.cc-chip .cc-st {
+  display: flex;
+  align-items: center;
+  min-width: 40px;
+  justify-content: center;
+}
+
+.cc-chip .cc-st:empty {
+  min-width: 0;
+}
+
+.cc-chip.done {
+  border-color: #3f8f78;
+  border-left-color: var(--pc);
+}
+
+.cc-players.right .cc-chip.done {
+  border-right-color: var(--pc);
+}
+
+.cc-tick {
+  width: 38px;
+  height: 38px;
+  fill: none;
+  stroke: #5fd3a8;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cc-chip.done .cc-tick {
+  animation: cc-pop 0.4s cubic-bezier(0.2, 1.8, 0.4, 1);
+}
+
+@keyframes cc-pop {
+  from { transform: scale(0.2); }
+}
+
+.cc-think {
+  display: flex;
+  gap: 5px;
+}
+
+.cc-think i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  animation: cc-think 1.2s ease-in-out infinite;
+}
+
+.cc-think i:nth-child(2) { animation-delay: 0.2s; }
+.cc-think i:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes cc-think {
+  0%, 60%, 100% { opacity: 0.3; transform: none; }
+  30% { opacity: 1; transform: translateY(-5px); }
+}
+
+.cc-chip.away {
+  opacity: 0.42;
+  filter: grayscale(0.8);
+}
+
+.cc-chip.away .cc-nm::after {
+  content: ' (away)';
+  font-weight: 400;
+  font-style: italic;
+  font-size: 26px;
+}
+
+#ccPaused {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  transform: translateX(-50%);
+  padding: 14px 30px;
+  font-size: 36px;
+  color: var(--ink);
+  background: rgb(13 20 22 / 0.9);
+  border: 2px solid var(--brass-500);
+  border-radius: 12px;
+  display: none;
+}
+
+#ccPaused.on {
+  display: block;
+}
+
+/* ------------------------------------------------------------------ level card */
+
+#ccCard {
+  position: absolute;
+  left: 50%;
+  top: 380px;
+  min-width: 760px;
+  max-width: 1200px;
+  padding: 22px 60px 26px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.7);
+  background: linear-gradient(180deg, rgb(13 20 22 / 0.93), rgb(13 20 22 / 0.85));
+  border: 3px solid var(--brass-500);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.6), 0 0 60px rgb(255 182 72 / 0.18);
+  transition: opacity 0.35s, transform 0.35s;
+}
+
+#ccCard.on {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
+.cc-cl {
+  font-family: var(--font-display);
+  font-size: 34px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--brass-400);
+}
+
+.cc-ct {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 92px;
+  line-height: 1.05;
+  color: var(--brass-300);
+  text-shadow: 0 5px 0 rgb(0 0 0 / 0.6), 0 0 30px rgb(255 182 72 / 0.45);
+}
+
+#ccCard.on .cc-ct {
+  animation: cc-bannerpop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+#ccCard.boss {
+  border-color: #e2553f;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.6), 0 0 60px rgb(255 60 30 / 0.4);
+}
+
+#ccCard.boss .cc-ct {
+  color: #ff8a6a;
+}
+
+.cc-cd {
+  margin-top: 6px;
+  font-size: 34px;
+  font-style: italic;
+  color: var(--ink);
+}
+
+.cc-bombs {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  margin-top: 10px;
+}
+
+.cc-bk {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 26px;
+  color: var(--ink-dim);
+}
+
+.cc-bk canvas {
+  width: 56px;
+  height: 56px;
+}
+
+/* ------------------------------------------------------------------ banner */
+
+#ccBanner {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  width: max-content;
+  min-width: 560px;
+  max-width: 1000px;
+  padding: 8px 56px 10px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) scale(0.7);
+  transform-origin: 50% 0;
+  background: linear-gradient(180deg, rgb(13 20 22 / 0.92), rgb(13 20 22 / 0.82));
+  border: 3px solid var(--brass-500);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+#ccBanner.on {
+  opacity: 1;
+  transform: translateX(-50%);
+}
+
+.cc-bt {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 62px;
+  line-height: 1.05;
+  color: var(--brass-300);
+  text-shadow: 0 4px 0 rgb(0 0 0 / 0.6), 0 0 24px rgb(255 182 72 / 0.5);
+}
+
+#ccBanner.on .cc-bt {
+  animation: cc-bannerpop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+.cc-bs {
+  font-size: 32px;
+  font-style: italic;
+  color: var(--ink);
+}
+
+#ccBanner.clear .cc-bt {
+  color: #8ff0c8;
+  text-shadow: 0 4px 0 rgb(0 0 0 / 0.6), 0 0 24px rgb(79 179 154 / 0.6);
+}
+
+#ccBanner.boss {
+  border-color: #e2553f;
+  background: linear-gradient(180deg, rgb(48 10 8 / 0.94), rgb(32 6 5 / 0.86));
+}
+
+#ccBanner.boss .cc-bt {
+  color: #ff7a5a;
+}
+
+#ccBanner.win .cc-bt {
+  color: #fff1c2;
+}
+
+@keyframes cc-bannerpop {
+  from { transform: scale(1.5); opacity: 0; letter-spacing: 0.3em; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ------------------------------------------------------------------ break */
+
+#ccBreak {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: radial-gradient(ellipse at 50% 55%, rgb(13 20 22 / 0.55), rgb(5 8 9 / 0.85));
+}
+
+#ccBreak.on {
+  display: block;
+  animation: cc-fadein 0.6s ease-out;
+}
+
+.cc-bwrap {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  transform: translateX(-50%);
+  width: 1240px;
+  padding: 22px 36px 24px;
+  background: linear-gradient(170deg, rgb(29 46 51 / 0.95), rgb(13 20 22 / 0.95));
+  border: 3px solid var(--brass-500);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.6);
+  text-align: center;
+}
+
+.cc-bh {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 64px;
+  line-height: 1.05;
+  color: #8ff0c8;
+  text-shadow: 0 4px 0 rgb(0 0 0 / 0.6), 0 0 24px rgb(79 179 154 / 0.5);
+}
+
+.cc-bsub {
+  font-size: 30px;
+  font-style: italic;
+  color: var(--ink-dim);
+  margin-bottom: 14px;
+}
+
+.cc-brows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.cc-brow {
+  display: grid;
+  grid-template-columns: 300px 1fr 48px;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  padding: 4px 14px;
+  background: rgb(13 20 22 / 0.7);
+  border-left: 8px solid var(--pc);
+  border-radius: 10px;
+}
+
+.cc-brow.away {
+  opacity: 0.45;
+}
+
+.cc-brow.flash {
+  animation: cc-rowflash 1.2s ease-out;
+}
+
+@keyframes cc-rowflash {
+  0% { background: rgb(255 182 72 / 0.5); }
+  100% { background: rgb(13 20 22 / 0.7); }
+}
+
+.cc-bn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--pc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-bw {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.cc-pick {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 32px;
+  color: var(--brass-300);
+  white-space: nowrap;
+}
+
+.cc-pd {
+  font-size: 24px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-choosing {
+  font-size: 26px;
+  font-style: italic;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-br {
+  display: flex;
+  justify-content: center;
+}
+
+.cc-next {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 2px solid rgb(110 81 32 / 0.6);
+  font-size: 32px;
+  color: var(--ink);
+}
+
+.cc-next .cc-nl {
+  font-family: var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass-400);
+  font-size: 26px;
+}
+
+.cc-next b {
+  font-family: var(--font-display);
+  color: var(--brass-300);
+  font-size: 38px;
+}
+
+.cc-nd {
+  font-style: italic;
+  color: var(--ink-dim);
+  font-size: 28px;
+}
+
+.cc-bc {
+  margin-top: 12px;
+  font-family: var(--font-display);
+  font-size: 34px;
+  color: var(--ink);
+}
+
+.cc-bc b {
+  color: var(--gas-glow);
+  font-size: 46px;
+}
+
+@keyframes cc-fadein {
+  from { opacity: 0; }
+}
+
+/* ------------------------------------------------------------------ end */
+
+#ccEnd {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: radial-gradient(ellipse at center, rgb(13 20 22 / 0.8), rgb(5 8 9 / 0.95));
+}
+
+#ccEnd.on {
+  display: block;
+  animation: cc-fadein 0.8s ease-out;
+}
+
+.cc-endwrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  padding: 36px 40px 30px;
+}
+
+.cc-et {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 140px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.won .cc-et {
+  background: linear-gradient(180deg, #fff1c2, var(--brass-300) 40%, var(--brass-500));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 6px 0 rgb(0 0 0 / 0.6)) drop-shadow(0 0 30px rgb(255 182 72 / 0.5));
+}
+
+.lost .cc-et {
+  color: #ff6a4a;
+  text-shadow: 0 6px 0 rgb(0 0 0 / 0.6), 0 0 40px rgb(226 85 63 / 0.6);
+}
+
+.cc-es {
+  margin-top: 10px;
+  font-size: 40px;
+  color: var(--ink);
+  font-style: italic;
+}
+
+.cc-awards {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  margin-top: 28px;
+}
+
+.cc-award {
+  flex: 0 1 300px;
+  min-width: 0;
+  padding: 16px 14px 14px;
+  text-align: center;
+  background: linear-gradient(170deg, rgb(43 66 72 / 0.95), rgb(20 32 36 / 0.95));
+  border: 3px solid var(--brass-500);
+  border-top: 10px solid var(--pc);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.6);
+  animation: cc-cardin 0.6s cubic-bezier(0.2, 1.4, 0.5, 1) both;
+}
+
+.cc-award:nth-child(2) { animation-delay: 0.15s; }
+.cc-award:nth-child(3) { animation-delay: 0.3s; }
+.cc-award:nth-child(4) { animation-delay: 0.45s; }
+.cc-award:nth-child(5) { animation-delay: 0.6s; }
+.cc-award:nth-child(6) { animation-delay: 0.75s; }
+
+@keyframes cc-cardin {
+  from { opacity: 0; transform: translateY(40px) rotate(-3deg); }
+}
+
+.cc-award .at {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 30px;
+  white-space: nowrap;
+  color: var(--brass-300);
+}
+
+.cc-award .an {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 6px;
+  font-size: 38px;
+  font-weight: 700;
+  color: var(--pc);
+  text-shadow: 0 2px 4px #000;
+}
+
+.cc-award .ad {
+  margin-top: 4px;
+  font-size: 26px;
+  color: var(--ink-dim);
+}
+
+.cc-stats {
+  margin-top: 28px;
+  border-collapse: collapse;
+  font-size: 30px;
+  background: rgb(13 20 22 / 0.7);
+  border: 2px solid var(--brass-700);
+}
+
+.cc-stats th {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brass-400);
+  padding: 10px 16px;
+  text-align: right;
+  border-bottom: 2px solid var(--brass-700);
+}
+
+.cc-stats th:first-child,
+.cc-stats td.who,
+.cc-stats th.pk,
+.cc-stats td.pk {
+  text-align: left;
+}
+
+.cc-stats td {
+  padding: 7px 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid rgb(110 81 32 / 0.4);
+}
+
+.cc-stats td.who {
+  font-weight: 700;
+  color: var(--pc);
+  border-left: 8px solid var(--pc);
+  white-space: nowrap;
+}
+
+.cc-stats td.who .gear {
+  margin-right: 12px;
+}
+
+.cc-stats td.best {
+  color: var(--gas-glow);
+  font-weight: 700;
+}
+
+.cc-stats td.pk {
+  max-width: 420px;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--brass-300);
+}
+
+#ccEnd.compact .cc-award {
+  padding: 10px 14px;
+}
+
+#ccEnd.compact .cc-stats td {
+  padding: 3px 16px;
+}
+
+#ccEnd.compact .cc-awards,
+#ccEnd.compact .cc-stats {
+  margin-top: 18px;
+}
+
+.cc-ew {
+  margin-top: auto;
+  font-size: 38px;
+  font-family: var(--font-display);
+  color: var(--ink);
+}
+
+.cc-dots::after {
+  content: '…';
+}
