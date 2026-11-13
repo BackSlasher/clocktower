@@ -25,6 +25,7 @@ type Bot struct {
 	Delay   float64 // seconds into a plan phase before planning (ctbot: looks human)
 	NoPerks bool
 	Mistake float64 // chance per round to just wait instead of following the team plan
+	Wander  float64 // chance per round to walk to a random reachable cell instead (makes bumps)
 
 	rng      *rand.Rand
 	sentKey  [3]int // level, round, phase marker of the last plan sent
@@ -78,6 +79,11 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 		if b.Mistake > 0 && b.rng.Float64() < b.Mistake {
 			return []game.Cmd{{T: "plan", A: game.AWait}}
 		}
+		if b.Wander > 0 && b.rng.Float64() < b.Wander {
+			if c, ok := b.wander(rm.Layout, s, me.Can); ok {
+				return []game.Cmd{c}
+			}
+		}
 		plans := TeamPlan(rm, s, keep)
 		c, ok := plans[b.ID]
 		if !ok {
@@ -86,6 +92,35 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 		return []game.Cmd{c}
 	}
 	return nil
+}
+
+// wander picks a legal but pointless move: any cell within this round's
+// walking budget.
+func (b *Bot) wander(l *game.Layout, s *game.Snap, can game.Abilities) (game.Cmd, bool) {
+	for _, e := range s.Engineers {
+		if e.PID != b.ID {
+			continue
+		}
+		budget := can.Move
+		if e.Carry != nil {
+			budget = can.MoveCarry
+		}
+		d := l.Dists(e.X, e.Y)
+		var cells [][2]int
+		for y := range l.H {
+			for x := range l.W {
+				if d[y][x] > 0 && d[y][x] <= budget {
+					cells = append(cells, [2]int{x, y})
+				}
+			}
+		}
+		if len(cells) == 0 {
+			return game.Cmd{}, false
+		}
+		c := cells[b.rng.IntN(len(cells))]
+		return game.Cmd{T: "plan", A: game.AMove, X: game.IntP(c[0]), Y: game.IntP(c[1])}, true
+	}
+	return game.Cmd{}, false
 }
 
 // Rejected tells the bot its last plan was refused, so it plans again (a

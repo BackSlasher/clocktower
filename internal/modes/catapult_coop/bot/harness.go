@@ -14,6 +14,7 @@ type Scenario struct {
 	Players int
 	Idle    int     // extra connected players who never send anything
 	Mistake float64 // per-bot chance per round to just wait
+	Wander  float64 // per-bot chance per round to make a random move instead
 	NoPerks bool
 	Seed    uint64
 }
@@ -46,7 +47,7 @@ func Run(sc Scenario) Result {
 		g.SetConnected(pid, true)
 		if i < sc.Players {
 			b := New(pid, sc.Seed*100+uint64(i))
-			b.Mistake, b.NoPerks = sc.Mistake, sc.NoPerks
+			b.Mistake, b.Wander, b.NoPerks = sc.Mistake, sc.Wander, sc.NoPerks
 			bots = append(bots, b)
 		}
 	}

@@ -286,7 +286,7 @@ func TestPerks(t *testing.T) {
 	p.offer = []string{"mason", "quick_hands", "light_feet"}
 	wantCode(t, g.Perk(a, "nope"), "bad_request")
 	wantCode(t, g.Perk(a, "strong_arm"), "bad_request")
-	if err := g.Perk(a, "mason"); err != nil || g.wall != 7 || p.offer != nil {
+	if err := g.Perk(a, "mason"); err != nil || g.wall != 5+Defs.Perks["mason"].Amount || p.offer != nil {
 		t.Fatalf("mason: %v wall %d", err, g.wall)
 	}
 	wantCode(t, g.Perk(a, "quick_hands"), "bad_request") // offer used up
@@ -295,7 +295,7 @@ func TestPerks(t *testing.T) {
 	g2.phase, g2.wall = PhaseBreak, 3
 	g2.player(ids2[0]).offer = []string{"mason", "light_feet"}
 	g2.player(ids2[1]).offer = []string{"strong_arm", "mason"}
-	if err := g2.Perk(ids2[0], "mason"); err != nil || g2.wall != 5 {
+	if err := g2.Perk(ids2[0], "mason"); err != nil || g2.wall != 3+Defs.Perks["mason"].Amount {
 		t.Fatal(err)
 	}
 	if o := g2.player(ids2[1]).offer; len(o) != 1 || o[0] != "strong_arm" {

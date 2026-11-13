@@ -28,7 +28,7 @@ var perkDefs = func() map[string]*PerkDef {
 		"light_feet":  {Name: "Light Feet", Max: 1, Amount: 1},
 		"long_reach":  {Name: "Long Reach", Max: 1, Amount: 2},
 		"quick_hands": {Name: "Quick Hands", Max: 1},
-		"mason":       {Name: "Mason", Team: true, Amount: 2},
+		"mason":       {Name: "Mason", Team: true, Amount: 1},
 	}
 	m["strong_arm"].Desc = fmt.Sprintf("You throw up to %d cells instead of 4.", m["strong_arm"].Amount)
 	m["light_feet"].Desc = fmt.Sprintf("You move %d cell further, carrying or not.", m["light_feet"].Amount)

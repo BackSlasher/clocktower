@@ -50,17 +50,24 @@ func TestBalance(t *testing.T) {
 		name string
 		sc   Scenario
 	}
+	// "sloppy" is the tuning target: a party player who wastes a quarter of
+	// their rounds (25% waits). "sloppy+" also wanders off now and then.
+	sloppy := func(n int) Scenario { return Scenario{Players: n, Mistake: 0.25} }
 	scens := []scen{
-		{"1 bot", Scenario{Players: 1}},
-		{"2 bots", Scenario{Players: 2}},
-		{"3 bots", Scenario{Players: 3}},
-		{"4 bots", Scenario{Players: 4}},
-		{"5 bots", Scenario{Players: 5}},
-		{"6 bots", Scenario{Players: 6}},
-		{"8 bots", Scenario{Players: 8}},
-		{"3 bots + 1 idle", Scenario{Players: 3, Idle: 1}},
-		{"4 bots, 15% mistakes", Scenario{Players: 4, Mistake: 0.15}},
-		{"4 bots, no perks", Scenario{Players: 4, NoPerks: true}},
+		{"4 perfect", Scenario{Players: 4}},
+		{"4 bots 15% waits", Scenario{Players: 4, Mistake: 0.15}},
+		{"4 sloppy", sloppy(4)},
+		{"4 sloppy, no perks", Scenario{Players: 4, Mistake: 0.25, NoPerks: true}},
+		{"4 sloppy+ (10% wander)", Scenario{Players: 4, Mistake: 0.25, Wander: 0.1}},
+		{"1 sloppy", sloppy(1)},
+		{"2 sloppy", sloppy(2)},
+		{"3 sloppy", sloppy(3)},
+		{"5 sloppy", sloppy(5)},
+		{"6 sloppy", sloppy(6)},
+		{"8 sloppy", sloppy(8)},
+		{"3 sloppy + 1 idle", Scenario{Players: 3, Idle: 1, Mistake: 0.25}},
+		{"1 perfect", Scenario{Players: 1}},
+		{"8 perfect", Scenario{Players: 8}},
 	}
 	if f := os.Getenv("CT_BALANCE_ONLY"); f != "" {
 		var keep []scen

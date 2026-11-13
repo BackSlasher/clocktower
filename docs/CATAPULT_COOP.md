@@ -31,7 +31,7 @@ corner.
   viewer are raised walkways. Each has **two catapults**. The only way up is
   by **stairs** (one or two flights per rampart).
 - **Lanes**: each catapult looks out over its own lane, running away from the
-  wall, 6 cells long. Four catapults, four lanes. Machines appear at the far
+  wall, 7 cells long. Four catapults, four lanes. Machines appear at the far
   end of a lane and step toward the wall.
 
 The keep is larger for big groups (9 × 9 cells with a 7 × 7 courtyard for
@@ -155,7 +155,7 @@ Between levels there is a short break: every player picks one of three perks
 (the same pick-one-of-three as the tower defense), e.g. *Strong Arm* (throw
 6 cells), *Light Feet* (move one cell further), *Long Reach* (pick up from
 two cells away), *Quick Hands* (load and fire in one action), *Mason* (the
-wall gets 2 hit points back; one Mason per break for the whole team).
+wall gets 1 hit point back; one Mason per break for the whole team).
 
 ## Players who are away
 
@@ -219,7 +219,7 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
   on random free courtyard floor cells (no bomb, no engineer); if no keg or
   grapeshot exists anywhere, the next one drawn is never a stopwatch.
 - **Boss scaling.** The Iron Baron moves every third round and its hit points
-  scale with the team (4 for one player, 9 for four, 13 for eight).
+  scale with the team (5 for one player, 9 for four, 13 for eight).
 - **Mason** is one pick per break for the team: the first pick heals and
   removes Mason from everyone else's offer. Perk offers last only for the
   break; unpicked ones vanish.
@@ -231,3 +231,33 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
   until they return.
 - **Restart** (host) works in any phase but the lobby; Open plans survives it.
 - **Keep size** is chosen at the start by the number of players in the room.
+
+## Balance notes
+
+Tuned for error-prone party players, not for perfect play. The scripted bots
+(`internal/modes/catapult_coop/bot`) play a coordinated team plan; the tuning
+target is a **sloppy** team whose every player wastes a quarter of their
+rounds (25% chance per round to just wait). Run the table with
+`CT_BALANCE_RUNS=100 go test ./internal/modes/catapult_coop/bot -run TestBalance -v`.
+
+Current knobs: wall 15 HP, lanes 7 cells, bombs on the ground players + 2,
+Mason +1 (one per break), machine counts per team size in each level's data,
+Iron Baron 5–13 HP by team size. Results, 100 games per row:
+
+| team | wins | wall left when won (of 15) | losses |
+|------|------|----------------------------|--------|
+| 4 perfect bots | 100% | 8.7 | — |
+| 4 bots, 15% waits | 83% | 5.1 | level 6 |
+| **4 sloppy (25% waits)** | **52%** | 2.5 | levels 5–6 |
+| 4 sloppy, 10% random moves on top | 8% | 1.6 | levels 5–6 |
+| 4 sloppy, no perks | 0% | — | level 5 |
+| 1 / 2 / 3 sloppy | 62% / 50% / 72% | 1.7 / 3.2 / 3.6 | level 6 |
+| 5 / 6 / 8 sloppy | 72% / 50% / 71% | 4.4 / 3.7 / 4.7 | levels 5–6 |
+| 3 sloppy + 1 idle | 72% | 3.8 | level 6 |
+
+The tutorial and levels 2–4 are never lost; nearly every loss is on level 6
+(the Baron), a few on level 5. Perks matter a lot: Quick Hands and Light Feet
+roughly double a team's throughput by level 5, so a team that never picks
+perks loses even when everything else is generous (at 20 wall HP sloppy teams
+win 95% with perks and still 0% without). Wandering (random moves that cause
+bumps) hurts far more than waiting.

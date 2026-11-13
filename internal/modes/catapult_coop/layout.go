@@ -74,7 +74,7 @@ type Keep struct {
 	Layouts    map[string]*Layout `json:"-"`
 }
 
-const laneLen = 6
+const laneLen = 7
 
 // Legend of the layout drawings:
 //
