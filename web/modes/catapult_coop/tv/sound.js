@@ -36,6 +36,9 @@ export async function createTVSound({ audio, ready }) {
       case 'catch':
         play('ready', { pan: P(ev.at), gain: 0.9 });
         break;
+      case 'blocked':
+        play('build', { pan: P(ev.to), gain: 0.8, rate: 0.6 });
+        break;
       case 'land':
         play('die_small', { pan: P(ev.at), gain: 0.5, rate: 0.7 });
         break;

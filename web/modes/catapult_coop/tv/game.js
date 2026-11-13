@@ -195,6 +195,16 @@ export class Game {
         fx.text(sx, sy - 120 * S.k, 'Caught!', '#8ff0c8', 32, 1.1);
         break;
       }
+      case 'blocked': {
+        const [x, y] = ev.to;
+        const [sx, sy] = at(x, y, S.standZ(x, y) + 1);
+        fx.burst(sx, sy, 8, { speed: 170, life: 0.35, size: 3, color: 'rgba(255,190,120,1)' });
+        fx.text(sx, sy - 120 * S.k, 'Hands full!', '#ffb36a', 30, 1.1);
+        const [ax, ay] = ev.at;
+        const [lx, ly] = at(ax, ay, S.topZ(ax, ay));
+        fx.smoke(lx, ly, 4, { size: 14 * S.k, life: 0.6, speed: 45, color: 'rgba(150,140,120,0.5)' });
+        break;
+      }
       case 'land': {
         const [x, y] = ev.at;
         const [sx, sy] = at(x, y, S.topZ(x, y));
@@ -576,6 +586,19 @@ export class Game {
     // ---- overlays (never occluded)
     if (room?.openPlans && planPhase && !this.pb) this.drawGhosts(g, tsec, engScreen);
 
+    // brass number plates: each catapult and the far end of its lane (lane id + 1)
+    for (const c of S.keep.catapults) {
+      const L = S.laneOfCat(c.id);
+      const num = String((L ? L.id : c.lane ?? c.id) + 1);
+      const cp = S.p(c.x, c.y, 1.0);
+      plate(g, cp[0], cp[1] + 34 * k, num, k);
+      if (L) {
+        const [lx, ly] = S.lanePt(L.id, L.len - 1);
+        const fp = S.p(lx, ly, 0);
+        plate(g, fp[0], fp[1] - 14 * k, num, k, 0.8);
+      }
+    }
+
     // machine status: hp pips, frozen badge, boss name
     for (const m of v.machs) {
       const tp = mtop.get(m.id);
@@ -647,7 +670,43 @@ export class Game {
           g.stroke();
           break;
         }
-        case 'throw':
+        case 'throw': {
+          // direction only: an open-ended, fading arrow two cells out
+          const dx = plan.dx || 0;
+          const dy = plan.dy || 0;
+          const a = S.p(e.x, e.y, z0 + 1.1);
+          const b = S.p(e.x + 2 * dx, e.y + 2 * dy, z0 + 1.1);
+          const grad = g.createLinearGradient(a[0], a[1], b[0], b[1]);
+          grad.addColorStop(0, col);
+          grad.addColorStop(0.7, col);
+          grad.addColorStop(1, /^#[0-9a-f]{6}$/i.test(col) ? col + '00' : 'rgba(255,255,255,0)');
+          g.setLineDash([12 * k, 9 * k]);
+          g.lineDashOffset = dash;
+          g.lineWidth = 12 * k;
+          g.strokeStyle = 'rgba(10,8,6,0.6)';
+          g.globalAlpha = 0.9;
+          g.beginPath();
+          g.moveTo(a[0], a[1]);
+          g.lineTo(b[0], b[1]);
+          g.stroke();
+          g.lineWidth = 7 * k;
+          g.strokeStyle = grad;
+          g.stroke();
+          g.setLineDash([]);
+          // open chevron head at the fading end
+          const an = Math.atan2(b[1] - a[1], b[0] - a[0]);
+          const m = [a[0] + (b[0] - a[0]) * 0.85, a[1] + (b[1] - a[1]) * 0.85];
+          g.globalAlpha = 0.6;
+          g.lineWidth = 4 * k;
+          g.strokeStyle = col;
+          g.beginPath();
+          g.moveTo(m[0] - Math.cos(an - 0.5) * 20 * k, m[1] - Math.sin(an - 0.5) * 20 * k);
+          g.lineTo(m[0], m[1]);
+          g.lineTo(m[0] - Math.cos(an + 0.5) * 20 * k, m[1] - Math.sin(an + 0.5) * 20 * k);
+          g.stroke();
+          g.globalAlpha = 1;
+          break;
+        }
         case 'pickup': {
           const tx = plan.x;
           const ty = plan.y;
@@ -727,6 +786,34 @@ function arrowHead(g, a, b, col, k) {
   g.stroke();
   g.fillStyle = col;
   g.fill();
+}
+
+function plate(g, x, y, text, k, sc = 1) {
+  const r = 17 * k * sc;
+  g.save();
+  g.globalAlpha = 0.92;
+  const gr = g.createLinearGradient(x - r, y - r, x + r, y + r);
+  gr.addColorStop(0, '#f1d27a');
+  gr.addColorStop(0.5, '#c79a3c');
+  gr.addColorStop(1, '#8a6420');
+  g.fillStyle = gr;
+  roundRect(g, x - r, y - r * 1.1, r * 2, r * 2.2, 5 * k);
+  g.fill();
+  g.lineWidth = 2.5 * k;
+  g.strokeStyle = 'rgba(40,24,6,0.9)';
+  g.stroke();
+  g.fillStyle = 'rgba(40,24,6,0.85)';
+  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    g.beginPath();
+    g.arc(x + dx * r * 0.72, y + dy * r * 0.82, 1.8 * k * sc, 0, TAU);
+    g.fill();
+  }
+  g.font = `bold ${Math.round(24 * k * sc)}px Georgia, serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#2a1904';
+  g.fillText(text, x, y + 1 * k);
+  g.restore();
 }
 
 function badge(g, x, y, icon, col, k) {

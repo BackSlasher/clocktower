@@ -69,9 +69,9 @@ export function startDemo(kind, setup, deliver) {
 
   // positions (small keep / large keep)
   const P = big
-    ? [[2, 1], [4, 1], [1, 2], [6, 5], [5, 9], [3, 3], [8, 7], [9, 9]]
-    : [[2, 1], [4, 1], [1, 2], [6, 5], [4, 4], [3, 6], [7, 7], [8, 8]];
-  const carry = ['keg', null, 'stopwatch', 'grapeshot', null, 'keg', null, null];
+    ? [[2, 1], [4, 1], [3, 5], [6, 5], [5, 9], [3, 3], [8, 7], [9, 9]]
+    : [[2, 1], [4, 1], [3, 5], [6, 5], [4, 4], [3, 6], [7, 7], [8, 8]];
+  const carry = ['keg', null, 'stopwatch', 'grapeshot', 'keg', 'keg', null, null];
   const players = names.slice(0, N).map((name, i) => ({
     id: `p${i + 1}`,
     name,
@@ -89,14 +89,14 @@ export function startDemo(kind, setup, deliver) {
   // open plans on the plan screen
   if (kind === 'plan') {
     const plans = [
-      { a: 'throw', x: P[0][0] + 2, y: P[0][1] },
+      { a: 'throw', dx: 1, dy: 0 },
       { a: 'fire', cat: cats[0].id },
       { a: 'load', cat: cats[2].id },
       { a: 'wait' },
-      { a: 'move', x: P[4][0] - 1, y: P[4][1] + 1, path: [[P[4][0], P[4][1] + 1], [P[4][0] - 1, P[4][1] + 1]] },
+      { a: 'move', x: P[4][0], y: P[4][1] + 1, path: [[P[4][0], P[4][1] + 1]] },
       { a: 'pickup', x: P[5][0] + 1, y: P[5][1] },
       { a: 'wait' },
-      { a: 'move', x: P[7][0], y: P[7][1] - 2, path: [[P[7][0], P[7][1] - 1], [P[7][0], P[7][1] - 2]] },
+      { a: 'move', x: P[7][0], y: P[7][1] - 1, path: [[P[7][0], P[7][1] - 1]] },
     ];
     players.forEach((p, i) => (p.plan = p.planned ? plans[i] : null));
   }
@@ -185,19 +185,23 @@ export function startDemo(kind, setup, deliver) {
       const dur = defs.resolveBase + defs.stageTime * stages.length;
       ev.push({ e: 'resolve', level, round: 7, dur, stages });
       // throw: p1 (keg) to p2 who catches
-      ev.push({ e: 'throw', s: 'throw', pid: pid(0), bomb: 100, kind: 'keg', from: [e(0).x, e(0).y], to: [e(1).x, e(1).y], result: 'caught', by: pid(1), at: [e(1).x, e(1).y] });
+      ev.push({ e: 'throw', s: 'throw', pid: pid(0), bomb: 100, kind: 'keg', from: [e(0).x, e(0).y], dir: [Math.sign(e(1).x - e(0).x), Math.sign(e(1).y - e(0).y)], to: [e(1).x, e(1).y], result: 'caught', by: pid(1), at: [e(1).x, e(1).y] });
       engB[0].carry = null;
       engB[1].carry = { id: 100, kind: 'keg' };
-      // throw: p4 grapeshot lands
+      // blocked: p4 (grapeshot) throws west at p3, whose hands are full; it bounces and drops
       if (N > 3) {
-        ev.push({ e: 'throw', s: 'throw', pid: pid(3), bomb: 103, kind: 'grapeshot', from: [e(3).x, e(3).y], to: [e(3).x - 3, e(3).y], result: 'landed', at: [e(3).x - 3, e(3).y] });
+        ev.push({ e: 'throw', s: 'throw', pid: pid(3), bomb: 103, kind: 'grapeshot', from: [e(3).x, e(3).y], dir: [-1, 0], to: [e(2).x, e(2).y], result: 'blocked', by: pid(2), at: [e(2).x + 1, e(2).y] });
         engB[3].carry = null;
       }
-      // moves: p5 walks two cells; p6 and p8 bump
+      // landed: p5 (keg) throws east into empty ground
       if (N > 4) {
-        ev.push({ e: 'move', s: 'move', pid: pid(4), from: [e(4).x, e(4).y], to: [e(4).x + 1, e(4).y + 1], path: [[e(4).x + 1, e(4).y], [e(4).x + 1, e(4).y + 1]], result: 'ok' });
-        engB[4].x += 1;
-        engB[4].y += 1;
+        ev.push({ e: 'throw', s: 'throw', pid: pid(4), bomb: 104, kind: 'keg', from: [e(4).x, e(4).y], dir: [1, 0], to: [e(4).x + 3, e(4).y], result: 'landed', at: [e(4).x + 3, e(4).y] });
+        engB[4].carry = null;
+      }
+      // moves: p6 steps one cell
+      if (N > 5) {
+        ev.push({ e: 'move', s: 'move', pid: pid(5), from: [e(5).x, e(5).y], to: [e(5).x + 1, e(5).y], path: [[e(5).x + 1, e(5).y]], result: 'ok' });
+        engB[5].x += 1;
       }
       // grab: p3 loads the stopwatch into catapult 2 (contested demo: none)
       ev.push({ e: 'load', s: 'grab', pid: pid(2), cat: cats[2].id, bomb: 102, kind: 'stopwatch', result: 'ok' });
@@ -227,7 +231,7 @@ export function startDemo(kind, setup, deliver) {
       ev.push({ e: 'spawn', s: 'machines', id: 40, kind: 'scrap', lane: 0, pos: lane(0).len - 1, hp: 1 });
       ev.push({ e: 'bomb', s: 'machines', id: 60, kind: 'keg', x: 6, y: big ? 9 : 8 });
       const cB = catapults.map((c) => ({ id: c.id, bomb: c.id === cats[2].id ? { id: 102, kind: 'stopwatch' } : null }));
-      const bB = [...bombs, { id: 103, kind: 'grapeshot', x: e(3)?.x - 3, y: e(3)?.y }, { id: 60, kind: 'keg', x: 6, y: big ? 9 : 8 }].filter((b) => b.x !== undefined && (N > 3 || b.id !== 103));
+      const bB = [...bombs, { id: 103, kind: 'grapeshot', x: e(2)?.x + 1, y: e(2)?.y }, ...(N > 4 ? [{ id: 104, kind: 'keg', x: e(4).x + 3, y: e(4).y }] : []), { id: 60, kind: 'keg', x: 6, y: big ? 9 : 8 }].filter((b) => b.x !== undefined && (N > 3 || b.id !== 103));
       const machinesB = [...mB.filter((m) => !m.gone), { id: 40, kind: 'scrap', lane: 0, pos: lane(0).len - 1, hp: 1, max: 1, frozen: 0 }];
       deliver({ ...room, phase: 'resolve', players: players.map((p) => ({ ...p, planned: false })) });
       deliver({ ...A, time: time + 0.5, phase: 'resolve', left: dur, wall, engineers: engB, bombs: bB, catapults: cB, machines: machinesB, incoming: [], ev });

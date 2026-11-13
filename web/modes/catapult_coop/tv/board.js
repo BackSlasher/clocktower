@@ -137,13 +137,15 @@ export class Playback {
             e.poses.push({ pose: 'throw', t0: T('throw', 0), t1: T('throw', 0.3) });
           }
           const caught = ev.result === 'caught';
+          const blocked = ev.result === 'blocked';
+          // `to` is where the flight ends (a catcher/blocker's cell or the landing cell); `at` is where the bomb rests
           const [tx, ty] = ev.to;
           const [fx, fy] = ev.from;
           const dist = Math.abs(tx - fx) + Math.abs(ty - fy);
           const fl = {
             kind: ev.kind,
             from: [fx, fy, handZ(fx, fy)],
-            to: [tx, ty, caught ? handZ(tx, ty) : S.topZ(tx, ty)],
+            to: [tx, ty, caught || blocked ? handZ(tx, ty) : S.topZ(tx, ty)],
             t0,
             t1,
             h: 0.9 + dist * 0.35,
@@ -157,6 +159,13 @@ export class Playback {
               c.poses.push({ pose: 'reach', t0: t1 - 0.12, t1: t1 + 0.15 });
             }
             this.cues.push({ t: t1, kind: 'catch', ev });
+          } else if (blocked) {
+            // bounces off the engineer's full hands and drops to the ground
+            const [ax, ay] = ev.at;
+            const t2 = T('throw', THROW_SETTLE);
+            this.flights.push({ kind: ev.kind, from: [tx, ty, handZ(tx, ty)], to: [ax, ay, S.topZ(ax, ay)], t0: t1, t1: t2, h: ax !== tx || ay !== ty ? 0.7 : 0.55 });
+            groundAdd(ev.bomb, ev.kind, ax, ay, t2);
+            this.cues.push({ t: t1, kind: 'blocked', ev });
           } else {
             const [ax, ay] = ev.at;
             const t2 = T('throw', THROW_SETTLE);
