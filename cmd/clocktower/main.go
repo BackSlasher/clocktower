@@ -37,7 +37,7 @@ func main() {
 	webDir := flag.String("web-dir", "web", "web directory used with -dev")
 	speed := flag.Int("speed", 1, "run the simulation N times faster (testing only)")
 	stubMode := flag.Bool("stub-mode", false, "also register the dev-only \"stub\" mode, to try mode selection (testing only)")
-	wipModes := flag.Bool("wip-modes", false, "also register the work-in-progress modes (catapult_coop), after the product modes (testing only)")
+	wipModes := flag.Bool("wip-modes", env("CLOCKTOWER_WIP_MODES", "") != "", "also register the work-in-progress modes (catapult_coop), after the product modes (env CLOCKTOWER_WIP_MODES, any non-empty value)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))

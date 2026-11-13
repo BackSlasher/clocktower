@@ -45,7 +45,7 @@ no external network requests** (no CDNs, no web fonts).
 | `CLOCKTOWER_BASE_URL` / `-base-url` | (unset) | public base URL used in the QR/join link, e.g. `https://ct.example.com`. If unset, derived from the TV's request: `X-Forwarded-Proto`/`X-Forwarded-Host` if present, else scheme + `Host`. |
 | `-dev`                          | off      | serve `web/` from disk instead of the embedded copy |
 | `-stub-mode`                    | off      | also register the dev-only `stub` mode (id `stub`, "Stub"), so the lobby has something to choose; testing only |
-| `-wip-modes`                    | off      | also register the work-in-progress modes, after the product modes and before `stub`: today `catapult_coop` ("Hold the Keep"). Without it the binary serves exactly one mode (no picker). |
+| `-wip-modes` / `CLOCKTOWER_WIP_MODES` | off | also register the work-in-progress modes, after the product modes and before `stub`: today `catapult_coop` ("Hold the Keep"). Without it the binary serves exactly one mode (no picker). |
 
 ## HTTP
 
