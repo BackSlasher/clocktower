@@ -107,11 +107,12 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
   .btn.go, .big-btn { min-height: 50px; }
 
   /* lobby: identity + buttons left, players right */
-  #s-lobby { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; align-items: start; column-gap: 16px; }
+  #s-lobby { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr auto; align-items: start; column-gap: 16px; }
   #s-lobby .lobby-head { grid-column: 1; grid-row: 1; padding: 0; }
   #s-lobby .me-chip { font-size: 1.8rem; }
   #s-lobby .plist { grid-column: 2; grid-row: 1 / 3; max-height: 100%; }
-  #s-lobby .lobby-foot { grid-column: 1; grid-row: 2; align-self: end; width: 100%; }
+  #s-lobby .modeopts { grid-column: 2; grid-row: 3; }
+  #s-lobby .lobby-foot { grid-column: 1; grid-row: 2 / 4; align-self: end; width: 100%; }
   .plist li { padding: 6px 2px; font-size: 1rem; }
 }
 @media (orientation: landscape) and (max-height: 560px) {
@@ -134,6 +135,7 @@ input { font: inherit; -webkit-user-select: text; user-select: text; }
 .mcard.static { min-height: 0; }
 button.mcard:active { transform: scale(0.98); }
 #mode { position: absolute; inset: 0; }
+.modeopts { display: flex; flex-direction: column; gap: 6px; flex: none; }
 @media (orientation: landscape) and (max-height: 560px) {
   #s-lobby .modebox { grid-column: 1; grid-row: 2; align-self: start; }
   .mcards { gap: 6px; }

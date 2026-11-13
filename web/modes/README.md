@@ -55,9 +55,21 @@ export function mount(ctx) {          // may be async
     demo(kind, deliver) {},           // ?demo=kind: feed synthetic room/snap messages to deliver()
     // optional, phone only:
     onError(msg) {},                  // a non-fatal server `error` (the shell already toasted it)
+    lobbyOptions(container, { isHost, room }) {}, // the mode's own lobby controls, see below
   };
 }
 ```
+
+### Lobby options (phone, optional)
+
+The lobby belongs to the shell, but a mode may have settings the host picks before starting
+(e.g. `catapult_coop`'s Open plans). If the phone module returns `lobbyOptions`, the shell calls
+it while the room is in the lobby — once the module has loaded and again on every `room`
+message there — with an element under the mode cards and `{ isHost, room }` (the latest `room`
+message). The module renders its controls into the container (replacing what it put there
+last time) and sends its own messages with `ctx.send`; non-hosts should get a read-only view.
+The shell hides the container when it is empty or the hook is absent, and empties it on
+unmount. Modes without the hook are unaffected.
 
 Order of calls: `mount(ctx)`, then `resize(px)` (TV), then the `room` and `snap` messages that
 arrived while the module was loading, in order, then everything live. After `unmount()` the shell

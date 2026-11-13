@@ -105,6 +105,8 @@ function unmountMode() {
   queue = [];
   try { old?.unmount?.(); } catch (e) { console.error('mode unmount failed', e); }
   modeEl.replaceChildren();
+  $('modeOpts').replaceChildren();
+  $('modeOpts').hidden = true;
   for (const l of sheets.splice(0)) l.remove();
   wake(false);
 }
@@ -132,6 +134,7 @@ async function loadMode(id, s) {
   const q = queue;
   queue = [];
   for (const m of q) dispatch(m);
+  renderLobby(); // the mode's lobby options, now that it is loaded
 }
 
 // room and snap go to the mode (queued while it loads)
@@ -257,6 +260,16 @@ function renderLobby() {
   w.hidden = isHost();
   w.textContent = `Waiting for ${pname(room.host)} to start…`;
   renderModes();
+  renderModeOpts();
+}
+
+// The mode's own lobby controls (optional `lobbyOptions(container, {isHost, room})` hook), shown
+// under the mode cards; hidden when the mode has none or renders nothing.
+function renderModeOpts() {
+  const box = $('modeOpts');
+  if (!mod?.lobbyOptions || room?.phase !== 'lobby') { box.hidden = true; return; }
+  try { mod.lobbyOptions(box, { isHost: isHost(), room }); } catch (e) { console.error('lobbyOptions failed', e); }
+  box.hidden = !box.childElementCount;
 }
 
 // Mode choice, only when there is something to choose. The host gets one tappable card per
