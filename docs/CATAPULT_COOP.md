@@ -107,8 +107,9 @@ rampart; *split* walls the store off from the stairs with a row of crates
 
 ## A turn
 
-1. **Plan** (20 s; a tunable; the game's very first turn has no timer, so a
-   new group can take its time). Every player files a **queue** of up to
+1. **Plan** (a timer per level, long while the team learns: 90, 70, 60,
+   50, 45, 40 s for levels 1–6; the tutorial's turns have no timer, so a new
+   group can take its time). Every player files a **queue** of up to
    **four actions**, and presses **done**. Queues are visible to everyone as
    they are edited, on the TV and every phone. The phase ends as soon as
    everyone is done, or on the timer.
@@ -200,6 +201,58 @@ shows the next turn's arrivals as shadows at the far end of the lanes.
 Later, maybe: Aero-Drones that land in the courtyard and block a cell; a
 fused bomb that goes off after three rounds wherever it is.
 
+## Guided tutorial
+
+The first playtest's verdict on the old free-play level 1: it "didn't
+involve people enough and have them move around and do things enough to
+understand the mechanics", and level 2's 20-second timer had them
+scrambling. So the game now opens with a guided tutorial on level 1's
+layout, before level 1: a script of untimed turns ("steps"), each with one
+concrete goal per player, written big at the top of the TV (a short
+imperative title and one sentence) with a personal line per player, a
+marked cell, and a suggested exact queue the phone can file in one tap. A
+step repeats until every goal is met, then the next starts. Goals are
+checked by what happened, not by whether the suggestion was followed;
+suggestions are path-found on the board every turn, for the whole team at
+once, so they stay right after someone wanders off and never make two
+engineers bump.
+
+By the end every player has walked somewhere (someone over the stairs, in
+fact everyone), picked a bomb up, thrown one a teammate caught, caught one,
+and loaded a catapult that fired and destroyed a machine. Fetchers and
+gunners swap jobs halfway. Machines are still targets until the last step,
+"Now for real!", where a few Scraplings move as usual (still untimed). Then
+level 1 starts with the wall repaired and the stats cleared. The host can
+skip the tutorial (`skip_tutorial`); `go` still plays a stuck turn.
+
+Seats as in the levels: 1 and 3 fetchers in the courtyard, 2 and 4 gunners
+on the ramparts. With 2 players (one pair) or 4 (pairs 1→2 and 3→4):
+
+| # | title | fetchers (seats 1, 3) | gunners (seats 2, 4) |
+|---|-------|-----------------------|----------------------|
+| 1 | Pick up a bomb | walk onto the marked bomb, pick it up | 2 walks along the rampart to catapult 0; 4 is already at catapult 3 |
+| 2 | Throw it up | step into the gunner's column or row, throw | catch |
+| 3 | Load and fire | walk to the foot of the stairs | load: the catapult kills its target |
+| 4 | Swap: gunners come down | wait at the foot of the stairs | take the stairs down into the yard |
+| 5 | Swap: climb the stairs | climb to catapult 1 (seat 1) / 3 (seat 3) | pick up a bomb |
+| 6 | Throw it up | catch | throw up to your old fetcher |
+| 7 | Load and fire | load: kill | pick up another bomb |
+| 8 | Now for real! | play | play |
+
+With 3 players (one gunner): 3 picks up while 1 steps into line and 2 walks
+to catapult 0; 3 throws across the yard to 1 (a catch in the courtyard); 1
+throws up to 2; 2 loads and fires; 2 comes down while 1 and 3 wait at the
+foot of the stairs; 1 and 3 climb (1 beside catapult 1, 3 to catapult 3)
+while 2 picks up; 2 throws to 3; 3 loads and fires; 2 lobs a bomb up
+column 6 with nobody on the line, so it lands on the rampart by catapult 1;
+1 picks it up and loads it; now for real (11 steps). Alone: pick up, lob it
+onto the rampart, climb the stairs, pick it up and load it, now for real (4
+steps).
+
+Following the suggestions exactly, the bots finish the tutorial in about 10
+turns alone, 11 for two, 17 for three, 14 for four; bots wasting a quarter
+of their actions need about 21, 29 and 27 turns for two, three and four.
+
 ## Levels
 
 A game is a series of levels. A level is a script: which machines appear on
@@ -247,8 +300,9 @@ each break.
 
 ## Players who are away
 
-- The timer ends every plan phase but the game's first, so nobody can stall
-  the game after the start. The first turn waits for every connected player
+- The timer ends every plan phase after the tutorial, so nobody can stall
+  the game. The tutorial's turns (and the first turn, if the tutorial is
+  skipped at once) wait for every connected player
   to press done (it never waits for a disconnected one); the host can play
   the turn at once from the ⋯ menu ("Play the turn now", queues as filed),
   end a break early ("Start now"), or restart.
@@ -347,7 +401,11 @@ player wastes a quarter of their actions (25% chance per slot to wait
 instead). Run the tables with
 `CT_BALANCE_RUNS=200 go test ./internal/modes/catapult_coop/bot -run 'TestBalance|TestParticipation' -v`
 (`CT_TRACE=4` with `-run TestDebugTrace` prints a game turn by turn;
-`CT_TRACE_MISTAKE=0.25` makes it sloppy).
+`CT_TRACE_MISTAKE=0.25` makes it sloppy; the trace plays the tutorial
+first). The balance runs skip the tutorial (the host sends
+`skip_tutorial`); `TestGuideTeaches` and `TestGuideNoDeadlock` play it, the
+harness acting as a host would (`go` on a turn stuck for 30 s, a skip after
+60 turns). The bots play the tutorial by filing `guide.tasks[me].acts`.
 
 Current knobs: wall 20 HP, lanes 4 cells, every machine moving one step a
 turn (Clockroaches two), machines arriving over the level (see the scripts
@@ -358,11 +416,11 @@ wall 16, lanes 3, one wave per level, bombs anywhere):
 | team | wins | wall left when won (of 20) | turns per game | losses |
 |------|------|----------------------------|----------------|--------|
 | 4 perfect bots | 100% | 14.1 | 32 | — |
-| 4 bots, 15% wasted | 97% | 6.2 | 36 | level 6 |
-| **4 sloppy (25% wasted)** | **56%** | 2.9 | 37 | level 6 (one on 5) |
+| 4 bots, 15% wasted | 99% | 6.2 | 36 | level 6 |
+| **4 sloppy (25% wasted)** | **58%** | 2.6 | 37 | level 6 (one on 5) |
 | 4 sloppy, 10% pointless moves on top | 4% | 1.6 | 35 | levels 5–6 |
-| **2 / 3 sloppy** | **56% / 53%** | 2.4 / 2.6 | 35 / 36 | level 6 (a few on 5) |
-| 3 sloppy + 1 idle | 16% | 1.9 | 34 | levels 5–6 |
+| **2 / 3 sloppy** | **58% / 56%** | 2.4 / 2.6 | 35 / 36 | level 6 (a few on 5) |
+| 3 sloppy + 1 idle | 13% | 1.9 | 34 | levels 5–6 |
 | 2 perfect | 100% | 11.2 | 32 | — |
 | 1 perfect / 1 sloppy | 100% / 100% | 6.9 / 4.5 | 27 / 29 | — |
 
@@ -396,6 +454,6 @@ stairs: about one kill per four turns) and the solo scripts are short, so a
 solo game is won on the wall outlasting the machines rather than by killing
 them; the level 1 Scrapling comes a turn late so a lone engineer can reach it.
 
-The outcome is steep in wasted actions (15% wasted wins 97%, 25% wins 56%),
+The outcome is steep in wasted actions (15% wasted wins 99%, 25% wins 58%),
 and pointless moves (bumps, walking out of a catcher's line) hurt much more
 than plain waiting.

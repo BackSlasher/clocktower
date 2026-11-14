@@ -53,7 +53,7 @@ export async function mount(ctx) {
       const c = `${game.cv.width}x${game.cv.height}`;
       return { canvas: c, enemies: n, text: `${c}  ${n} machines${game.pb ? '  (resolving)' : ''}` };
     },
-    // /tv?demo=plan|tutorial|resolve|break|won|lost|boss[&n=1..4]: a synthetic game, for looking at any screen
+    // /tv?demo=plan|tutorial|guide|resolve|break|won|lost|boss[&n=1..4]: a synthetic game, for looking at any screen
     demo(kind, deliver) {
       import('./demo.js').then(({ startDemo }) => {
         if (!gone) stopDemo = startDemo(kind, ctx.setup, deliver);

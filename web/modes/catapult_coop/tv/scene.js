@@ -254,6 +254,8 @@ export class Scene {
       const spr = propSprite(this, pr, px);
       if (spr) this.blocks.push({ ...pr, key: pr.x + pr.y - 0.01, ...spr });
     }
+    const sign = storeSign(this, px);
+    if (sign) this.blocks.push(sign);
   }
 }
 
@@ -520,6 +522,9 @@ function drawGround(S, px) {
   }
   g.restore();
 
+  // the powder store: where new bombs appear (layout.store)
+  drawStore(S, g, r);
+
   // soft cast shadows (toward +x) and a darker foot along anything raised
   g.save();
   S.planeAt(g, 0, 0, 0);
@@ -537,6 +542,99 @@ function drawGround(S, px) {
   // the walk graph on the low floor
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (S.cell(x, y)?.kind === 'floor' && !S.cell(x, y).h) graphCell(S, g, x, y);
   return c;
+}
+
+// The powder store: a timber-planked bay on its cells, edged with red-and-cream hazard paint
+// where it meets the courtyard, with POWDER and a keg painted on its back cell. Drawn into
+// the ground layer under the walk graph, so the rings still show on it.
+function drawStore(S, g, r) {
+  const cells = (S.lay.store || []).filter(([x, y]) => S.cell(x, y) && !(S.cell(x, y).h || 0));
+  if (!cells.length) return;
+  const isStore = (x, y) => cells.some(([a, b]) => a === x && b === y);
+  for (const [x, y] of cells) {
+    g.save();
+    S.planeAt(g, x, y, 0);
+    g.fillStyle = '#6e4220';
+    g.fillRect(-0.5, -0.5, 1, 1);
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = tone(['#d6a464', '#cf9c5c', '#dcac6c'], r);
+      g.fillRect(-0.5 + 0.02, -0.5 + i / n + 0.02, 0.96, 1 / n - 0.04);
+      g.fillStyle = 'rgba(90,50,20,0.55)';
+      const nx = (x + i) % 2 ? -0.32 : 0.28;
+      g.fillRect(nx, -0.5 + i / n + 0.08, 0.025, 0.025);
+      g.fillRect(nx, -0.5 + (i + 1) / n - 0.1, 0.025, 0.025);
+    }
+    // hazard paint along the outer edges of the bay
+    const edge = (dx, dy) => {
+      if (isStore(x + dx, y + dy)) return;
+      g.save();
+      if (dx === 1) g.rotate(-Math.PI / 2);
+      else if (dx === -1) g.rotate(Math.PI / 2);
+      else if (dy === -1) g.rotate(Math.PI);
+      g.beginPath();
+      g.rect(-0.5, 0.39, 1, 0.11);
+      g.clip();
+      g.fillStyle = '#f0e2c0';
+      g.fillRect(-0.5, 0.39, 1, 0.11);
+      g.fillStyle = '#c8321e';
+      for (let u = -0.6; u < 0.6; u += 0.2) {
+        g.beginPath();
+        g.moveTo(u, 0.5);
+        g.lineTo(u + 0.1, 0.5);
+        g.lineTo(u + 0.2, 0.39);
+        g.lineTo(u + 0.1, 0.39);
+        g.closePath();
+        g.fill();
+      }
+      g.restore();
+    };
+    edge(1, 0);
+    edge(-1, 0);
+    edge(0, 1);
+    edge(0, -1);
+    g.restore();
+  }
+}
+
+// a little signboard on a post at the back corner of the powder store: POWDER, in red
+function storeSign(S, px) {
+  const cells = (S.lay.store || []).filter(([x, y]) => S.cell(x, y) && !(S.cell(x, y).h || 0));
+  if (!cells.length) return null;
+  const [cx, cy] = cells.reduce((a, b) => (b[0] + b[1] < a[0] + a[1] ? b : a));
+  const gx = cx - 0.4;
+  const gy = cy - 0.4;
+  const k = S.k;
+  const [bx, by] = S.p(gx, gy, 0);
+  const w = 92 * k;
+  const h = 30 * k;
+  const post = 46 * k;
+  const box = { x: Math.floor(bx - w / 2 - 6), y: Math.floor(by - post - h - 8), w: Math.ceil(w + 12), h: Math.ceil(post + h + 16) };
+  const c = newCanvas(box.w * px, box.h * px);
+  const g = c.getContext('2d');
+  g.scale(px, px);
+  g.translate(-box.x, -box.y);
+  g.fillStyle = 'rgba(60,30,10,0.3)';
+  g.beginPath();
+  g.ellipse(bx + 6 * k, by, 12 * k, 4 * k, 0, 0, TAU);
+  g.fill();
+  g.fillStyle = '#6e3a18';
+  g.strokeStyle = PAL.outline;
+  g.lineWidth = 2 * k;
+  g.fillRect(bx - 3 * k, by - post - h / 2, 6 * k, post + h / 2);
+  g.strokeRect(bx - 3 * k, by - post - h / 2, 6 * k, post + h / 2);
+  const x0 = bx - w / 2;
+  const y0 = by - post - h;
+  g.fillStyle = '#f2e4c2';
+  g.fillRect(x0, y0, w, h);
+  g.lineWidth = 3 * k;
+  g.strokeRect(x0, y0, w, h);
+  g.fillStyle = '#c8321e';
+  g.font = `bold ${Math.round(19 * k)}px Georgia, serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('POWDER', bx, y0 + h / 2 + 1 * k);
+  return { kind: 'sign', x: gx, y: gy, key: gx + gy, img: c, bx: box.x, by: box.y, bw: box.w, bh: box.h };
 }
 
 function drawLane(S, g, L) {

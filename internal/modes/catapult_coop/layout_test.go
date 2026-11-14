@@ -138,10 +138,10 @@ func TestStoreFarFromCatapults(t *testing.T) {
 					}
 				}
 			}
-			if want := Defs.BombsBase + Defs.BombsPerPlayer*Defs.MaxPlayers; len(l.Supply) < want {
-				t.Errorf("%s: store has %d cells, want at least %d", name, len(l.Supply), want)
+			if want := Defs.BombsBase + Defs.BombsPerPlayer*Defs.MaxPlayers; len(l.Store) < want {
+				t.Errorf("%s: store has %d cells, want at least %d", name, len(l.Store), want)
 			}
-			for _, s := range append(append([][2]int{}, l.Supply...), l.Bombs...) {
+			for _, s := range append(append([][2]int{}, l.Store...), l.Bombs...) {
 				if c := l.At(s[0], s[1]); c.Kind != KFloor || c.H != 0 {
 					t.Errorf("%s: store cell %v is %+v", name, s, c)
 				}
@@ -153,7 +153,7 @@ func TestStoreFarFromCatapults(t *testing.T) {
 				}
 			}
 			for _, b := range l.Bombs {
-				if !slices.Contains(l.Supply, b) {
+				if !slices.Contains(l.Store, b) {
 					t.Errorf("%s: bomb %v outside the store", name, b)
 				}
 			}

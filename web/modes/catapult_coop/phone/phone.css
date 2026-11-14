@@ -8,6 +8,11 @@
   grid-template-rows: auto auto auto var(--pad) minmax(0, 1fr) auto;
   grid-template-areas: "top" "queue" "state" "pad" "btns" "who";
 }
+.ccgame.guided {
+  --pad: min(calc(100vw - 16px), calc(100dvh - 520px), 400px);
+  grid-template-rows: auto auto auto auto var(--pad) minmax(0, 1fr) auto;
+  grid-template-areas: "top" "guide" "queue" "state" "pad" "btns" "who";
+}
 .cctop { grid-area: top; position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 6px 7px 8px; min-height: 56px; overflow: hidden; }
 .ccident { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
 .ccswatch { width: 44px; height: 44px; flex: none; border-radius: 12px; border: 3px solid rgb(255 255 255 / 0.75); box-shadow: 0 0 0 2px #0b1112, 0 2px 8px rgb(0 0 0 / 0.5); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 800; font-size: 1.35rem; color: #10181a; font-style: normal; }
@@ -129,6 +134,17 @@ body:has(#ccGame:not([hidden])) .toast { left: 10px; right: 10px; top: auto; bot
     grid-template-rows: auto auto auto minmax(0, 1fr) auto;
     grid-template-areas: "top top" "queue queue" "pad state" "pad btns" "pad who";
   }
+  .ccgame.guided {
+    --pad: min(calc(100dvh - 138px), 44vw);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "top top" "queue queue" "pad guide" "pad state" "pad btns" "pad who";
+  }
+  .ccguide { padding: 3px 6px 3px 10px; }
+  .ccgtxt small { font-size: 0.6rem; }
+  .ccgtxt b { font-size: 1.02rem; }
+  .ccgame.guided .ccstate { min-height: 36px; }
+  .ccgame.guided .ccbtns { grid-template-rows: minmax(38px, 1fr) minmax(38px, 1fr) minmax(30px, 0.6fr); }
+  .ccgame.guided .ccact small { display: none; }
   .ccpad { align-self: start; }
   .cctop { min-height: 0; padding: 3px 4px 6px 6px; }
   .ccslot { height: 50px; }
@@ -232,3 +248,17 @@ body:has(#ccGame:not([hidden])) .toast { left: 10px; right: 10px; top: auto; bot
   .cchelpbody { font-size: 0.9rem; }
   .cchorder li { padding-top: 20px; }
 }
+
+/* ---- guided tutorial: my task, the suggested steps, gentle hints ---- */
+.ccguide { grid-area: guide; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border-radius: 12px; border: 2px solid var(--gas-glow); background: linear-gradient(180deg, #3a2a14, #241a0c); box-shadow: 0 0 14px rgb(255 182 72 / 0.35); }
+.ccguide[hidden] { display: none; }
+.ccgtxt { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+.ccgtxt small { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--brass-400); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccgtxt b { font-family: var(--font-display); font-size: 1.2rem; color: #fff1c2; }
+.ccguide.done { border-color: var(--verdigris); box-shadow: 0 0 14px rgb(95 211 168 / 0.35); background: #12302a; }
+.ccguide.done .ccgtxt b { color: #b6f0dc; }
+.ccsuggest { flex: none; max-width: 42%; min-height: 44px; padding: 0.25em 0.7em; font-size: 0.9rem; line-height: 1.1; white-space: normal; }
+.ccslot.ghost { background: transparent; border: 2px dashed rgb(255 182 72 / 0.55); color: rgb(255 226 168 / 0.6); box-shadow: none; }
+.ccslot.ghost b { font-style: italic; }
+.ccarrow.hint:not(:disabled), .ccact.hint:not(:disabled), .ccdone.hint:not(:disabled) { animation: cchint 0.9s ease-in-out infinite alternate; }
+@keyframes cchint { from { box-shadow: 0 0 0 0 rgb(255 182 72 / 0.0), 0 3px 0 var(--brass-700); } to { box-shadow: 0 0 0 5px rgb(255 182 72 / 0.85), 0 0 22px rgb(255 182 72 / 0.8); } }

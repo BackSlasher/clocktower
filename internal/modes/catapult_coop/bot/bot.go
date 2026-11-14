@@ -28,7 +28,7 @@ type Bot struct {
 	Wander  float64 // chance per slot to step somewhere pointless instead (makes bumps)
 
 	rng      *rand.Rand
-	sentKey  [2]int // level, round of the last queue filed
+	sentKey  [3]int // level, round, guide (1 while the tutorial runs) of the last queue filed
 	readyKey int    // level of the last break readied
 	rejected bool   // the last queue was refused: file an empty one
 }
@@ -54,11 +54,14 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 			return []game.Cmd{{T: "ready", Ready: game.BoolP(true)}}
 		}
 	case game.PhasePlan:
-		key := [2]int{rm.Level, s.Round}
+		key := [3]int{rm.Level, s.Round, 0}
+		if s.Guide != nil {
+			key[2] = 1
+		}
 		if b.sentKey == key || s.Round != rm.Round {
 			return nil
 		}
-		if !s.Untimed && game.Defs.PlanTime-s.Left < b.Delay {
+		if !s.Untimed && game.PlanTime(rm.Level)-s.Left < b.Delay {
 			return nil
 		}
 		b.sentKey = key
@@ -66,8 +69,15 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 			b.rejected = false
 			return []game.Cmd{{T: "plan", Done: true}}
 		}
-		queues, at := TeamQueues(rm, s, keep)
-		acts := queues[b.ID]
+		var acts []game.Act
+		var at map[string][][2]int
+		if t := guideTask(s, b.ID); t != nil && t.Acts != nil {
+			acts, at = guideQueue(rm.Layout, s, b.ID, t.Acts) // follow the tutorial's suggestion
+		} else {
+			var queues map[string][]game.Act
+			queues, at = TeamQueues(rm, s, keep)
+			acts = queues[b.ID]
+		}
 		for i := range acts {
 			switch x := b.rng.Float64(); {
 			case x < b.Mistake:
@@ -81,13 +91,45 @@ func (b *Bot) Act(rm *game.RoomMsg, s *game.Snap, keep *game.Keep) []game.Cmd {
 	return nil
 }
 
+func guideTask(s *game.Snap, pid string) *game.GuideTask {
+	if s.Guide == nil {
+		return nil
+	}
+	for i := range s.Guide.Tasks {
+		if s.Guide.Tasks[i].PID == pid {
+			return &s.Guide.Tasks[i]
+		}
+	}
+	return nil
+}
+
+// guideQueue copies the suggested queue and works out where the engineer
+// stands at each slot (for wandering).
+func guideQueue(l *game.Layout, s *game.Snap, pid string, sug []game.Act) ([]game.Act, map[string][][2]int) {
+	var c [2]int
+	for _, e := range s.Engineers {
+		if e.PID == pid {
+			c = [2]int{e.X, e.Y}
+		}
+	}
+	acts := slices.Clone(sug)
+	var cells [][2]int
+	for _, a := range acts {
+		cells = append(cells, c)
+		if a.A == game.AMove && l.CanStep(c[0], c[1], c[0]+*a.DX, c[1]+*a.DY) {
+			c = [2]int{c[0] + *a.DX, c[1] + *a.DY}
+		}
+	}
+	return acts, map[string][][2]int{pid: cells}
+}
+
 // Rejected tells the bot its last queue was refused: it files again, an
 // empty queue marked done (so a bad queue can't loop).
-func (b *Bot) Rejected() { b.sentKey, b.rejected = [2]int{}, true }
+func (b *Bot) Rejected() { b.sentKey, b.rejected = [3]int{}, true }
 
 // Resend tells the bot its last queue never arrived (refused while the game
 // was paused): it files the same plan again on its next decision.
-func (b *Bot) Resend() { b.sentKey = [2]int{} }
+func (b *Bot) Resend() { b.sentKey = [3]int{} }
 
 // wander is a legal but pointless step from c (a wait if there is none).
 func (b *Bot) wander(l *game.Layout, c [2]int) game.Act {

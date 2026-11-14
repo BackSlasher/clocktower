@@ -1,6 +1,7 @@
-// Dev-only showcase: /tv?demo=plan|tutorial|resolve|break|won|lost|boss[&n=1..4] feeds synthetic room and
+// Dev-only showcase: /tv?demo=plan|tutorial|guide|resolve|break|won|lost|boss[&n=1..4] feeds synthetic room and
 // snap messages through the normal handlers, so every screen can be looked at without playing
-// to it. `tutorial` is the game's first turn (level 1, untimed plan phase). Uses the real setup (keeps + defs) from the server; the interior layouts below are
+// to it. `tutorial` is the game's first turn (level 1, untimed plan phase); `guide` is a step of the
+// guided tutorial (snap.guide), which moves on to the next step after 6 s (`&hold` keeps it). Uses the real setup (keeps + defs) from the server; the interior layouts below are
 // sample drawings in the server's notation (W wall, C catapult, = raised floor, . floor,
 // # crate, S stairs). `ctDebug.game.freezeT = 1.35` holds a resolve playback at 1.35 s
 // (the middle of step 2 in the resolve scene).
@@ -59,7 +60,10 @@ function layoutFrom(rows, id) {
       }
     }),
   );
-  return { id, w: rows[0].length, h: rows.length, cells, spawns: [] };
+  // the powder store: the bottom-right corner of the courtyard (free floor only)
+  const store = [];
+  for (let y = rows.length - 2; y < rows.length; y++) for (let x = rows[0].length - 3; x < rows[0].length; x++) if (cells[y]?.[x]?.kind === 'floor' && !cells[y][x].h) store.push([x, y]);
+  return { id, w: rows[0].length, h: rows.length, cells, spawns: [], store };
 }
 
 const mv = (dx, dy) => ({ a: 'move', dx, dy });
@@ -74,7 +78,8 @@ export function startDemo(kind, setup, deliver) {
   const names = ['Ada', 'Brunel', 'Tesla', 'Babbage', 'Lovelace-Byr', 'Watt', 'Faraday', 'Stephenson'];
   const colors = ['#e0a030', '#4fb39a', '#d1594a', '#6a8cff', '#c06adf', '#8fd14f', '#f0f0f0', '#ff8fb0'];
   const levels = defs.levels?.length || 6;
-  const tutorial = kind === 'tutorial';
+  const guided = kind === 'guide';
+  const tutorial = kind === 'tutorial' || guided;
   if (tutorial) kind = 'plan';
   const level = tutorial ? 1 : kind === 'boss' ? levels : kind === 'break' ? 3 : 4;
   const phase = kind === 'resolve' || kind === 'boss' ? 'plan' : kind;
@@ -164,6 +169,30 @@ export function startDemo(kind, setup, deliver) {
     plans: phase === 'plan' && !tutorial ? plansOf(kind === 'plan' ? QP : Q) : players.map((p, i) => ({ pid: p.id, acts: tutorial && i === 0 ? [mv(1, 0)] : [], done: false })),
     ev: [],
   };
+  // the guided tutorial (snap.guide): step 3 of 7, every player with their own task; after a few
+  // seconds the step moves on to 4 (to see the "Nice!" beat)
+  const guideAt = (step) =>
+    step === 3
+      ? {
+          step: 3, of: 7, title: 'Throw it up to the gunners',
+          text: 'Throws fly in a straight line: throw ↗ from the courtyard and the first engineer on the line catches.',
+          tasks: [
+            { pid: 'p1', text: 'Step ↘ onto the red dot by catapult 1', cell: [3, 1], acts: [mv(1, 0)], done: false },
+            { pid: 'p2', text: 'Stay put: you catch', cell: null, acts: [W8], done: true },
+            { pid: 'p3', text: 'Wait, then throw ↗ up to Ada', cell: null, acts: [W8, th(0, -1)], done: false },
+            { pid: 'p4', text: 'Walk ↙ ↙ into the powder store', cell: [6, 7], acts: [mv(0, 1), mv(0, 1)], done: false },
+          ].filter((t) => players.some((p) => p.id === t.pid)),
+        }
+      : {
+          step: 4, of: 7, title: 'Load it and watch it fire',
+          text: 'Standing on the red dot with a bomb? Load: the catapult fires by itself when a machine walks into its lane.',
+          tasks: players.map((p, i) => ({ pid: p.id, text: i === 0 ? 'Load catapult 1' : 'Wait and watch', cell: i === 0 ? [3, 1] : null, acts: i === 0 ? [{ a: 'load' }] : [W8], done: i === 1 })),
+        };
+  if (guided) {
+    A.guide = guideAt(3);
+    A.engineers = A.engineers.map((e, i) => (i === 0 ? { ...e, carry: null } : e));
+    A.plans = players.map((p, i) => ({ pid: p.id, acts: i === 1 ? [W8] : i === 3 ? [mv(0, 1)] : [], done: i === 1 }));
+  }
 
   const timers = [];
   const timeouts = [];
@@ -176,7 +205,11 @@ export function startDemo(kind, setup, deliver) {
   else deliver(A);
   if (kind !== 'resolve' && kind !== 'boss') {
     let t = 100;
-    timers.push(setInterval(() => deliver({ ...A, time: (t += 0.1), left: Math.max(0, A.left - (t - 100)) }), 100));
+    timers.push(setInterval(() => {
+      t += 0.1;
+      if (guided && t > 106 && A.guide.step === 3 && !new URLSearchParams(location.search).has('hold')) A.guide = guideAt(4);
+      deliver({ ...A, time: t, left: Math.max(0, A.left - (t - 100)) });
+    }, 100));
     return stop;
   }
 

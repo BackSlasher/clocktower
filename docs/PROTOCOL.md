@@ -576,7 +576,7 @@ Defs = {
   "maxPlayers": 4,              // same as welcome.modes[…].maxPlayers
   "wallHP": 20,                 // wall hit points at the start (and maximum)
   "slots": 4,                   // actions per player per turn
-  "planTime": 20,               // seconds of a plan phase; the game's first turn has no timer
+  "planTime": 90,               // seconds of a plan phase in level 1 (each level has its own: levels[].planTime)
   "breakTime": 6,               // seconds of the break between levels
   "breakHeal": 0,               // wall hit points restored at each break (up to wallHP)
   "resolveBase": 0.4, "stageTime": 0.35, "machineTime": 0.6,   // resolve timeline, see `resolve`
@@ -592,6 +592,7 @@ Defs = {
                 "baron": { … "hp": 9, "dmg": 3, "boss": true } },
   "machineOrder": ["scrap", "roach", "brute", "baron"],
   "levels": [ { "name": "First Shots", "desc": "Scraplings, a few at a time. …", "layout": "open",
+                "planTime": 90,   // seconds of a plan phase in this level: 90, 70, 60, 50, 45, 40
                 "bombs": { "keg": 1 } }, … ] }   // 6 levels; bombs = kinds that can appear (spawn weights)
 ```
 
@@ -626,7 +627,8 @@ not in it (see `snap`).
 ```jsonc
 Layout = { "id": "crates", "w": 9, "h": 9,
            "cells": [ [ { "kind": "block", "h": 1 }, … ], … ],   // cells[y][x]
-           "spawns": [ [x, y], … ] }                              // engineer start cells, in seating order
+           "spawns": [ [x, y], … ],                               // engineer start cells, in seating order
+           "store": [ [x, y], … ] }                               // the powder store: where bombs lie and new ones appear
 ```
 
 - **A new level starts with a new `layout` in the `room` message** (and a
@@ -650,7 +652,7 @@ with `ev: []` right after `room`.
   "phase": "plan", "time": 81.2,     // game time, seconds (paused while nobody is connected)
   "level": 2, "round": 3,
   "left": 7.4,                       // seconds left in this plan / resolve / break; 0 when untimed
-  "untimed": false,                  // true in the game's first plan phase: no timer, it waits for everyone
+  "untimed": false,                  // true in the game's first plan phase and every turn of the tutorial: no timer, it waits for everyone
   "wall": 9, "wallMax": 16,
   "engineers": [ { "pid": "p1", "x": 4, "y": 5, "carry": { "id": 12, "kind": "keg" } | null } ],
   "bombs":     [ { "id": 7, "kind": "grapeshot", "x": 6, "y": 3 } ],   // lying on the ground
@@ -658,7 +660,19 @@ with `ev: []` right after `room`.
   "machines":  [ { "id": 21, "kind": "brute", "lane": 2, "pos": 1, "hp": 3, "max": 4, "frozen": 0 } ],
   "incoming":  [ { "lane": 1, "kind": "scrap" } ],   // plan phase: machines that appear at the end of this turn
   "plans": [ { "pid": "p1", "acts": [ Act, … ], "done": true } ],   // every player, room order
+  "guide": Guide,                    // only while the guided tutorial runs (absent otherwise)
   "ev": [ Event, … ] }
+```
+
+```jsonc
+Guide = { "step": 2, "of": 8,                // the current step, 1-based, of the steps for this team size
+  "title": "Throw it up",                    // ≤ 30 characters, imperative: the banner at the top of the TV
+  "text": "Fetchers step into line and throw the bomb up; gunners catch it.",   // one sentence for the TV
+  "tasks": [ { "pid": "p1",
+               "text": "Step into line and throw to Ada",   // short personal instruction (phone, TV)
+               "cell": [3, 6] | null,                       // the cell to mark for this player
+               "acts": [ Act, … ] | null,                   // suggested queue, same shape as plan acts, ≤ slots
+               "done": false } ] }                          // this player's goal is met
 ```
 
 - **`plans`** are public and live: every player's current queue and done flag,
@@ -821,7 +835,8 @@ left out of the `resolve` timeline.
 ### Phases and timing
 
 ```
-lobby --start--> plan(level 1, turn 1, untimed) --all done / host go--> resolve --dur-->
+lobby --start--> tutorial: plan(level 1, untimed, guide) ⇄ resolve … --last step done / host skip_tutorial--> plan(level 1, turn 1)
+plan --all done / timeout / host go--> resolve --dur-->
    ├─ wall ≤ 0 ............................................. lost
    ├─ level done (script spawned, no machines left), not last → break --all ready / breakTime / host go--> plan(next level, turn 1)
    ├─ level done, last level ..................................... won
@@ -829,10 +844,15 @@ lobby --start--> plan(level 1, turn 1, untimed) --all done / host go--> resolve 
 restart (host, any phase but lobby) → lobby, same players
 ```
 
+- **The guided tutorial** comes first: `start` puts the game in level 1's
+  layout with `snap.guide` set, and level 1 itself starts (a `level_start`
+  event, a fresh board, the wall repaired, the stats cleared) when the
+  tutorial ends or the host sends `skip_tutorial`. See "Guided tutorial".
 - **plan**: ends when every *present* player (connected, not away, with an
   engineer) is `done`, provided there is at least one present player; or when
-  `planTime` runs out. The **game's first turn has no timer** (`snap.untimed`,
-  `left: 0`) and ends only when every present player is done; disconnected
+  the level's `planTime` runs out (`defs.levels[level-1].planTime`). The
+  **game's first turn and every tutorial turn have no timer** (`snap.untimed`,
+  `left: 0`) and end only when every present player is done; disconnected
   players are not waited for. On a timeout, queues play as filed (done or
   not). The host can end it at once with `go` (same effect as a timeout).
 - **resolve**: lasts the `dur` of its `resolve` event. No commands change the
@@ -844,6 +864,33 @@ restart (host, any phase but lobby) → lobby, same players
 - `won`/`lost`: final; `room.end` is set. `restart` returns to the lobby.
 - Everything pauses (timers too) while no player is connected.
 - Disconnecting can end a plan phase or break early (the rest are done).
+
+### Guided tutorial
+
+A scripted series of untimed turns ("steps") on level 1's layout, before
+level 1. Each step gives every player one concrete goal (`guide.tasks`):
+walk to a marked cell, pick up a bomb, throw to a named teammate, catch,
+load the marked catapult (it fires at a machine and must destroy it), or
+lob a bomb onto the rampart. A step repeats (a new untimed turn, `round` + 1,
+same goals) until every goal is met, then the next step starts. A goal met
+some other way than the suggestion still counts, and so does one met during
+the previous step. Some goals (walking ahead, waiting out of the way) are
+shown but do not hold the step up. A goal of a player who is away or gone,
+or whose throw/catch partner is, is waived (shown `done`). Halfway the
+fetchers and gunners swap, so everyone does everything; a lone player picks
+up, lobs the bomb onto the rampart, climbs the stairs and loads it.
+
+`cell` and `acts` are recomputed from the board every turn (path-found,
+for the whole team together, never bumping each other); clients show them
+and may offer to file `acts` as the plan. A player whose goal is met gets
+`acts: []` (or a step aside to let a teammate through) and the text says so.
+In the last step ("Now for real!") `acts` and `cell` are `null`.
+
+Machines in the tutorial are targets that stand still (no `advance` events)
+except in the last step, where they move as usual and may hit the wall (the
+wall is repaired when level 1 starts). Bombs are topped up in the store as
+in a level. Steps by team size: 1 player 4 steps, 2 or 4 players 8, 3
+players 11 (docs/CATAPULT_COOP.md has them).
 
 ### Starting a level
 
@@ -862,9 +909,8 @@ Wall hit points carry over.
 After every turn's machine stage, new bombs are added until
 `bombsBase + bombsPerPlayer × active players` lie on the ground (active =
 connected and not away, at least 1). Each goes on a random `floor` cell with
-`h` 0 of the layout's **powder store** (a few courtyard cells far from the
-stairs and catapults; server-side, not on the wire: the TV sees where bombs
-appear, and they always appear there) that has no bomb and no engineer; with
+`h` 0 of the layout's **powder store** (`layout.store`: a few courtyard
+cells far from the stairs and catapults) that has no bomb and no engineer; with
 every store cell taken the top-up waits for the next turn. Its kind is drawn from the level's
 `bombs` weights, except that if no keg or grapeshot exists anywhere (ground,
 hands, catapults) only those damaging kinds are drawn. Levels 1–2 have kegs
@@ -903,6 +949,7 @@ integer is expected) gets `bad_request`.
 { "t": "plan", "acts": [ Act, … ], "done": true }   // replaces your whole queue; 0..slots acts
 { "t": "ready", "ready": true }            // break; "ready" optional, default true
 { "t": "go" }                              // host; plan or break: end it now
+{ "t": "skip_tutorial" }                   // host; while the tutorial runs: start level 1 now
 { "t": "restart" }                        // host; any phase but lobby
 ```
 
@@ -920,6 +967,8 @@ integer is expected) gets `bad_request`.
 | `plan` | `bad_request` | phase is lobby, won or lost; more than `slots` acts; unknown `a` (including the removed `fire`); `move`/`throw` without a unit direction; `dx`/`dy` on `pickup`, `load` or `wait` |
 | | `too_late` | phase is resolve or break (raced the end of the plan phase) |
 | `restart` | `not_host` / `bad_request` | not the host / already in the lobby |
+| `skip_tutorial` | `not_host` | not the host |
+| | `too_late` | the tutorial is not running (or the phase is not plan/resolve) |
 | `go` | `not_host` | not the host |
 | | `too_late` | phase is resolve |
 | | `bad_request` | phase is lobby, won or lost |
@@ -945,3 +994,6 @@ Later, with no change to any message shape: lanes are 4 cells, `wallHP` is
 20, seats 1 and 3 start in the courtyard and 2 and 4 on the ramparts, levels
 take several turns with machines arriving over them, and new bombs appear
 only in the layout's powder store.
+Then (additions only): `snap.guide` and the `skip_tutorial` command (the
+guided tutorial before level 1), `layout.store`, and `defs.levels[].planTime`
+(plan timers per level, 90 s down to 40 s; `defs.planTime` is level 1's).

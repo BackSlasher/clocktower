@@ -188,7 +188,26 @@ type Snap struct {
 	Machines  []MachineSnap  `json:"machines"`
 	Incoming  []Incoming     `json:"incoming"`
 	Plans     []PlanSnap     `json:"plans"`
+	Guide     *GuideSnap     `json:"guide,omitempty"` // the guided tutorial, only while it runs
 	Ev        []any          `json:"ev"`
+}
+
+// GuideSnap is the guided tutorial's current step (snap.guide).
+type GuideSnap struct {
+	Step  int         `json:"step"` // 1-based
+	Of    int         `json:"of"`
+	Title string      `json:"title"` // short, imperative
+	Text  string      `json:"text"`  // one sentence for the TV
+	Tasks []GuideTask `json:"tasks"`
+}
+
+// GuideTask is one player's goal in a guide step.
+type GuideTask struct {
+	PID  string  `json:"pid"`
+	Text string  `json:"text"` // short personal instruction
+	Cell *[2]int `json:"cell"` // cell to mark for this player, or null
+	Acts []Act   `json:"acts"` // suggested queue (≤ slots), or null
+	Done bool    `json:"done"`
 }
 
 // Stage names of a slot, in order, and the machine stage.

@@ -38,6 +38,10 @@ const HTML = `
       <button id="ccMenuBtn" class="menubtn" type="button" aria-label="Menu">&#8943;</button>
       <i id="ccTbar" class="cctbar"></i>
     </header>
+    <div id="ccGuideBar" class="ccguide" hidden>
+      <div class="ccgtxt"><small id="ccGuideStep"></small><b id="ccGuideTask"></b></div>
+      <button id="ccSuggest" class="btn ccsuggest" type="button">Use suggested steps</button>
+    </div>
     <div id="ccQueue" class="ccqueue"></div>
     <div id="ccPad" class="ccpad">
       ${PAD.map((p) => `<button class="btn ccarrow ${p.id}" type="button" data-dir="${p.id}" aria-label="${p.g}"><span class="arw">${ARROW_SVG}</span></button>`).join('')}
@@ -141,6 +145,7 @@ export async function mount(ctx) {
   let res = null; // { ev, t0 } the resolve being played, to light up its slots
   const loads = new Map(); // bomb id -> my feedback line for loading it, this resolve
   const timers = [];
+  let planTotal = { key: '', t: defs.planTime || 20 }; // seconds the current plan phase started with
 
   const me = () => st.players.get(ctx.you);
   const isHost = () => st.room?.host === ctx.you;
@@ -162,6 +167,18 @@ export async function mount(ctx) {
     return { acts: sp.acts || [], done: !!sp.done };
   }
   const canEdit = () => inPlan() && !!myEng();
+  // the guided tutorial (snap.guide): my own task in it, if any
+  const guide = () => st.snap?.guide || null;
+  const myTask = () => guide()?.tasks?.find((t) => t.pid === ctx.you) || null;
+  const sameAct = (a, b) => !!a && !!b && a.a === b.a && (a.dx || 0) === (b.dx || 0) && (a.dy || 0) === (b.dy || 0);
+  // the suggested step to file next, while my queue so far follows the suggestion
+  function nextHint() {
+    const t = myTask();
+    const q = queue();
+    if (!t?.acts?.length || t.done || q.done || !canEdit()) return null;
+    if (!q.acts.every((a, i) => sameAct(a, t.acts[i]))) return null;
+    return t.acts[q.acts.length] || { a: 'done' };
+  }
 
   // ---------------------------------------------------------------- editing the queue
   function send(acts, done) {
@@ -220,6 +237,13 @@ export async function mount(ctx) {
     buzz(q.done ? 8 : 24);
   };
   $('ccClear').onclick = () => { mode = null; truncate(0); };
+  $('ccSuggest').onclick = () => {
+    const t = myTask();
+    if (!canEdit() || !t?.acts?.length) return;
+    if (awayShown()) dismissAway();
+    send(t.acts.slice(0, SLOTS).map((a) => ({ ...a })), false);
+    buzz(18);
+  };
   $('ccCancel').onclick = () => arm(null);
   $('ccQueue').addEventListener('click', (e) => {
     const s = e.target.closest('[data-slot]');
@@ -392,10 +416,12 @@ export async function mount(ctx) {
       const untimed = plan && s.untimed;
       $('ccTimerBox').classList.toggle('untimed', untimed);
       $('ccTimerLbl').textContent = untimed ? 'No timer' : plan ? 'Plan' : s.phase === 'resolve' ? 'Resolve' : '';
-      $('ccTimer').textContent = untimed ? 'first round' : plan || s.phase === 'resolve' ? Math.ceil(left) + 's' : '';
+      $('ccTimer').textContent = untimed ? (s.guide ? 'tutorial' : 'first round') : plan || s.phase === 'resolve' ? Math.ceil(left) + 's' : '';
       const hurry = plan && !untimed && left <= 5;
       $('ccTimerBox').classList.toggle('hurry', hurry);
-      $('ccTbar').style.width = (plan && !untimed ? Math.min(100, (left / defs.planTime) * 100) : 0).toFixed(1) + '%';
+      if (plan && planTotal.key !== turnKey()) planTotal = { key: turnKey(), t: Math.max(s.left || 0, 1) };
+      const total = Math.max(planTotal.t, 1);
+      $('ccTbar').style.width = (plan && !untimed ? Math.min(100, (left / total) * 100) : 0).toFixed(1) + '%';
       $('ccTbar').classList.toggle('hurry', hurry);
       if (res) renderQueue();
     }
@@ -423,7 +449,9 @@ export async function mount(ctx) {
     const resolving = st.snap?.phase === 'resolve';
     const play = resolving ? playingSlot() : { slot: -1 };
     const next = canEdit() && q.acts.length < SLOTS ? q.acts.length : -1;
-    const key = JSON.stringify([q.acts, q.done, next, play.slot, play.machines, play.done, resolving, mode]);
+    const task = myTask();
+    const ghost = task && !task.done && !q.done ? task.acts : null;
+    const key = JSON.stringify([q.acts, q.done, next, play.slot, play.machines, play.done, resolving, mode, ghost]);
     if (box.dataset.key === key) return;
     box.dataset.key = key;
     box.classList.toggle('done', q.done && !resolving);
@@ -439,6 +467,11 @@ export async function mount(ctx) {
       if (a) {
         main = ACT_NAME[a.a] || a.a;
         if (a.dx != null && (a.dx || a.dy)) sub = glyph(a.dx, a.dy);
+      } else if (ghost?.[i] && !resolving) {
+        // the tutorial's suggestion for this step, faint
+        cls.push('ghost');
+        main = ACT_NAME[ghost[i].a] || ghost[i].a;
+        if (ghost[i].dx || ghost[i].dy) sub = glyph(ghost[i].dx || 0, ghost[i].dy || 0);
       } else if (i === next) main = mode === 'throw' ? 'Throw…' : 'next';
       cells.push(h('button', { class: cls.join(' '), type: 'button', 'data-slot': i, 'aria-label': `Step ${i + 1}` },
         h('em', {}, String(i + 1)), h('b', {}, main), sub ? h('span', { class: sub.length === 1 ? 'gl' : 'sb' }, sub) : null));
@@ -491,6 +524,29 @@ export async function mount(ctx) {
     $('ccState').classList.toggle('picking', !!mode);
     $('ccCancel').hidden = !mode;
     $('ccClear').hidden = !!mode || !q.acts.length || !live;
+
+    // the guided tutorial: my task on top, the suggested steps one tap away, and the button
+    // for the next suggested step pulsing gently
+    const gd = guide();
+    const task = myTask();
+    $('ccGame').classList.toggle('guided', !!gd);
+    $('ccGuideBar').hidden = !gd;
+    if (gd) {
+      $('ccGuideStep').textContent = `Tutorial ${gd.step}/${gd.of} · ${gd.title || ''}`;
+      $('ccGuideTask').textContent = task ? (task.done ? '✓ Done! Wait for the others' : task.text) : gd.text || '';
+      $('ccGuideBar').classList.toggle('done', !!task?.done);
+      const same = task?.acts && q.acts.length === task.acts.length && q.acts.every((a, i) => sameAct(a, task.acts[i]));
+      $('ccSuggest').hidden = !task?.acts?.length || task.done || q.done || same || resolving;
+      $('ccSuggest').disabled = !live;
+    }
+    const hint = nextHint();
+    for (const b of $('ccPad').querySelectorAll('[data-dir]')) {
+      const d = PAD.find((p) => p.id === b.dataset.dir).d;
+      const want = hint && (hint.a === 'move' || (hint.a === 'throw' && mode === 'throw')) && hint.dx === d[0] && hint.dy === d[1];
+      b.classList.toggle('hint', !!want);
+    }
+    for (const b of $('ccBtns').querySelectorAll('[data-act]')) b.classList.toggle('hint', !!hint && hint.a === b.dataset.act && !(hint.a === 'throw' && mode === 'throw'));
+    $('ccDone').classList.toggle('hint', !!hint && hint.a === 'done');
 
     // arrows and the hub: never greyed for legality, only when nothing can be added
     $('ccPad').classList.toggle('throwing', mode === 'throw');
@@ -603,6 +659,7 @@ export async function mount(ctx) {
         onclick: () => { $('ccMenu').hidden = true; ctx.send({ t: 'go' }); buzz(20); },
       }, h('span', {}, 'Play the turn now'), h('small', {}, 'everyone’s steps as filed, done or not')));
     }
+    if (isHost() && guide()) items.push(confirmItem('skip', 'Skip tutorial', 'Skip the rest of the tutorial for everyone?', () => { armed = null; $('ccMenu').hidden = true; ctx.send({ t: 'skip_tutorial' }); }));
     if (isHost()) items.push(h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { $('ccMenu').hidden = true; ctx.send({ t: 'pause', on: true }); } }, 'Pause game'));
     if (isHost()) items.push(confirmItem('end', 'End game', 'End the game for everyone?', () => { armed = null; $('ccMenu').hidden = true; ctx.send({ t: 'restart' }); }));
     // host: remove a player (the server drops them; their phone goes back to the join form)

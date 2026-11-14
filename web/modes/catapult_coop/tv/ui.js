@@ -20,6 +20,7 @@ export const HTML = `
       <div class="cc-lvl"><div class="cc-lbl">Level</div><div class="cc-big"><span id="ccLevel">1</span><span class="cc-of" id="ccLevels">/ 6</span></div><div class="cc-sub" id="ccLevelName"></div></div>
       <div class="cc-phase"><div class="cc-lbl" id="ccPhaseLbl"></div><div class="cc-count" id="ccCount"></div><div class="cc-sub" id="ccRound"></div></div>
       <div class="cc-ord" id="ccOrd"></div>
+      <div class="cc-guide" id="ccGuide"><div class="cc-gh"><span class="cc-gn" id="ccGuideN"></span><span class="cc-gt" id="ccGuideT"></span></div><div class="cc-gx" id="ccGuideX"></div><div class="cc-gnice">Nice! <span>&#10003;</span></div></div>
       <div class="cc-wall"><div class="cc-lbl">${BRICK_SVG} Wall</div><div class="cc-big"><span id="ccWall">10</span><span class="cc-of" id="ccWallMax">/ 10</span></div><div class="cc-bar"><div id="ccWallBar"></div></div></div>
     </div>
     <div id="ccQueue"></div>
@@ -148,6 +149,42 @@ export class UI {
     }
   }
 
+  // ------------------------------------------------------------ the guided tutorial
+
+  // While snap.guide exists the top bar is the instruction: "Tutorial 3 / 7 — title" and one
+  // sentence; each player's card in the strip shows their own task and a tick when it is done.
+  // When the step moves on, the bar says "Nice!" for a moment first.
+  tickGuide(game) {
+    // while a turn plays, keep showing the instruction it was planned under
+    const now = game.snap?.guide || null;
+    if (!game.pb || !this._gshow || !now) this._gshow = now;
+    const gd = this._gshow;
+    const live = !!gd && this.room?.phase !== 'lobby' && this.room?.phase !== 'won' && this.room?.phase !== 'lost';
+    this.guide = live ? gd : null;
+    this.root.classList.toggle('guiding', live);
+    this.$('ccTop').classList.toggle('guide', live);
+    if (!live) {
+      this._gstep = null;
+      this._niceDue = false;
+      return;
+    }
+    // the step moved on: say so once the turn that did it has finished playing
+    if (this._gstep != null && gd.step !== this._gstep) this._niceDue = true;
+    if (this._niceDue && !game.pb) {
+      this._niceDue = false;
+      const top = this.$('ccTop');
+      top.classList.remove('nice');
+      void top.offsetWidth;
+      top.classList.add('nice');
+      clearTimeout(this.niceTimer);
+      this.niceTimer = this.later(() => top.classList.remove('nice'), 1500);
+    }
+    this._gstep = gd.step;
+    this.set('ccGuideN', `Tutorial ${gd.step} / ${gd.of}`);
+    this.set('ccGuideT', gd.title || '');
+    this.set('ccGuideX', gd.text || '');
+  }
+
   get defs() {
     return this.setup?.defs || {};
   }
@@ -206,7 +243,8 @@ export class UI {
     const plansKey = [];
     for (const p of room.players) {
       const pl = st.plans.get(p.id);
-      plansKey.push([p.id, p.name, p.color, p.away, p.id === room.host, pl?.acts || [], !!pl?.done]);
+      const task = this.guide?.tasks?.find((t) => t.pid === p.id);
+      plansKey.push([p.id, p.name, p.color, p.away, p.id === room.host, pl?.acts || [], !!pl?.done, task ? [task.text, !!task.done] : null]);
     }
     const marks = [];
     for (const [k, m] of st.marks) marks.push([k, m.kind, m.text]);
@@ -222,7 +260,7 @@ export class UI {
         el = document.createElement('div');
         el.className = 'cc-q';
         el.dataset.pid = p.id;
-        el.innerHTML = `<div class="cc-qh"><span class="cc-sw">${GEAR_SVG()}</span><span class="cc-nm"></span><span class="cc-host">${CROWN_SVG}</span><span class="cc-qst"></span></div><div class="cc-qs"></div>`;
+        el.innerHTML = `<div class="cc-qh"><span class="cc-sw">${GEAR_SVG()}</span><span class="cc-nm"></span><span class="cc-host">${CROWN_SVG}</span><span class="cc-qst"></span></div><div class="cc-qtask"></div><div class="cc-qs"></div>`;
       }
       const pl = st.plans.get(p.id) || { acts: [], done: false };
       el.style.setProperty('--pc', p.color);
@@ -248,6 +286,15 @@ export class UI {
         const mk = m ? `<span class="cc-mk">${m.kind === 'ok' ? '✓' : m.kind === 'fizzle' ? '✗' : '!'}</span>${m.text ? `<span class="cc-mt">${esc(m.text)}</span>` : ''}` : '';
         slots += `<div class="${cls.join(' ')}"><span class="cc-sn">${i + 1}</span>${act ? actIcon(act) : ''}${mk}</div>`;
       }
+      // the guided tutorial: this player's own instruction, and a big tick once it is done
+      const task = this.guide?.tasks?.find((t) => t.pid === p.id);
+      const tHtml = task ? `<span class="cc-qtt">${esc(task.text)}</span>${task.done ? `<span class="cc-qok">${TICK_SVG}</span>` : ''}` : '';
+      const tEl = el.querySelector('.cc-qtask');
+      if (tEl.dataset.k !== tHtml) {
+        tEl.dataset.k = tHtml;
+        tEl.innerHTML = tHtml;
+      }
+      el.classList.toggle('tdone', !!task?.done);
       const qs = el.querySelector('.cc-qs');
       if (qs.dataset.k !== slots) {
         qs.dataset.k = slots;
@@ -317,6 +364,7 @@ export class UI {
         top.classList.toggle('low', wall / max <= 0.3);
       }
     }
+    this.tickGuide(game, now);
     if (st) this.renderQueue(st);
     this.$('ccQueue').classList.toggle('on', phase === 'plan' || phase === 'resolve');
     this.tickCards(game, now);

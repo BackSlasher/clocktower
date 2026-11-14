@@ -17,7 +17,25 @@ type Scenario struct {
 	Mistake float64 // per-bot chance per slot to waste it (wait)
 	Wander  float64 // per-bot chance per slot to make a pointless move instead
 	Seed    uint64
+	// Guide plays the guided tutorial first (else the host skips it at
+	// once). The harness then acts as a host would: an untimed turn stuck for
+	// GuideWait seconds is played with `go`, and after GuideCap turns the
+	// tutorial is skipped.
+	Guide bool
 }
+
+const (
+	GuideWait = 30.0
+	GuideCap  = 60
+)
+
+// Learned is what one player did during the tutorial.
+type Learned struct {
+	Walk, Stairs, Pickup, Throw, Catch, Kill bool
+}
+
+// All reports whether the player did everything the tutorial teaches.
+func (l Learned) All() bool { return l.Walk && l.Stairs && l.Pickup && l.Throw && l.Catch && l.Kill }
 
 // Result summarises a headless game.
 type Result struct {
@@ -30,6 +48,11 @@ type Result struct {
 	Trace     []int      // wall HP after each level
 	LvlRounds []int      // turns played in each level reached
 	Use       []LevelUse // participation, per level reached
+
+	GuideTurns   int                 // turns played in the tutorial
+	GuideGos     int                 // stuck tutorial turns the host played with go
+	GuideSkipped bool                // the tutorial hit GuideCap and was skipped
+	Learned      map[string]*Learned // by player, during the tutorial
 }
 
 // LevelUse is the participation in one level. A player was useful in a turn
@@ -161,20 +184,50 @@ func Run(sc Scenario) Result {
 	if err := g.Start(g.Host()); err != nil {
 		panic(err)
 	}
+	res := Result{Learned: map[string]*Learned{}}
+	if !sc.Guide {
+		if err := g.Apply(g.Host(), game.Cmd{T: "skip_tutorial"}); err != nil {
+			panic(err)
+		}
+	}
 	for _, pid := range idle { // the untimed first turn waits for them once
 		_ = g.Apply(pid, game.Cmd{T: "plan", Done: true})
 	}
 	var trace, lvlRounds []int
 	use := newUsage()
 	level, startRound := g.Level(), 0
-	for tick := 0; g.Running() && tick < 200000; tick++ {
+	inGuide := g.View().Guide != nil
+	stuckSince, stuckKey := 0.0, [2]int{-1, -1}
+	for tick := 0; g.Running() && tick < 400000; tick++ {
 		g.Step(0.1)
+		if inGuide {
+			if v := g.View(); v.Guide == nil {
+				inGuide = false
+				res.GuideTurns = g.Rounds()
+				use, startRound = newUsage(), g.Rounds()
+			} else if g.Phase() == game.PhasePlan {
+				if k := [2]int{g.Level(), g.Round()}; k != stuckKey {
+					stuckKey, stuckSince = k, g.Time()
+				}
+				switch {
+				case g.Rounds() >= GuideCap:
+					res.GuideSkipped = true
+					_ = g.Apply(g.Host(), game.Cmd{T: "skip_tutorial"})
+				case g.Time()-stuckSince > GuideWait:
+					res.GuideGos++
+					_ = g.Apply(g.Host(), game.Cmd{T: "go"})
+				}
+			}
+		}
 		if g.Level() != level || !g.Running() {
 			trace = append(trace, g.Wall())
 			lvlRounds = append(lvlRounds, g.Rounds()-startRound)
 			level, startRound = g.Level(), g.Rounds()
 		}
 		snap, room := g.Snapshot(), g.RoomState()
+		if snap.Guide != nil {
+			learn(res.Learned, room.Layout, snap.Ev)
+		}
 		use.events(snap.Ev)
 		for _, b := range bots {
 			for _, c := range b.Act(room, snap, g.Keep()) {
@@ -190,8 +243,46 @@ func Run(sc Scenario) Result {
 	if g.End() == nil {
 		panic(fmt.Sprintf("game did not finish (phase %s, level %d, turn %d)", g.Phase(), g.Level(), g.Round()))
 	}
-	return Result{Won: g.Phase() == game.PhaseWon, Level: g.Level(), Wall: g.Wall(), Rounds: g.End().Rounds,
-		Time: g.Time(), End: g.End(), Trace: trace, LvlRounds: lvlRounds, Use: use.table(sc.Players+sc.Idle, g.Level())}
+	res.Won, res.Level, res.Wall, res.Rounds = g.Phase() == game.PhaseWon, g.Level(), g.Wall(), g.End().Rounds
+	res.Time, res.End, res.Trace, res.LvlRounds = g.Time(), g.End(), trace, lvlRounds
+	res.Use = use.table(sc.Players+sc.Idle, g.Level())
+	return res
+}
+
+// learn records the tutorial's lessons from a batch of events.
+func learn(m map[string]*Learned, l *game.Layout, evs []any) {
+	get := func(pid string) *Learned {
+		if m[pid] == nil {
+			m[pid] = &Learned{}
+		}
+		return m[pid]
+	}
+	for _, e := range evs {
+		switch ev := e.(type) {
+		case game.EvMove:
+			if ev.Result == "ok" {
+				get(ev.PID).Walk = true
+				if l.At(ev.To[0], ev.To[1]).Kind == game.KStairs {
+					get(ev.PID).Stairs = true
+				}
+			}
+		case game.EvPickup:
+			if ev.Result == "ok" {
+				get(ev.PID).Pickup = true
+			}
+		case game.EvThrow:
+			if ev.Result == "caught" {
+				get(ev.PID).Throw = true
+				get(ev.By).Catch = true
+			}
+		case game.EvFire:
+			for _, h := range ev.Hits {
+				if h.Killed && ev.PID != "" {
+					get(ev.PID).Kill = true
+				}
+			}
+		}
+	}
 }
 
 // RunMany plays seeds base..base+n-1 in parallel, results in seed order.

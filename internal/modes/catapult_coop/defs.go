@@ -44,11 +44,12 @@ type Group struct {
 // LevelDef is one level: a layout of the keep's interior, the bomb kinds that
 // can appear, and the machine script.
 type LevelDef struct {
-	Name   string         `json:"name"`
-	Desc   string         `json:"desc"`
-	Layout string         `json:"layout"` // layout id within the keep (see layout.go)
-	Bombs  map[string]int `json:"bombs"`  // kind → spawn weight; kinds absent never appear
-	Groups []Group        `json:"-"`
+	Name     string         `json:"name"`
+	Desc     string         `json:"desc"`
+	Layout   string         `json:"layout"`   // layout id within the keep (see layout.go)
+	PlanTime float64        `json:"planTime"` // seconds of a plan phase in this level (set from planTimes)
+	Bombs    map[string]int `json:"bombs"`    // kind → spawn weight; kinds absent never appear
+	Groups   []Group        `json:"-"`
 }
 
 // DefsT is the full balance table.
@@ -56,7 +57,7 @@ type DefsT struct {
 	MaxPlayers     int                    `json:"maxPlayers"`
 	WallHP         int                    `json:"wallHP"`
 	Slots          int                    `json:"slots"`       // actions per player per turn
-	PlanTime       float64                `json:"planTime"`    // seconds of a plan phase (the game's first turn has no timer)
+	PlanTime       float64                `json:"planTime"`    // seconds of a plan phase in the first level (each level has its own: levels[].planTime)
 	BreakTime      float64                `json:"breakTime"`   // seconds of the break between levels
 	BreakHeal      int                    `json:"breakHeal"`   // wall hit points restored at each break (up to wallHP)
 	ResolveBase    float64                `json:"resolveBase"` // resolve: resolveBase + stageTime × non-empty slot stages + machineTime
@@ -80,7 +81,7 @@ var Defs = &DefsT{
 	MaxPlayers:     4,
 	WallHP:         20,
 	Slots:          4,
-	PlanTime:       20,
+	PlanTime:       planTimes[0],
 	BreakTime:      6,
 	BreakHeal:      0,
 	ResolveBase:    0.4,
@@ -157,7 +158,21 @@ var Defs = &DefsT{
 	},
 }
 
+// planTimes are the plan-phase timers by level: long while the team is
+// still learning, down to 40 s for the last level. The guided tutorial (level
+// 1's prelude) and the game's first turn have no timer; every turn also ends
+// as soon as everyone is done.
+var planTimes = []float64{90, 70, 60, 50, 45, 40}
+
+// PlanTime is the plan-phase timer of level lv (1-based).
+func PlanTime(lv int) float64 {
+	return Defs.Levels[min(max(lv, 1), len(Defs.Levels))-1].PlanTime
+}
+
 func init() {
+	for i, ld := range Defs.Levels {
+		ld.PlanTime = planTimes[min(i, len(planTimes)-1)]
+	}
 	k, g, s := Defs.Bombs["keg"], Defs.Bombs["grapeshot"], Defs.Bombs["stopwatch"]
 	k.Desc = fmt.Sprintf("%d damage to the machine nearest the wall.", k.Dmg)
 	g.Desc = fmt.Sprintf("%d damage to every machine in the lane.", g.Dmg)

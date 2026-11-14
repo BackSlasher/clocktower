@@ -80,7 +80,15 @@ func TestDebugTrace(t *testing.T) {
 				}
 				ps = append(ps, strings.Join(q, " "))
 			}
-			t.Logf("L%d T%d wall %d\n%squeues %q", g.Level(), g.Round(), g.Wall(), render(room, snap), ps)
+			gd := ""
+			if snap.Guide != nil {
+				gd = fmt.Sprintf("guide %d/%d %q:", snap.Guide.Step, snap.Guide.Of, snap.Guide.Title)
+				for _, tk := range snap.Guide.Tasks {
+					gd += fmt.Sprintf(" [%s %q %v done=%v]", tk.PID, tk.Text, tk.Cell, tk.Done)
+				}
+				gd += "\n"
+			}
+			t.Logf("L%d T%d wall %d\n%s%squeues %q", g.Level(), g.Round(), g.Wall(), gd, render(room, snap), ps)
 		}
 		for _, b := range bots {
 			for _, c := range b.Act(room, snap, g.Keep()) {

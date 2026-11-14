@@ -80,7 +80,7 @@ export class Game {
     const keep = this.keep();
     const lay = this.room?.layout;
     if (!keep || !lay || lay.w !== keep.w || lay.h !== keep.h) return;
-    const key = `${keep.id}|${JSON.stringify(lay.cells)}`;
+    const key = `${keep.id}|${JSON.stringify(lay.cells)}|${JSON.stringify(lay.store || [])}`;
     if (!force && key === this.sceneKey && this.scene) return;
     this.sceneKey = key;
     this.scene = new Scene(keep, lay, this.px, this.box());
@@ -507,6 +507,10 @@ export class Game {
       g.restore();
     }
 
+    // guided tutorial: a pulsing ring in the player's colour on each task's cell (in the
+    // depth-sorted pass, just above its cell's floor) and a bouncing arrow over it
+    const tasks = (this.ui.guide?.tasks || []).filter((t) => t.cell && !t.done);
+
     // ground shadows of things in the air
     g.fillStyle = 'rgba(40,30,10,0.3)';
     for (const f of [...v.flying, ...v.shots]) {
@@ -521,6 +525,7 @@ export class Game {
     // depth-sorted pass
     const items = [];
     for (const b of S.blocks) items.push({ k: b.key, b });
+    for (const t of tasks) items.push({ k: t.cell[0] + t.cell[1] - 0.005, task: t });
     for (const c of v.cats) {
       const cat = S.catapult(c.id);
       if (cat) items.push({ k: cat.x + cat.y - 0.005, c });
@@ -561,6 +566,8 @@ export class Game {
     for (const it of items) {
       if (it.b) {
         g.drawImage(it.b.img, it.b.bx, it.b.by, it.b.bw, it.b.bh);
+      } else if (it.task) {
+        this.drawTaskRing(g, it.task, tsec);
       } else if (it.c) {
         this.drawCat(g, it.c, tsec);
       } else if (it.bomb) {
@@ -669,6 +676,9 @@ export class Game {
     // or a red bang at the wall if it gets there this turn
     if (!this.pb && planPhase) this.drawNextSteps(g, v, tsec);
 
+    // ... and a bouncing arrow above it (never occluded)
+    for (const t of tasks) this.drawTaskArrow(g, t, tsec);
+
     // brass number plates on the catapults (lane id + 1)
     for (const c of S.keep.catapults) {
       const L = S.laneOfCat(c.id);
@@ -710,6 +720,69 @@ export class Game {
       const ty = s.sy - (s.carry ? 104 : 78) * k * ENG_K;
       drawTag(g, s.sx, ty, p.name, p.color, planPhase && !!this.plans.get(pid)?.done, s.away, k);
     }
+  }
+
+  drawTaskRing(g, t, tsec) {
+    const S = this.scene;
+    const [x, y] = t.cell;
+    const col = this.color(t.pid);
+    const [cx, cy] = S.p(x, y, S.standZ(x, y));
+    const pulse = 0.5 + 0.5 * Math.sin(tsec * 5);
+    const rx = S.TW * 0.36 * (0.92 + 0.12 * pulse);
+    const ry = rx * (S.TH / S.TW);
+    g.save();
+    g.globalAlpha = 0.28 + 0.12 * pulse;
+    g.fillStyle = col;
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, 0, TAU);
+    g.fill();
+    g.globalAlpha = 1;
+    for (const [w, c] of [[11 * S.k, 'rgba(20,14,8,0.85)'], [6 * S.k, col]]) {
+      g.lineWidth = w;
+      g.strokeStyle = c;
+      g.beginPath();
+      g.ellipse(cx, cy, rx, ry, 0, 0, TAU);
+      g.stroke();
+    }
+    // a second ring spreading out
+    const u = (tsec * 0.9) % 1;
+    g.globalAlpha = 1 - u;
+    g.lineWidth = 4 * S.k;
+    g.strokeStyle = col;
+    g.beginPath();
+    g.ellipse(cx, cy, rx * (1 + u * 0.6), ry * (1 + u * 0.6), 0, 0, TAU);
+    g.stroke();
+    g.restore();
+  }
+
+  drawTaskArrow(g, t, tsec) {
+    const S = this.scene;
+    const k = S.k;
+    const [x, y] = t.cell;
+    const col = this.color(t.pid);
+    const [cx, cy] = S.p(x, y, S.standZ(x, y));
+    const bob = Math.abs(Math.sin(tsec * 4)) * 16 * k;
+    const tip = cy - 112 * k - bob;
+    g.save();
+    g.translate(cx, tip);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(-24 * k, -26 * k);
+    g.lineTo(-10 * k, -26 * k);
+    g.lineTo(-10 * k, -54 * k);
+    g.lineTo(10 * k, -54 * k);
+    g.lineTo(10 * k, -26 * k);
+    g.lineTo(24 * k, -26 * k);
+    g.closePath();
+    g.lineJoin = 'round';
+    g.lineWidth = 6 * k;
+    g.strokeStyle = 'rgba(20,14,8,0.9)';
+    g.stroke();
+    g.fillStyle = col;
+    g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.fillRect(-7 * k, -51 * k, 5 * k, 24 * k);
+    g.restore();
   }
 
   drawNextSteps(g, v, tsec) {

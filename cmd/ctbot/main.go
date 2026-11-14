@@ -47,6 +47,7 @@ var (
 	quiet      = flag.Bool("q", false, "less logging")
 	modeID     = flag.String("mode", "", "host switches the room to this mode id in the lobby before starting (e.g. catapult_coop)")
 	planDelay  = flag.Float64("plan-delay", 1.5, "catapult_coop: seconds into a plan phase before a bot commits (staggered per bot)")
+	skipGuide  = flag.Bool("skip-tutorial", false, "catapult_coop: the host skips the guided tutorial (bots otherwise follow it)")
 )
 
 type fatalErr struct{ code, msg string }
@@ -589,6 +590,10 @@ func (p *player) decideCC() []any {
 	}
 	if keep == nil {
 		return nil
+	}
+	if *skipGuide && rm.Host == p.you && p.csnap != nil && p.csnap.Guide != nil && time.Since(p.lastSend) > time.Second {
+		p.lastSend = time.Now()
+		return []any{cc.Cmd{T: "skip_tutorial"}}
 	}
 	if p.bot.Skill == bot.Idle {
 		// The game's first turn has no timer and waits for everyone, so an

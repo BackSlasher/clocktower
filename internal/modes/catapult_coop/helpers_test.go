@@ -43,6 +43,19 @@ func started(t *testing.T, n int) (*Game, []string) {
 	if err := g.Start(ids[0]); err != nil {
 		t.Fatal(err)
 	}
+	if err := g.SkipTutorial(ids[0]); err != nil { // most tests are about the real levels
+		t.Fatal(err)
+	}
+	return g, ids
+}
+
+// guided starts a game with n players and leaves it in the tutorial.
+func guided(t *testing.T, n int) (*Game, []string) {
+	t.Helper()
+	g, ids := newGame(t, n)
+	if err := g.Start(ids[0]); err != nil {
+		t.Fatal(err)
+	}
 	return g, ids
 }
 

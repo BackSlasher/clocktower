@@ -94,6 +94,9 @@ func (g *Game) resolve() {
 	}
 	batch := g.events
 	g.events = append(append(saved, hdr), batch...)
+	if g.guide != nil {
+		g.guideEvents(batch)
+	}
 
 	g.rounds++
 	g.phase = PhaseResolve
@@ -466,6 +469,9 @@ func (g *Game) blast(p *player, lane int, kind string) []Hit {
 func (g *Game) resolveMachines() {
 	var gone []*machine
 	for _, m := range g.machines {
+		if g.guide != nil && !g.guide.live() {
+			break // guide targets stand still
+		}
 		if m.frozen > 0 {
 			m.frozen--
 			g.emit(EvStall{E: "stall", S: StMachines, ID: m.id, Lane: m.lane, Pos: m.pos, Frozen: m.frozen})

@@ -60,7 +60,7 @@ type Layout struct {
 	Cells  [][]Cell `json:"cells"`  // cells[y][x]
 	Spawns [][2]int `json:"spawns"` // engineer start cells, in seating order
 	Bombs  [][2]int `json:"-"`      // bombs lying here at the level start
-	Supply [][2]int `json:"-"`      // the powder store: courtyard cells where new bombs appear
+	Store  [][2]int `json:"store"`  // the powder store: courtyard cells where new bombs appear
 }
 
 // Keep is a keep shell and its layouts.
@@ -200,7 +200,7 @@ func (k *Keep) LevelLayout(lv int) *Layout {
 }
 
 func parseLayout(id string, rows []string) *Layout {
-	l := &Layout{ID: id, H: len(rows), W: len(rows[0])}
+	l := &Layout{ID: id, H: len(rows), W: len(rows[0]), Store: [][2]int{}}
 	starts := map[int][2]int{}
 	for y, row := range rows {
 		if len(row) != l.W {
@@ -227,10 +227,10 @@ func parseLayout(id string, rows []string) *Layout {
 				c.H = 1
 				starts[int(ch-'a')+1] = [2]int{x, y}
 			case ',':
-				l.Supply = append(l.Supply, [2]int{x, y})
+				l.Store = append(l.Store, [2]int{x, y})
 			case 'o':
 				l.Bombs = append(l.Bombs, [2]int{x, y})
-				l.Supply = append(l.Supply, [2]int{x, y})
+				l.Store = append(l.Store, [2]int{x, y})
 			case '*':
 				c.H = 1
 				l.Bombs = append(l.Bombs, [2]int{x, y})

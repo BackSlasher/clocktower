@@ -141,6 +141,7 @@ func TestThrowThenMove(t *testing.T) {
 	}
 	// Walking into the line in the same slot is too late; one slot later works.
 	g.startPlan(2)
+	g.bombs = nil // the top-up may have put one where this throw lands
 	put(g, a, 3, 6)
 	give(g, a, "keg")
 	g.player(b).carry = nil
@@ -152,6 +153,7 @@ func TestThrowThenMove(t *testing.T) {
 		t.Fatalf("same slot: %+v", ev)
 	}
 	g.startPlan(3)
+	g.bombs = nil
 	put(g, a, 3, 6)
 	give(g, a, "keg")
 	put(g, b, 5, 5)

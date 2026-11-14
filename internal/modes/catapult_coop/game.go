@@ -83,8 +83,9 @@ type Game struct {
 	host    string
 	connSeq uint64
 
-	untimed bool // this plan phase has no timer (the game's first turn)
-	curSlot int  // slot being resolved, −1 outside slots
+	untimed bool        // this plan phase has no timer (the game's first turn, the guide)
+	guide   *guideState // the guided tutorial, while it runs (level 1's prelude)
+	curSlot int         // slot being resolved, −1 outside slots
 	keep    *Keep
 	lay     *Layout
 
@@ -116,7 +117,7 @@ func (g *Game) reset() {
 	g.wall = Defs.WallHP
 	g.bombs, g.cats, g.catBy, g.machines, g.script, g.events = nil, nil, nil, nil, nil, nil
 	g.nextMID, g.nextBID = 1, 1
-	g.end = nil
+	g.end, g.guide = nil, nil
 	for _, p := range g.players {
 		p.ready, p.missed, p.placed, p.carry = false, 0, false, nil
 		p.acts, p.done, p.cur, p.st = nil, false, nil, stats{}
@@ -365,6 +366,8 @@ func (g *Game) Apply(pid string, c Cmd) error {
 		return g.Ready(pid, r)
 	case "go":
 		return g.Go(pid)
+	case "skip_tutorial":
+		return g.SkipTutorial(pid)
 	}
 	return nil
 }
@@ -384,7 +387,7 @@ func (g *Game) Start(pid string) error {
 	for _, p := range g.players {
 		p.missed = 0
 	}
-	g.startLevel(1)
+	g.startGuide()
 	return nil
 }
 
@@ -553,8 +556,8 @@ func (g *Game) checkPhaseEnd() {
 func (g *Game) startPlan(round int) {
 	g.phase = PhasePlan
 	g.round = round
-	g.untimed = g.rounds == 0
-	g.left = Defs.PlanTime
+	g.untimed = g.rounds == 0 || g.guide != nil
+	g.left = PlanTime(g.level)
 	if g.untimed {
 		g.left = 0
 	}
@@ -568,6 +571,28 @@ func (g *Game) startPlan(round int) {
 // (carried and loaded bombs are cleared), its authored bombs, the machine
 // script (scaled to the active players now) and the round-0 spawns.
 func (g *Game) startLevel(lv int) {
+	g.guide = nil
+	ld := g.setupBoard(lv)
+	n := g.activeCount()
+	g.script = nil
+	for _, gr := range ld.Groups {
+		hp := gr.hp(n)
+		for i := range gr.count(n) {
+			e := spawnEntry{round: gr.round(i), lane: gr.Lanes[i%len(gr.Lanes)], kind: gr.Kind, hp: hp}
+			for range gr.cluster() {
+				g.script = append(g.script, e)
+			}
+		}
+	}
+	slices.SortStableFunc(g.script, func(a, b spawnEntry) int { return a.round - b.round })
+	g.spawnRound(0, "")
+	g.startPlan(1)
+}
+
+// setupBoard lays out level lv's board: its layout, engineers on its spawn
+// cells (carried and loaded bombs are cleared), its authored bombs; no
+// machines, no script.
+func (g *Game) setupBoard(lv int) *LevelDef {
 	g.level = lv
 	ld := Defs.Levels[lv-1]
 	g.lay = g.keep.LevelLayout(lv)
@@ -588,23 +613,15 @@ func (g *Game) startLevel(lv int) {
 	for _, at := range g.lay.Bombs {
 		g.addBomb(at[0], at[1], g.drawKind(), "")
 	}
-	n := g.activeCount()
 	g.script = nil
-	for _, gr := range ld.Groups {
-		hp := gr.hp(n)
-		for i := range gr.count(n) {
-			e := spawnEntry{round: gr.round(i), lane: gr.Lanes[i%len(gr.Lanes)], kind: gr.Kind, hp: hp}
-			for range gr.cluster() {
-				g.script = append(g.script, e)
-			}
-		}
-	}
-	slices.SortStableFunc(g.script, func(a, b spawnEntry) int { return a.round - b.round })
-	g.spawnRound(0, "")
-	g.startPlan(1)
+	return ld
 }
 
 func (g *Game) afterResolve() {
+	if g.guide != nil {
+		g.guideAfterTurn()
+		return
+	}
 	switch {
 	case g.wall <= 0:
 		g.finish(false)
@@ -752,7 +769,7 @@ func (g *Game) anyDamaging() bool {
 // (height 0 floor). With every store cell taken, the bombs wait.
 func (g *Game) topUpBombs(stage string) {
 	want := Defs.BombsBase + Defs.BombsPerPlayer*g.activeCount()
-	cells := g.lay.Supply
+	cells := g.lay.Store
 	if len(cells) == 0 {
 		for y := range g.lay.H {
 			for x := range g.lay.W {
@@ -848,6 +865,7 @@ func (g *Game) snapshot(drain bool) *Snap {
 	for _, m := range g.machines {
 		s.Machines = append(s.Machines, MachineSnap{ID: m.id, Kind: m.kind, Lane: m.lane, Pos: m.pos, HP: m.hp, Max: m.max, Frozen: m.frozen})
 	}
+	s.Guide = g.guideSnap()
 	if g.phase == PhasePlan {
 		for _, e := range g.script {
 			if e.round == g.round {

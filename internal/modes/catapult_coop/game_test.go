@@ -465,6 +465,9 @@ func TestHostGoEndsPlanAndBreak(t *testing.T) {
 	if err := g.Start(host); err != nil {
 		t.Fatal(err)
 	}
+	if err := g.SkipTutorial(host); err != nil {
+		t.Fatal(err)
+	}
 	// The untimed first turn: b filed a wait but not done, c filed nothing.
 	_ = g.Apply(b, Cmd{T: "plan", Acts: []Act{wt}})
 	_ = done(g, host)
