@@ -188,3 +188,16 @@
   .pcard .pd { font-size: 0.84rem; }
 }
 
+
+/* ---- lobby: map choice (lobbyOptions; rendered into the shell's #modeOpts) ---- */
+.tdm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mcard.tdm-card { flex-direction: row; align-items: center; gap: 8px; min-height: 0; padding: 6px 8px; }
+.mcard.tdm-card .mn { font-size: 0.95rem; line-height: 1.1; }
+.tdm-thumb { width: 64px; height: 36px; flex: none; border-radius: 4px; border: 1px solid var(--soot-600); }
+.tdm-txt { display: flex; flex-direction: column; min-width: 0; }
+.tdm-desc { font-size: 0.8rem; color: var(--ink-dim); font-style: italic; line-height: 1.25; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .tdm-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .mcard.tdm-card { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .tdm-thumb { width: 56px; height: 32px; }
+}

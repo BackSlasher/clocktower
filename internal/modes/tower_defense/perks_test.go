@@ -339,6 +339,8 @@ func TestPerkOffers(t *testing.T) {
 func TestPerkOffersDeterministic(t *testing.T) {
 	offers := func(seed uint64) [][]string {
 		g := New(rand.New(rand.NewPCG(seed, 2)))
+		g.mapPick = Map.ID
+		g.reset()
 		for i := 0; i < 3; i++ {
 			id, _, _ := g.AddPlayer("P" + string(rune('A'+i)))
 			g.SetConnected(id, true)

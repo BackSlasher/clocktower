@@ -41,7 +41,7 @@ func (g *Game) startWave(by string) {
 	g.phase = PhaseWave
 	g.buildLeft = 0
 	g.waveTime = 0
-	playerMul := hpMulFor(g.ConnectedCount())
+	playerMul := hpMulFor(g.ConnectedCount()) * g.m.hpMul()
 	g.waveHPMul = wd.HPMul * playerMul
 	g.spawns = g.spawns[:0]
 	for _, gr := range wd.Groups {
@@ -54,7 +54,7 @@ func (g *Game) startWave(by string) {
 			if gr.HPMul > 0 {
 				mul = gr.HPMul
 			}
-			g.spawns = append(g.spawns, spawn{at: at, kind: gr.Kind, path: gr.Paths[i%len(gr.Paths)], hpMul: mul * playerMul})
+			g.spawns = append(g.spawns, spawn{at: at, kind: gr.Kind, path: g.m.Lane(gr.Paths[i%len(gr.Paths)]), hpMul: mul * playerMul})
 		}
 	}
 	slices.SortStableFunc(g.spawns, func(a, b spawn) int { return cmp.Compare(a.at, b.at) })
@@ -82,7 +82,7 @@ func (g *Game) addEnemy(kind string, path int, d, hpMul float64) *enemy {
 	return e
 }
 
-func (g *Game) enemyPos(e *enemy) (float64, float64) { return Map.Paths[e.path].PosAt(e.dist) }
+func (g *Game) enemyPos(e *enemy) (float64, float64) { return g.m.Paths[e.path].PosAt(e.dist) }
 
 func (g *Game) effSpeed(e *enemy) float64 { return e.def.Speed * (1 - e.slow) }
 
@@ -107,7 +107,7 @@ func (g *Game) stepWave(dt float64) {
 		lv := t.level()
 		r := g.towerRange(t) * (1 + Defs.WindRangeBonus*t.tension)
 		slow := chronoSlow(g.player(t.owner), lv.Slow)
-		pl := Map.Plots[t.plot]
+		pl := g.m.Plots[t.plot]
 		t.aim = math.Mod(g.time*1.5, 2*math.Pi) // pendulum swing, cosmetic
 		for _, e := range g.enemies {
 			x, y := g.enemyPos(e)
@@ -142,7 +142,7 @@ func (g *Game) stepWave(dt float64) {
 	// Movement and leaks.
 	for _, e := range g.enemies {
 		e.dist += g.effSpeed(e) * dt
-		if e.dist >= Map.Paths[e.path].Len() {
+		if e.dist >= g.m.Paths[e.path].Len() {
 			e.dead = true
 			g.lives = max(0, g.lives-e.def.Lives)
 			g.emit(EvLeak{E: "leak", ID: e.id, Kind: e.kind, Lives: e.def.Lives})
@@ -205,7 +205,7 @@ func (g *Game) towerRange(t *tower) float64 { return t.level().Range * rangeMul(
 
 // pickTarget returns the enemy in range closest to the clock tower ("first").
 func (g *Game) pickTarget(t *tower) *enemy {
-	pl := Map.Plots[t.plot]
+	pl := g.m.Plots[t.plot]
 	r := g.towerRange(t)
 	var best *enemy
 	bestLeft := math.Inf(1)
@@ -217,7 +217,7 @@ func (g *Game) pickTarget(t *tower) *enemy {
 		if dist(x, y, pl.X, pl.Y) > r {
 			continue
 		}
-		left := Map.Paths[e.path].Len() - e.dist
+		left := g.m.Paths[e.path].Len() - e.dist
 		if left < bestLeft {
 			best, bestLeft = e, left
 		}
@@ -226,7 +226,7 @@ func (g *Game) pickTarget(t *tower) *enemy {
 }
 
 func (g *Game) fire(t *tower, target *enemy) {
-	pl := Map.Plots[t.plot]
+	pl := g.m.Plots[t.plot]
 	lv := t.level()
 	owner := g.player(t.owner)
 	dmg := lv.Dmg * dmgMul(owner, t.kind)
@@ -267,7 +267,7 @@ func (g *Game) fire(t *tower, target *enemy) {
 		if travel == 0 {
 			travel = dist(pl.X, pl.Y, x, y) / t.def.ShotSpeed
 		}
-		path := Map.Paths[target.path]
+		path := g.m.Paths[target.path]
 		x, y = path.PosAt(math.Min(path.Len(), target.dist+g.effSpeed(target)*travel))
 		x, y = round(x, 0.1), round(y, 0.1)
 		t.aim = math.Atan2(y-pl.Y, x-pl.X)

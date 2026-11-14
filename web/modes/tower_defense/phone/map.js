@@ -216,6 +216,17 @@ export class Minimap {
     for (let y = 0; y <= map.h; y += 120) { ctx.moveTo(0, y * s); ctx.lineTo(map.w * s, y * s); }
     ctx.stroke();
 
+    // canals (scenery.water), under the streets
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'butt';
+    for (const w of map.scenery?.water || []) {
+      ctx.strokeStyle = '#1f4a56';
+      ctx.lineWidth = Math.max(4, (w.w || 80) * s);
+      ctx.beginPath();
+      w.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
+      ctx.stroke();
+    }
+
     // streets
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';

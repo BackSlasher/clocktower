@@ -60,8 +60,18 @@ export class Game {
     return this.map ? this.map.plots.filter((p) => (p.min || 1) <= this.plotsFor) : [];
   }
 
+  // The map in play: room.map names one of defs.maps ("" while the lobby's pick is "Surprise me").
+  mapFor(id) {
+    return (this.defs?.maps || []).find((m) => m.id === id) || null;
+  }
+
   setRoom(room) {
     for (const p of room.players) this.colors.set(p.id, p.color);
+    const want = room.map && this.mapFor(room.map);
+    if (want && want.id !== this.map?.id) {
+      this.plotsFor = room.plotsFor || 1;
+      this.setWelcome({ map: want, defs: this.defs });
+    }
     const pf = room.plotsFor || 1;
     if (pf !== this.plotsFor) {
       const before = this.openPlots().length;

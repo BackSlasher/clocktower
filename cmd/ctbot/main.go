@@ -2,7 +2,7 @@
 // websockets and plays. Without -room it first opens a TV connection to
 // create a room (and acts as that TV, counting what it receives).
 //
-//	ctbot -url http://localhost:8080 -room ABCD -n 4 [-skill good|bad|casual|idle] [-name-prefix Bot] [-no-start] [-loop] [-mode ID]
+//	ctbot -url http://localhost:8080 -room ABCD -n 4 [-skill good|bad|casual|idle] [-name-prefix Bot] [-no-start] [-loop] [-mode ID] [-map ID]
 //
 // Bots take perks from their offers by sending `perk` like a phone does.
 // They play whatever mode the room is in (`welcome.mode`, `setup.mode`,
@@ -46,6 +46,7 @@ var (
 	startWait  = flag.Duration("start-wait", 2*time.Second, "how long the host waits for the other bots before starting")
 	quiet      = flag.Bool("q", false, "less logging")
 	modeID     = flag.String("mode", "", "host switches the room to this mode id in the lobby before starting (e.g. catapult_coop)")
+	mapID      = flag.String("map", "", "tower_defense: host picks this map in the lobby before starting (a map id, or random)")
 	planDelay  = flag.Float64("plan-delay", 1.5, "catapult_coop: seconds into a plan phase before a bot commits (staggered per bot)")
 	skipGuide  = flag.Bool("skip-tutorial", false, "catapult_coop: the host skips the guided tutorial (bots otherwise follow it)")
 )
@@ -435,7 +436,12 @@ func (p *player) decideTD() []game.Cmd {
 		if p.started.IsZero() {
 			p.started = now
 		}
-		if isHost && !*noStart && (*modeID == "" || *modeID == p.mode) && (len(p.rm.Players) >= *n || now.Sub(p.started) > *startWait) && now.Sub(p.lastSend) > time.Second {
+		if isHost && *mapID != "" && p.rm.MapPick != *mapID && now.Sub(p.lastSend) > time.Second {
+			p.lastSend = now
+			p.logf("picking map %s", *mapID)
+			return append(out, game.Cmd{T: "map", ID: *mapID})
+		}
+		if isHost && !*noStart && (*modeID == "" || *modeID == p.mode) && (*mapID == "" || p.rm.MapPick == *mapID) && (len(p.rm.Players) >= *n || now.Sub(p.started) > *startWait) && now.Sub(p.lastSend) > time.Second {
 			p.lastSend = now
 			p.logf("starting the game with %d players", len(p.rm.Players))
 			out = append(out, game.Cmd{T: "start"})

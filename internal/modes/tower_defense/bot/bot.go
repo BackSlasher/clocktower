@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"sort"
+	"sync"
 
 	game "clocktower/internal/modes/tower_defense"
 )
@@ -81,6 +82,9 @@ type Bot struct {
 	pickAt   float64          // when we pick from it (<0: not going to)
 
 	plotsFor int // the room's plot tier: only plots open at it can be built on
+
+	m  *game.MapT // the room's map
+	mi *mapInfo
 }
 
 // New creates a bot for player id.
@@ -88,22 +92,52 @@ func New(id string, skill Skill, seed uint64) *Bot {
 	return &Bot{ID: id, Skill: skill, TapsPerSec: 3, ReadyDelay: 4, rng: rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)), windPlot: -1}
 }
 
-// plot quality per tower kind: on-screen path length within level-1 range.
-var plotScore = func() map[string][]float64 {
-	m := map[string][]float64{}
+// mapInfo holds per-map precomputed plot ratings.
+type mapInfo struct {
+	// plotScore[kind][plot]: on-screen path length within level-1 range.
+	plotScore map[string][]float64
+	// pathCover[kind][plot][path]: the same, per path.
+	pathCover map[string][][]float64
+}
+
+var mapInfos sync.Map // map id → *mapInfo
+
+func infoFor(m *game.MapT) *mapInfo {
+	if v, ok := mapInfos.Load(m.ID); ok {
+		return v.(*mapInfo)
+	}
+	mi := &mapInfo{plotScore: map[string][]float64{}, pathCover: map[string][][]float64{}}
 	for kind, def := range game.Defs.Towers {
-		sc := make([]float64, len(game.Map.Plots))
-		for i, pl := range game.Map.Plots {
-			for _, p := range game.Map.Paths {
-				c := p.CoverLen(pl.X, pl.Y, def.Levels[0].Range, game.Map.W, game.Map.H)
-				// weight the later (closer to the tower) part of the town a bit higher
+		sc := make([]float64, len(m.Plots))
+		pc := make([][]float64, len(m.Plots))
+		for i, pl := range m.Plots {
+			pc[i] = make([]float64, len(m.Paths))
+			for j, p := range m.Paths {
+				c := p.CoverLen(pl.X, pl.Y, def.Levels[0].Range, m.W, m.H)
+				pc[i][j] = c
 				sc[i] += c
 			}
 		}
-		m[kind] = sc
+		mi.plotScore[kind] = sc
+		mi.pathCover[kind] = pc
 	}
-	return m
-}()
+	v, _ := mapInfos.LoadOrStore(m.ID, mi)
+	return v.(*mapInfo)
+}
+
+// setMap follows the room's map (Brasswick until a room names one).
+func (b *Bot) setMap(id string) {
+	if b.m != nil && b.m.ID == id {
+		return
+	}
+	m := game.MapByID(id)
+	if m == nil {
+		m = game.Map
+	}
+	if b.m != m {
+		b.m, b.mi, b.pathSeen = m, infoFor(m), nil
+	}
+}
 
 // Act returns the commands to send now. now is a monotonically increasing
 // clock in seconds; call it ~10 times per second with the latest state.
@@ -114,6 +148,7 @@ func (b *Bot) Act(now float64, room *game.RoomMsg, s *game.Snap) []game.Cmd {
 	}
 	b.me = b.self(room)
 	b.plotsFor = room.PlotsFor
+	b.setMap(room.Map)
 	switch b.Skill {
 	case Idle:
 		return nil
@@ -255,8 +290,8 @@ func (b *Bot) decideBad(purse int, towers map[int]game.TowerSnap) (game.Cmd, boo
 		return game.Cmd{}, false
 	}
 	var free []int
-	for _, pl := range game.Map.Plots {
-		if _, ok := towers[pl.ID]; !ok && game.PlotOpen(pl.ID, b.plotsFor) {
+	for _, pl := range b.m.Plots {
+		if _, ok := towers[pl.ID]; !ok && b.m.PlotOpen(pl.ID, b.plotsFor) {
 			free = append(free, pl.ID)
 		}
 	}
@@ -268,15 +303,15 @@ func (b *Bot) decideBad(purse int, towers map[int]game.TowerSnap) (game.Cmd, boo
 
 // balancedScores rates plots for kind by coverage with diminishing returns
 // per street, so an expert team covers every road instead of stacking one.
-func balancedScores(kind string, towers map[int]game.TowerSnap) []float64 {
-	have := make([]float64, len(game.Map.Paths))
+func (b *Bot) balancedScores(kind string, towers map[int]game.TowerSnap) []float64 {
+	have := make([]float64, len(b.m.Paths))
 	for _, t := range towers {
-		for j, c := range pathCover[t.Kind][t.Plot] {
+		for j, c := range b.mi.pathCover[t.Kind][t.Plot] {
 			have[j] += c
 		}
 	}
-	sc := make([]float64, len(game.Map.Plots))
-	for i, pc := range pathCover[kind] {
+	sc := make([]float64, len(b.m.Plots))
+	for i, pc := range b.mi.pathCover[kind] {
 		for j, c := range pc {
 			sc[i] += c / (1 + have[j]/800)
 		}
@@ -285,7 +320,7 @@ func balancedScores(kind string, towers map[int]game.TowerSnap) []float64 {
 }
 
 // desiredTowers is how many towers the team wants before it starts upgrading.
-func desiredTowers(wave int) int { return min(len(game.Map.Plots), 4+wave) }
+func (b *Bot) desiredTowers(wave int) int { return min(len(b.m.Plots), 4+wave) }
 
 func (b *Bot) nextKind(wave int, towers map[int]game.TowerSnap) string {
 	count := map[string]int{}
@@ -315,15 +350,15 @@ func (b *Bot) nextKind(wave int, towers map[int]game.TowerSnap) string {
 }
 
 func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.Cmd, int, bool) {
-	if len(towers) < desiredTowers(wave) {
+	if len(towers) < b.desiredTowers(wave) {
 		kind := b.nextKind(wave, towers)
 		if cost := b.price(kind, 0); purse < cost {
 			return game.Cmd{}, cost, false // save up
 		}
-		sc := balancedScores(kind, towers)
+		sc := b.balancedScores(kind, towers)
 		var free []int
-		for _, pl := range game.Map.Plots {
-			if _, ok := towers[pl.ID]; !ok && game.PlotOpen(pl.ID, b.plotsFor) {
+		for _, pl := range b.m.Plots {
+			if _, ok := towers[pl.ID]; !ok && b.m.PlotOpen(pl.ID, b.plotsFor) {
 				free = append(free, pl.ID)
 			}
 		}
@@ -352,7 +387,7 @@ func (b *Bot) decideGood(wave, purse int, towers map[int]game.TowerSnap) (game.C
 		if t.Lvl >= len(def.Levels) {
 			continue
 		}
-		key := float64(t.Lvl)*1000 - plotScore[t.Kind][t.Plot]
+		key := float64(t.Lvl)*1000 - b.mi.plotScore[t.Kind][t.Plot]
 		switch t.Kind {
 		case "chrono":
 			key += 1500

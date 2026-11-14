@@ -15,6 +15,7 @@ const HTML = `
     <div id="pstrip"></div>
     <div id="paused">Paused &mdash; waiting for engineers to reconnect</div>
   </section>
+  <div id="mapTag"></div>
   <div id="glow"></div>
   <div id="banner"></div>
   <section id="end"></section>`;

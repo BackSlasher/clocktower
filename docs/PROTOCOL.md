@@ -138,6 +138,8 @@ present.
   "wave": 3,                   // current or upcoming wave, 1-based; 0 in lobby
   "plotsFor": 4,               // plot tier: plots with min ≤ this exist (see below)
   "nextWave": [ { "kind": "scrap", "n": 12 }, … ],  // preview during build; else []
+  "map": "spindle",            // id of the map in play (defs.maps); "" in the lobby while mapPick is "random"
+  "mapPick": "random",         // the host's map choice: a map id or "random" ("Surprise me", the default)
   "end": End | null }          // set in won/lost
 ```
 
@@ -210,6 +212,7 @@ Events:
 { "t": "wind",    "plot": 4, "n": 3 }     // n taps since last send; send at most every 150 ms; server caps at 10 taps/s per player
 { "t": "ready",   "ready": true }         // build phase; every active connected player ready (≥1 ready) → wave starts now
 { "t": "go" }                             // host, build phase: start the wave now, ready or not
+{ "t": "map",     "id": "lockgate" }      // host, lobby: pick the map (a defs.maps id, or "random")
 { "t": "gift",    "to": "p2", "amount": 50 }
 { "t": "restart" }                        // host; in won/lost, or mid-game to end it → back to lobby, same players
 { "t": "ping" }                           // optional; server replies { "t": "pong" }
@@ -278,6 +281,25 @@ Additive details; nothing above changed meaning.
   anyone else and `bad_request` outside the build phase (lobby, wave, won,
   lost); like every game command it gets `paused` while the host has paused
   the game. It counts as a game command for the idle rule.
+- **Maps**: `defs.maps` lists every map (full `Map` objects, menu order;
+  Brasswick first), each with `"id"`, `"name"` and a one-line `"desc"`.
+  `welcome.map` / `setup.map` is the map in play (in the lobby: the picked
+  one, Brasswick while the pick is "random"). The host picks with
+  `{ "t": "map", "id" }` in the lobby (`not_host` for anyone else,
+  `bad_request` outside the lobby or for an unknown id); the room message's
+  `mapPick` echoes it to everyone. With `"random"` (the default) the server
+  draws a map at `start`. `room.map` always names the map in play (`""` only
+  in the lobby while the pick is random), so clients follow it from `defs.maps`
+  without another `setup`; a reconnecting client gets it in `welcome.map` and
+  `room.map`. The pick survives `restart`. Snap `enemies[i][2]` is an index
+  into that map's `paths`.
+- **Map extras** (all optional): `"lanes"`: the wave table's three lanes
+  (group paths 0, 1, 2) mapped to this map's path indices (absent: lane i
+  walks path i; a one-street map sends all three down path 0); `"hpMul"`:
+  every enemy's HP on this map is multiplied by it (absent: 1), the per-map
+  balance knob; `"scenery"`: drawing data the server ignores (`water`:
+  canals as `{ "pts", "w" }` polylines; `locks`, `boats`; `yards`:
+  `{ "x", "y", "r", "kind": "spring" | "gear" }` open courts).
 - **Full lobby**: if a 9th player joins while in the lobby, a disconnected
   player (if any) is removed to make room; otherwise `room_full`.
 - **Server busy** (room cap, connection cap, or room-creation rate limit per

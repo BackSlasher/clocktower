@@ -30,7 +30,7 @@ func newMode(rng *rand.Rand, roster []mode.Member) mode.Game {
 
 // knownCmds are the client message types Command handles.
 var knownCmds = map[string]bool{"start": true, "build": true, "upgrade": true, "sell": true,
-	"wind": true, "ready": true, "gift": true, "restart": true, "perk": true, "go": true}
+	"wind": true, "ready": true, "gift": true, "restart": true, "perk": true, "go": true, "map": true}
 
 // modeGame adapts *Game to mode.Game. Only the methods whose signatures
 // differ from the concrete ones (they return concrete wire types there, which
@@ -54,15 +54,22 @@ func (m *modeGame) Command(pid, typ string, raw []byte) error {
 
 var setup struct {
 	once sync.Once
-	v    mode.Setup
+	maps map[string]json.RawMessage
+	defs json.RawMessage
 }
 
+// Setup sends the map in play (the lobby's pick; Brasswick while the pick
+// is "Surprise me") and the defs, which list every map in defs.maps so a
+// client can follow room.map without another setup message.
 func (m *modeGame) Setup() mode.Setup {
 	setup.once.Do(func() {
-		setup.v.Map, _ = json.Marshal(Map)
-		setup.v.Defs, _ = json.Marshal(Defs)
+		setup.maps = map[string]json.RawMessage{}
+		for _, mp := range Maps {
+			setup.maps[mp.ID], _ = json.Marshal(mp)
+		}
+		setup.defs, _ = json.Marshal(Defs)
 	})
-	return setup.v
+	return mode.Setup{Map: setup.maps[m.Game.Map().ID], Defs: setup.defs}
 }
 
 // Roster lists the players in join order.

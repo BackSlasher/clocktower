@@ -100,9 +100,20 @@ export async function mount(ctx) {
     if (name === 'game') { map.start(); map.resize(); ctx.wake(true); } else { map.stop(); ctx.wake(false); }
   }
 
+  // The room names the map in play (defs.maps); "" while the host's pick is "Surprise me".
+  const mapById = (id) => (st.defs.maps || []).find((x) => x.id === id) || null;
+  function followMap(id) {
+    const m = id && mapById(id);
+    if (!m || m.id === st.map?.id) return;
+    st.map = m;
+    st.sel = null;
+    map.setMap();
+  }
+
   function onRoom(m) {
     const prev = st.room;
     st.room = m;
+    followMap(m.map);
     st.players = new Map(m.players.map((p) => [p.id, p]));
     if (!prev || prev.phase !== m.phase) {
       if (m.phase === 'lobby') { st.snap = null; st.sel = null; renderPanel(); }
@@ -456,7 +467,8 @@ export async function mount(ctx) {
     $('s-end').classList.toggle('lost', !end?.won);
     $('endTitle').textContent = end?.won ? 'Victory!' : 'The Clock Has Fallen';
     const secs = Math.round(end?.time || 0);
-    $('endSub').textContent = `${end?.won ? 'Brasswick is saved' : 'Brasswick is overrun'} · wave ${end?.wave}/${d.waves} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    const town = st.map?.name || 'Brasswick';
+    $('endSub').textContent = `${end?.won ? `${town} is saved` : `${town} is overrun`} · wave ${end?.wave}/${d.waves} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     const s = end?.stats?.[ctx.you] || {};
     const tiles = [['kills', 'Kills'], ['dmg', 'Damage'], ['spent', 'Spent'], ['winds', 'Winds'], ['built', 'Built'], ['gifted', 'Gifted']];
     $('endMine').replaceChildren(...tiles.map(([k, l]) => h('div', {}, h('b', {}, Math.round(s[k] || 0)), h('span', {}, l))));
@@ -579,12 +591,80 @@ export async function mount(ctx) {
   }
 
 
+  // ---------------------------------------------------------------- lobby: map choice
+  // The host picks a map (or "Surprise me", drawn at start) with `map`; everyone else sees
+  // the current choice. Each card has a little drawing of the map's streets.
+  function lobbyOptions(box, { isHost: host, room }) {
+    const maps = st.defs.maps || [];
+    if (maps.length < 2) { box.replaceChildren(); return; }
+    const pick = room?.mapPick || 'random';
+    const key = JSON.stringify([host, pick, maps.map((m) => m.id)]);
+    if (box.dataset.tdKey === key && box.childElementCount) return;
+    box.dataset.tdKey = key;
+    const cur = mapById(pick);
+    const opts = [...maps.map((m) => ({ id: m.id, name: m.name, desc: m.desc, map: m })),
+      { id: 'random', name: 'Surprise me', desc: 'A map drawn at random when the game starts.', map: null }];
+    const card = (o) => {
+      const on = o.id === pick;
+      const kids = [thumb(o.map), h('span', { class: 'tdm-txt' }, h('b', { class: 'mn display' }, o.name))];
+      return h('button', { class: 'mcard tdm-card' + (on ? ' on' : ''), type: 'button', 'aria-pressed': on ? 'true' : 'false', 'data-map': o.id,
+        onclick: () => { if (!on) ctx.send({ t: 'map', id: o.id }); } }, kids);
+    };
+    const chosen = cur || opts[opts.length - 1];
+    box.replaceChildren(
+      h('div', { class: 'dim small' }, 'Map'),
+      host
+        ? h('div', { class: 'tdm-grid' }, opts.map(card))
+        : h('div', { class: 'mcard static on tdm-card tdm-one', 'data-map': chosen.id }, thumb(cur), h('span', { class: 'tdm-txt' }, h('b', { class: 'mn display' }, chosen.name))),
+      h('div', { class: 'tdm-desc' }, chosen.desc),
+    );
+  }
+
+  // A small drawing of a map's streets and clock (or a question mark for "Surprise me").
+  function thumb(m) {
+    const c = h('canvas', { class: 'tdm-thumb', width: 96, height: 54 });
+    const g = c.getContext('2d');
+    g.fillStyle = '#10191b';
+    g.fillRect(0, 0, 96, 54);
+    if (!m) {
+      g.fillStyle = '#d9b25a';
+      g.font = 'bold 34px Georgia, serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('?', 48, 29);
+      return c;
+    }
+    const s = 96 / m.w;
+    for (const w of m.scenery?.water || []) {
+      g.strokeStyle = '#2b5f6e';
+      g.lineWidth = Math.max(2, (w.w || 80) * s);
+      g.lineJoin = 'round';
+      g.beginPath();
+      w.pts.forEach(([x, y], i) => (i ? g.lineTo(x * s, y * s) : g.moveTo(x * s, y * s)));
+      g.stroke();
+    }
+    g.strokeStyle = '#b89a5a';
+    g.lineWidth = 3;
+    g.lineJoin = 'round';
+    for (const p of m.paths) {
+      g.beginPath();
+      p.pts.forEach(([x, y], i) => (i ? g.lineTo(x * s, y * s) : g.moveTo(x * s, y * s)));
+      g.stroke();
+    }
+    g.fillStyle = '#ffd27a';
+    g.beginPath();
+    g.arc(m.tower.x * s, m.tower.y * s, 4, 0, Math.PI * 2);
+    g.fill();
+    return c;
+  }
+
   // ---------------------------------------------------------------- shell hooks
   map.setMap();
 
   return {
     onRoom,
     onSnap,
+    lobbyOptions,
     onStatus(s) { if (s === 'replaced') flushWind(); },
     onError() { if (picked) { picked = null; if (!$('perkSheet').hidden) renderOffer(); } },
     unmount() {

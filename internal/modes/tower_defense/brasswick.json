@@ -1,5 +1,7 @@
 {
+  "id": "brasswick",
   "name": "Brasswick",
+  "desc": "Three crooked streets meet at the old clock square.",
   "w": 1920,
   "h": 1080,
   "tower": {"x": 960, "y": 540},

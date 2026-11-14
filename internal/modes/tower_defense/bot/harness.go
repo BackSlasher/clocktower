@@ -18,6 +18,7 @@ type Scenario struct {
 	ReadyDelay float64 // seconds into build before readying; <0 never
 	NoWind     bool    // bots never wind (to measure what winding is worth)
 	NoPerks    bool    // bots never pick perks (to measure what perks are worth)
+	Map        string  // map id ("" = Brasswick; never "Surprise me", so results are comparable)
 	Seed       uint64
 }
 
@@ -65,6 +66,13 @@ func Run(sc Scenario) Result {
 		b.NoWind = sc.NoWind
 		b.NoPerks = sc.NoPerks
 		bots = append(bots, b)
+	}
+	mapID := sc.Map
+	if mapID == "" {
+		mapID = game.Map.ID
+	}
+	if err := g.PickMap(g.Host(), mapID); err != nil {
+		panic(err)
 	}
 	if err := g.Start(g.Host()); err != nil {
 		panic(err)

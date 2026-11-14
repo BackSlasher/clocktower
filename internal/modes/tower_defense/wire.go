@@ -114,7 +114,11 @@ type RoomMsg struct {
 	Wave     int          `json:"wave"`
 	PlotsFor int          `json:"plotsFor"` // plot tier: plots with min ≤ this are open (see map plots)
 	NextWave []WaveEntry  `json:"nextWave"`
-	End      *End         `json:"end"`
+	// Map is the id of the map in play (defs.maps); in the lobby the one the
+	// next game uses, or "" while MapPick is "random" (drawn at start).
+	Map     string `json:"map"`
+	MapPick string `json:"mapPick"` // the host's choice: a map id or "random"
+	End     *End   `json:"end"`
 }
 
 // TowerSnap is a tower in a snap.

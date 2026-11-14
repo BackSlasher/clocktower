@@ -85,6 +85,7 @@ type DefsT struct {
 	HPPlayerMul    []float64           `json:"hpPlayerMul"` // enemy HP multiplier by connected players: [n−1]; steeper from 5
 	Perks          map[string]*PerkDef `json:"perks"`       // see perks.go
 	PerkOrder      []string            `json:"perkOrder"`   // menu order
+	Maps           []*MapT             `json:"maps"`        // every map, menu order (room.map / mapPick name one)
 
 	// Server-only knobs.
 	MinDmgFrac      float64   `json:"-"` // armour never reduces a hit below this fraction
@@ -161,6 +162,7 @@ var Defs = &DefsT{
 	HPPlayerMul:    hpPlayerMul,
 	Perks:          perkDefs,
 	PerkOrder:      perkOrder,
+	Maps:           Maps,
 
 	MinDmgFrac:      0.2,
 	StartPurseTotal: 320,

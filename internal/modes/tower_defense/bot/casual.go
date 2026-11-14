@@ -100,28 +100,11 @@ func (b *Bot) actCasual(now float64, room *game.RoomMsg, s *game.Snap) []game.Cm
 	return out
 }
 
-// pathCover[kind][plot][path] is how much of the on-screen path lies within
-// the kind's level-1 range of the plot.
-var pathCover = func() map[string][][]float64 {
-	m := map[string][][]float64{}
-	for kind, def := range game.Defs.Towers {
-		pc := make([][]float64, len(game.Map.Plots))
-		for i, pl := range game.Map.Plots {
-			pc[i] = make([]float64, len(game.Map.Paths))
-			for j, p := range game.Map.Paths {
-				pc[i][j] = p.CoverLen(pl.X, pl.Y, def.Levels[0].Range, game.Map.W, game.Map.H)
-			}
-		}
-		m[kind] = pc
-	}
-	return m
-}()
-
 // watch keeps a fading tally of which streets enemies have been seen on, the
 // way a player notices "they're all coming down Foundry Street".
 func (b *Bot) watch(s *game.Snap) {
 	if b.pathSeen == nil {
-		b.pathSeen = make([]float64, len(game.Map.Paths))
+		b.pathSeen = make([]float64, len(b.m.Paths))
 	}
 	for i := range b.pathSeen {
 		b.pathSeen[i] *= 0.999
@@ -135,9 +118,9 @@ func (b *Bot) watch(s *game.Snap) {
 // where enemies have been seen (all streets equally before the first wave)
 // and, mildly, streets the team has not covered yet.
 func (b *Bot) casualPlotScores(kind string, towers map[int]game.TowerSnap) []float64 {
-	have := make([]float64, len(game.Map.Paths))
+	have := make([]float64, len(b.m.Paths))
 	for _, t := range towers {
-		for j, c := range pathCover[t.Kind][t.Plot] {
+		for j, c := range b.mi.pathCover[t.Kind][t.Plot] {
 			have[j] += c
 		}
 	}
@@ -145,8 +128,8 @@ func (b *Bot) casualPlotScores(kind string, towers map[int]game.TowerSnap) []flo
 	for _, v := range b.pathSeen {
 		total += v
 	}
-	sc := make([]float64, len(game.Map.Plots))
-	for i, pc := range pathCover[kind] {
+	sc := make([]float64, len(b.m.Plots))
+	for i, pc := range b.mi.pathCover[kind] {
 		for j, c := range pc {
 			w := 1.0
 			if total > 0 {
@@ -168,7 +151,7 @@ func (b *Bot) pickHotTower(s *game.Snap) int {
 	var cs []cand
 	for _, t := range s.Towers {
 		def := game.Defs.Towers[t.Kind]
-		pl := game.Map.Plots[t.Plot]
+		pl := b.m.Plots[t.Plot]
 		r := def.Levels[t.Lvl-1].Range
 		if t.RangeMul > 0 {
 			r *= t.RangeMul
@@ -179,7 +162,7 @@ func (b *Bot) pickHotTower(s *game.Snap) int {
 			if ed.Flying && def.GroundOnly {
 				continue
 			}
-			x, y := game.Map.Paths[int(e[2])].PosAt(e[3])
+			x, y := b.m.Paths[int(e[2])].PosAt(e[3])
 			if math.Hypot(x-pl.X, y-pl.Y) <= r {
 				n++
 			}
@@ -236,15 +219,15 @@ func (b *Bot) casualKind(towers map[int]game.TowerSnap) string {
 
 func (b *Bot) decideCasual(wave, purse int, towers map[int]game.TowerSnap) (game.Cmd, bool) {
 	var free []int
-	for _, pl := range game.Map.Plots {
-		if _, ok := towers[pl.ID]; !ok && game.PlotOpen(pl.ID, b.plotsFor) {
+	for _, pl := range b.m.Plots {
+		if _, ok := towers[pl.ID]; !ok && b.m.PlotOpen(pl.ID, b.plotsFor) {
 			free = append(free, pl.ID)
 		}
 	}
 	if len(free) == 0 {
 		b.wantKind = ""
 	}
-	short := len(towers) < min(len(game.Map.Plots), 5+wave)
+	short := len(towers) < min(len(b.m.Plots), 5+wave)
 	if b.wantKind == "" && len(free) > 0 && (len(towers) < 3 || (short && b.rng.Float64() < casualBuildBias)) {
 		b.wantKind = b.casualKind(towers)
 	}
@@ -295,7 +278,7 @@ func (b *Bot) decideCasual(wave, purse int, towers map[int]game.TowerSnap) (game
 		if b.price(t.Kind, t.Lvl) > purse {
 			continue
 		}
-		key := plotScore[t.Kind][t.Plot] - 300*float64(t.Lvl)
+		key := b.mi.plotScore[t.Kind][t.Plot] - 300*float64(t.Lvl)
 		if t.Kind == "chrono" {
 			key -= 400
 		}

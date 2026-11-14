@@ -10,6 +10,12 @@ import (
 //go:embed brasswick.json
 var brasswickJSON []byte
 
+//go:embed spindle.json
+var spindleJSON []byte
+
+//go:embed lockgate.json
+var lockgateJSON []byte
+
 // Point is an [x, y] pair in map pixels.
 type Point [2]float64
 
@@ -31,10 +37,10 @@ type Plot struct {
 	Min int     `json:"min,omitempty"`
 }
 
-// PlotOpen reports whether plot exists at plot tier plotsFor (the room's
-// `plotsFor`).
-func PlotOpen(plot, plotsFor int) bool {
-	return plot >= 0 && plot < len(Map.Plots) && Map.Plots[plot].Min <= max(1, plotsFor)
+// PlotOpen reports whether plot exists on m at plot tier plotsFor (the
+// room's `plotsFor`).
+func (m *MapT) PlotOpen(plot, plotsFor int) bool {
+	return plot >= 0 && plot < len(m.Plots) && m.Plots[plot].Min <= max(1, plotsFor)
 }
 
 // XY is a point object.
@@ -43,18 +49,66 @@ type XY struct {
 	Y float64 `json:"y"`
 }
 
-// MapT is the map as sent in `welcome`.
+// MapT is a map as sent in `welcome` (and in `defs.maps`).
 type MapT struct {
+	ID    string     `json:"id"`
 	Name  string     `json:"name"`
+	Desc  string     `json:"desc"`
 	W     float64    `json:"w"`
 	H     float64    `json:"h"`
 	Tower XY         `json:"tower"`
 	Paths []*MapPath `json:"paths"`
 	Plots []Plot     `json:"plots"`
+	// Lanes maps the wave table's three lanes (Group.Paths entries 0, 1, 2)
+	// to this map's paths; absent means lane i walks path i. A map with one
+	// street sends every lane down it.
+	Lanes []int `json:"lanes,omitempty"`
+	// HPMul scales every enemy's HP on this map (absent = 1): the one
+	// per-map balance knob, so each map plays as hard as Brasswick.
+	HPMul float64 `json:"hpMul,omitempty"`
+	// Scenery is drawing data for the TV and phone (canals, yards, ...);
+	// the server never reads it.
+	Scenery json.RawMessage `json:"scenery,omitempty"`
 }
 
-// Map is the one map, Brasswick.
-var Map = mustLoadMap(brasswickJSON)
+// Lane returns the path index enemies of wave lane l walk on m.
+func (m *MapT) Lane(l int) int {
+	if l >= 0 && l < len(m.Lanes) {
+		return m.Lanes[l]
+	}
+	return l
+}
+
+// hpMul is the map's enemy HP factor.
+func (m *MapT) hpMul() float64 {
+	if m.HPMul > 0 {
+		return m.HPMul
+	}
+	return 1
+}
+
+// Maps lists every map in menu order; Brasswick is first.
+var Maps = []*MapT{
+	mustLoadMap(brasswickJSON),
+	mustLoadMap(spindleJSON),
+	mustLoadMap(lockgateJSON),
+}
+
+// Map is Brasswick, the first map (the default for tests and tools).
+var Map = Maps[0]
+
+// MapRandom is the `map` command / `mapPick` value for "Surprise me".
+const MapRandom = "random"
+
+// MapByID returns the map with id, or nil.
+func MapByID(id string) *MapT {
+	for _, m := range Maps {
+		if m.ID == id {
+			return m
+		}
+	}
+	return nil
+}
 
 func mustLoadMap(b []byte) *MapT {
 	var m MapT

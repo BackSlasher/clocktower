@@ -1,4 +1,7 @@
-// Brasswick at night: the static town layers, drawn once from map data.
+// The town at night: the static layers, drawn once from map data. The street
+// layout, plots and clock come from the map; each map's look (ground, roofs,
+// street details) comes from THEMES, keyed by map id, and its scenery (canals,
+// yards) from map.scenery.
 //
 // Produces two offscreen canvases at logical 1920x1080 × `res`:
 //   base  - ground, cobbled streets, plaza, rooftops, lamp posts
@@ -11,7 +14,7 @@
 // own). The manifest always exists, so nothing is probed with a request that
 // 404s and the browser console stays clean.
 
-import { TAU, rng, distToPaths } from './geom.js';
+import { TAU, rng, distToPaths, gearPath } from './geom.js';
 
 export const STREET_W = 64;
 
@@ -37,6 +40,34 @@ export function probeBackdrop() {
   return probed;
 }
 
+// Per-map look. Brasswick is the original (and the fallback for unknown ids).
+const THEMES = {
+  brasswick: { seed: 0xb7a55 },
+  // the clockmakers' quarter: warm soot, copper and brass roofs, a tram rail down the street
+  spindle: {
+    seed: 0x5917d1e,
+    ground: ['#15130f', '40,33,24', '10,9,7'],
+    roofs: [
+      ['#4a2f26', '#36211b', '#5d3b2e'],
+      ['#5a4023', '#3f2c17', '#74542f'],
+      ['#2e4a43', '#22362f', '#3e6058'],
+      ['#38332d', '#29251f', '#4a443b'],
+    ],
+    rails: true,
+  },
+  // the canal quarter: damp green-grey ground, slate and verdigris roofs, water
+  lockgate: {
+    seed: 0x10c6a7e,
+    ground: ['#0d1817', '22,44,42', '6,12,12'],
+    roofs: [
+      ['#2c3a41', '#1f2a2f', '#3a4b53'],
+      ['#2e4a43', '#22362f', '#3e6058'],
+      ['#2a3436', '#1d2527', '#3a4749'],
+      ['#4a2f26', '#36211b', '#5d3b2e'],
+    ],
+  },
+};
+
 export function buildBackdrop(map, res) {
   const W = map.w || 1920;
   const H = map.h || 1080;
@@ -57,19 +88,22 @@ export function buildBackdrop(map, res) {
     return out;
   }
 
-  const R = rng(0xb7a55);
+  const theme = THEMES[map.id] || THEMES.brasswick;
+  const R = rng(theme.seed);
   const paths = map.paths;
   const T = map.tower;
+  const sc = map.scenery || {};
+  const [ground, mottleA, mottleB] = theme.ground || ['#0e1719', '20,36,38', '8,12,13'];
 
   // --- ground: damp soot with mottling
-  g.fillStyle = '#0e1719';
+  g.fillStyle = ground;
   g.fillRect(0, 0, W, H);
   for (let i = 0; i < 70; i++) {
     const x = R() * W;
     const y = R() * H;
     const r = 60 + R() * 220;
     const grd = g.createRadialGradient(x, y, 0, x, y, r);
-    const c = R() < 0.5 ? '20,36,38' : '8,12,13';
+    const c = R() < 0.5 ? mottleA : mottleB;
     grd.addColorStop(0, `rgba(${c},0.5)`);
     grd.addColorStop(1, `rgba(${c},0)`);
     g.fillStyle = grd;
@@ -79,6 +113,9 @@ export function buildBackdrop(map, res) {
     g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.18)';
     g.fillRect(R() * W, R() * H, 2, 2);
   }
+
+  // --- canals (under the streets; a street over water gets a bridge below)
+  if (sc.water) drawWater(g, lg, sc, R);
 
   // --- streets
   const strokePaths = (width, style) => {
@@ -95,8 +132,16 @@ export function buildBackdrop(map, res) {
   strokePaths(STREET_W + 26, '#07090a'); // gutter shadow
   strokePaths(STREET_W + 16, '#3b3631'); // kerb stones
   strokePaths(STREET_W + 8, '#15110f'); // kerb edge
-  strokePaths(STREET_W, g.createPattern(cobblePattern(R), 'repeat'));
+  const cobbles = g.createPattern(cobblePattern(R), 'repeat');
+  strokePaths(STREET_W, cobbles);
   strokePaths(STREET_W * 0.4, 'rgba(255,220,170,0.035)'); // worn centre
+  if (theme.rails) {
+    // a pair of brass tram rails down the middle of the street
+    strokePaths(24, 'rgba(0,0,0,0.4)');
+    strokePaths(20, 'rgba(201,154,74,0.6)');
+    strokePaths(14, cobbles);
+  }
+  if (sc.water) drawBridges(g, paths, sc.water);
 
   // --- clock plaza: concentric flagstones
   {
@@ -150,6 +195,8 @@ export function buildBackdrop(map, res) {
       const y = cy * CELL + CELL / 2;
       let blocked = distToPaths(paths, x, y) < STREET_W / 2 + 26;
       if (!blocked && Math.hypot(x - T.x, y - T.y) < 175) blocked = true;
+      if (!blocked && sc.water) blocked = sc.water.some((w) => distToPaths([w], x, y) < (w.w || 80) / 2 + 14);
+      if (!blocked && sc.yards) blocked = sc.yards.some((yd) => Math.hypot(x - yd.x, y - yd.y) < yd.r + 16);
       if (!blocked) {
         for (const p of map.plots) {
           if (Math.hypot(x - p.x, y - p.y) < 58) {
@@ -181,6 +228,9 @@ export function buildBackdrop(map, res) {
       }
     }
   };
+
+  // Yards: open courts with a brass centrepiece (scenery.yards).
+  for (const yd of sc.yards || []) drawYard(g, lg, yd, R);
 
   // Lamps first (they reserve small spots along the kerbs).
   const lamps = [];
@@ -232,7 +282,7 @@ export function buildBackdrop(map, res) {
   }
   blds.sort((a, b) => a.y + a.h - (b.y + b.h));
 
-  const roofs = [
+  const roofs = theme.roofs || [
     ['#2c3a41', '#1f2a2f', '#3a4b53'], // slate
     ['#2e4a43', '#22362f', '#3e6058'], // verdigris copper
     ['#4a2f26', '#36211b', '#5d3b2e'], // rust tile
@@ -385,6 +435,287 @@ export function buildBackdrop(map, res) {
     lg.fillRect(ex - 140, ey - 140, 280, 280);
   }
   return out;
+}
+
+// Canals: stone banks, dark water with a sheen, lock gates and moored boats.
+function drawWater(g, lg, sc, R) {
+  const trace = (w) => {
+    g.beginPath();
+    w.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+  };
+  g.lineJoin = 'miter';
+  g.lineCap = 'butt';
+  for (const w of sc.water) {
+    const ww = w.w || 80;
+    trace(w);
+    g.lineWidth = ww + 30;
+    g.strokeStyle = '#07090a';
+    g.stroke();
+    trace(w);
+    g.lineWidth = ww + 18;
+    g.strokeStyle = '#47423a'; // coping stones
+    g.stroke();
+    trace(w);
+    g.lineWidth = ww + 6;
+    g.strokeStyle = '#1a1714';
+    g.stroke();
+    trace(w);
+    g.lineWidth = ww;
+    g.strokeStyle = '#0f2b33';
+    g.stroke();
+    trace(w);
+    g.lineWidth = ww * 0.55;
+    g.strokeStyle = 'rgba(40,96,108,0.35)';
+    g.stroke();
+  }
+  // ripples: short pale dashes along each channel
+  g.lineCap = 'round';
+  for (const w of sc.water) {
+    const ww = w.w || 80;
+    for (let i = 1; i < w.pts.length; i++) {
+      const [ax, ay] = w.pts[i - 1];
+      const [bx, by] = w.pts[i];
+      const len = Math.hypot(bx - ax, by - ay);
+      const ux = (bx - ax) / len;
+      const uy = (by - ay) / len;
+      for (let d = 20; d < len; d += 26 + R() * 30) {
+        const off = (R() - 0.5) * ww * 0.7;
+        const x = ax + ux * d - uy * off;
+        const y = ay + uy * d + ux * off;
+        const l = 8 + R() * 14;
+        g.strokeStyle = `rgba(150,200,210,${0.08 + R() * 0.1})`;
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x + ux * l, y + uy * l);
+        g.stroke();
+      }
+    }
+  }
+  // lock gates: two heavy timber beams meeting in a shallow V, with balance arms
+  for (const lk of sc.locks || []) {
+    const half = (lk.w || 80) / 2 + 8;
+    const a = lk.a || 0; // the channel's direction at the gate (radians)
+    const nx = -Math.sin(a);
+    const ny = Math.cos(a);
+    const ux = Math.cos(a);
+    const uy = Math.sin(a);
+    const tip = { x: lk.x + ux * 12, y: lk.y + uy * 12 };
+    for (const s of [-1, 1]) {
+      const bx = lk.x + nx * half * s;
+      const by = lk.y + ny * half * s;
+      g.lineCap = 'butt';
+      g.strokeStyle = 'rgba(0,0,0,0.5)';
+      g.lineWidth = 14;
+      g.beginPath();
+      g.moveTo(bx + 3, by + 4);
+      g.lineTo(tip.x + 3, tip.y + 4);
+      g.stroke();
+      g.strokeStyle = '#4a3220';
+      g.lineWidth = 10;
+      g.beginPath();
+      g.moveTo(bx, by);
+      g.lineTo(tip.x, tip.y);
+      g.stroke();
+      g.strokeStyle = '#8f6a2a';
+      g.lineWidth = 2;
+      g.stroke();
+      // balance beam on the bank
+      g.strokeStyle = '#3a2718';
+      g.lineWidth = 8;
+      g.beginPath();
+      g.moveTo(bx, by);
+      g.lineTo(bx - ux * 46 + nx * 10 * s, by - uy * 46 + ny * 10 * s);
+      g.stroke();
+    }
+    const grd = lg.createRadialGradient(lk.x, lk.y, 0, lk.x, lk.y, 90);
+    grd.addColorStop(0, 'rgba(255,190,90,0.25)');
+    grd.addColorStop(1, 'rgba(255,190,90,0)');
+    lg.fillStyle = grd;
+    lg.fillRect(lk.x - 90, lk.y - 90, 180, 180);
+  }
+  // narrowboats: long hulls with a cabin and a lit window
+  for (const b of sc.boats || []) {
+    g.save();
+    g.translate(b.x, b.y);
+    g.rotate(b.a || 0);
+    const L = b.len || 150;
+    const Wd = 30;
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    roundRect(g, -L / 2 + 4, -Wd / 2 + 5, L, Wd, 12);
+    g.fill();
+    g.fillStyle = b.color || '#2f4a2c';
+    roundRect(g, -L / 2, -Wd / 2, L, Wd, 12);
+    g.fill();
+    g.strokeStyle = '#8f6a2a';
+    g.lineWidth = 2;
+    g.stroke();
+    g.fillStyle = '#5a3a2c';
+    g.fillRect(-L / 2 + 22, -Wd / 2 + 5, L * 0.55, Wd - 10);
+    g.fillStyle = '#3a271c';
+    for (let x = -L / 2 + 30; x < -L / 2 + 22 + L * 0.55 - 6; x += 16) g.fillRect(x, -Wd / 2 + 5, 2, Wd - 10);
+    g.fillStyle = '#ffcf7a';
+    g.fillRect(-L / 2 + 22 + L * 0.55 - 14, -4, 7, 8);
+    g.fillStyle = '#1b1a18';
+    g.beginPath();
+    g.arc(L / 2 - 26, 0, 5, 0, TAU);
+    g.fill();
+    g.restore();
+    const grd = lg.createRadialGradient(b.x, b.y, 0, b.x, b.y, 60);
+    grd.addColorStop(0, 'rgba(255,180,80,0.18)');
+    grd.addColorStop(1, 'rgba(255,180,80,0)');
+    lg.fillStyle = grd;
+    lg.fillRect(b.x - 60, b.y - 60, 120, 120);
+  }
+}
+
+// Bridges: wherever a street crosses a canal, iron railings along both kerbs.
+function drawBridges(g, paths, water) {
+  for (const p of paths) {
+    for (let i = 1; i < p.pts.length; i++) {
+      const [ax, ay] = p.pts[i - 1];
+      const [bx, by] = p.pts[i];
+      for (const w of water) {
+        for (let j = 1; j < w.pts.length; j++) {
+          const hit = segCross(ax, ay, bx, by, ...w.pts[j - 1], ...w.pts[j]);
+          if (!hit) continue;
+          const len = Math.hypot(bx - ax, by - ay);
+          const ux = (bx - ax) / len;
+          const uy = (by - ay) / len;
+          const span = (w.w || 80) / 2 + 14;
+          for (const s of [-1, 1]) {
+            const ox = -uy * s * (STREET_W / 2 + 5);
+            const oy = ux * s * (STREET_W / 2 + 5);
+            g.lineCap = 'butt';
+            g.strokeStyle = 'rgba(0,0,0,0.55)';
+            g.lineWidth = 9;
+            g.beginPath();
+            g.moveTo(hit.x - ux * span + ox + 2, hit.y - uy * span + oy + 3);
+            g.lineTo(hit.x + ux * span + ox + 2, hit.y + uy * span + oy + 3);
+            g.stroke();
+            g.strokeStyle = '#6b5a3c';
+            g.lineWidth = 6;
+            g.beginPath();
+            g.moveTo(hit.x - ux * span + ox, hit.y - uy * span + oy);
+            g.lineTo(hit.x + ux * span + ox, hit.y + uy * span + oy);
+            g.stroke();
+            g.fillStyle = '#c99a4a';
+            for (const e of [-1, 1]) {
+              g.beginPath();
+              g.arc(hit.x + ux * span * e + ox, hit.y + uy * span * e + oy, 5, 0, TAU);
+              g.fill();
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function segCross(ax, ay, bx, by, cx, cy, dx, dy) {
+  const r = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+  if (!r) return null;
+  const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / r;
+  const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / r;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t };
+}
+
+// A yard: a ring of flagstones with a brass centrepiece — a coiled mainspring
+// ("spring") or a great gear set into the ground ("gear").
+function drawYard(g, lg, yd, R) {
+  const { x, y, r } = yd;
+  g.fillStyle = 'rgba(0,0,0,0.45)';
+  g.beginPath();
+  g.arc(x + 4, y + 6, r + 10, 0, TAU);
+  g.fill();
+  g.fillStyle = '#2a2621';
+  g.beginPath();
+  g.arc(x, y, r + 8, 0, TAU);
+  g.fill();
+  g.fillStyle = '#3a352f';
+  g.beginPath();
+  g.arc(x, y, r, 0, TAU);
+  g.fill();
+  // flagstone joints
+  g.strokeStyle = 'rgba(0,0,0,0.35)';
+  g.lineWidth = 1.5;
+  for (let rr = 26; rr < r; rr += 24) {
+    g.beginPath();
+    g.arc(x, y, rr, 0, TAU);
+    g.stroke();
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * TAU + R() * 0.1;
+    g.beginPath();
+    g.moveTo(x + Math.cos(a) * 26, y + Math.sin(a) * 26);
+    g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    g.stroke();
+  }
+  g.lineWidth = 4;
+  g.strokeStyle = '#8f6a2a';
+  g.beginPath();
+  g.arc(x, y, r + 4, 0, TAU);
+  g.stroke();
+  if (yd.kind === 'gear') {
+    gearPath(g, x, y, r * 0.62, 14, 0.1, 0.2);
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    g.save();
+    g.translate(3, 5);
+    g.fill();
+    g.restore();
+    gearPath(g, x, y, r * 0.62, 14, 0.1, 0.2);
+    g.fillStyle = '#6e5224';
+    g.fill();
+    g.strokeStyle = '#c99a4a';
+    g.lineWidth = 2;
+    g.stroke();
+    g.fillStyle = '#3a352f';
+    g.beginPath();
+    g.arc(x, y, r * 0.22, 0, TAU);
+    g.fill();
+    g.stroke();
+  } else {
+    // a coiled mainspring: an Archimedean spiral of brass strip
+    const turns = 4.2;
+    const r0 = r * 0.1;
+    const r1 = r * 0.8;
+    const spiral = () => {
+      g.beginPath();
+      for (let t = 0; t <= 1; t += 0.004) {
+        const a = t * turns * TAU;
+        const rr = r0 + (r1 - r0) * t;
+        const px = x + Math.cos(a) * rr;
+        const py = y + Math.sin(a) * rr;
+        t ? g.lineTo(px, py) : g.moveTo(px, py);
+      }
+    };
+    g.lineCap = 'round';
+    g.save();
+    g.translate(3, 5);
+    spiral();
+    g.strokeStyle = 'rgba(0,0,0,0.45)';
+    g.lineWidth = 9;
+    g.stroke();
+    g.restore();
+    spiral();
+    g.strokeStyle = '#8f6a2a';
+    g.lineWidth = 8;
+    g.stroke();
+    spiral();
+    g.strokeStyle = '#e0b860';
+    g.lineWidth = 2.5;
+    g.stroke();
+    g.fillStyle = '#c99a4a';
+    g.beginPath();
+    g.arc(x, y, r0 + 4, 0, TAU);
+    g.fill();
+  }
+  const grd = lg.createRadialGradient(x, y, 0, x, y, r * 1.2);
+  grd.addColorStop(0, 'rgba(255,190,90,0.22)');
+  grd.addColorStop(1, 'rgba(255,190,90,0)');
+  lg.fillStyle = grd;
+  lg.fillRect(x - r * 1.2, y - r * 1.2, r * 2.4, r * 2.4);
 }
 
 function roofLines(g, x, y, w, h, horiz) {

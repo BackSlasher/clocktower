@@ -14,6 +14,8 @@ const dt = 1.0 / 30
 func newGame(t *testing.T, n int) (*Game, []string) {
 	t.Helper()
 	g := New(rand.New(rand.NewPCG(1, 2)))
+	g.mapPick = Map.ID // the tests are laid out on Brasswick
+	g.reset()
 	var ids []string
 	for i := 0; i < n; i++ {
 		id, _, err := g.AddPlayer("P" + string(rune('A'+i)))

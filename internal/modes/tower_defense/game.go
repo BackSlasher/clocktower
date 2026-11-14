@@ -122,11 +122,14 @@ type Game struct {
 
 	slowVer uint64
 	end     *End
+
+	m       *MapT  // the map in play (in the lobby: the picked one, Brasswick for "Surprise me")
+	mapPick string // the host's choice: a map id or MapRandom
 }
 
 // New creates a game in the lobby phase.
 func New(rng *rand.Rand) *Game {
-	g := &Game{rng: rng, phase: PhaseLobby, nextPID: 1}
+	g := &Game{rng: rng, phase: PhaseLobby, nextPID: 1, mapPick: MapRandom}
 	g.reset()
 	return g
 }
@@ -136,7 +139,11 @@ func (g *Game) reset() {
 	g.time, g.wave, g.buildLeft, g.waveTime = 0, 0, 0, 0
 	g.plotsFor = 0
 	g.lives = Defs.MaxLives
-	g.towers = make([]*tower, len(Map.Plots))
+	g.m = MapByID(g.mapPick)
+	if g.m == nil {
+		g.m = Maps[0]
+	}
+	g.towers = make([]*tower, len(g.m.Plots))
 	g.enemies = nil
 	g.byID = map[int]*enemy{}
 	g.spawns, g.hits, g.events = nil, nil, nil
@@ -474,6 +481,34 @@ func (g *Game) Apply(pid string, c Cmd) error {
 		return g.Perk(pid, c.ID)
 	case "go":
 		return g.Go(pid)
+	case "map":
+		return g.PickMap(pid, c.ID)
+	}
+	return nil
+}
+
+// Map is the map in play (in the lobby: the one picked, or Brasswick while
+// the pick is "Surprise me").
+func (g *Game) Map() *MapT { return g.m }
+
+// MapPick is the host's map choice: a map id or MapRandom.
+func (g *Game) MapPick() string { return g.mapPick }
+
+// PickMap sets the map for the next game (host, lobby): a map id, or
+// MapRandom to draw one at Start.
+func (g *Game) PickMap(pid, id string) error {
+	if pid != g.host {
+		return ErrNotHost
+	}
+	if g.phase != PhaseLobby {
+		return badReq("Pick the map in the lobby")
+	}
+	if id != MapRandom && MapByID(id) == nil {
+		return badReq("No such map")
+	}
+	if id != g.mapPick {
+		g.mapPick = id
+		g.reset()
 	}
 	return nil
 }
@@ -485,6 +520,10 @@ func (g *Game) Start(pid string) error {
 	}
 	if g.phase != PhaseLobby || len(g.players) == 0 {
 		return badReq("The game has already started")
+	}
+	if g.mapPick == MapRandom {
+		g.m = Maps[g.rng.IntN(len(Maps))]
+		g.towers = make([]*tower, len(g.m.Plots))
 	}
 	g.phase = PhaseBuild
 	g.wave = 1
@@ -536,7 +575,7 @@ func (g *Game) Build(pid string, plot int, kind string) error {
 	if !g.plotOK(plot) {
 		return badReq("No such plot")
 	}
-	if !PlotOpen(plot, g.plotsFor) {
+	if !g.m.PlotOpen(plot, g.plotsFor) {
 		return badReq("That plot is only open for bigger groups")
 	}
 	def := Defs.Towers[kind]
@@ -714,10 +753,14 @@ func (g *Game) emit(ev any) { g.events = append(g.events, ev) }
 // RoomState builds the `room` message.
 func (g *Game) RoomState() *RoomMsg {
 	m := &RoomMsg{T: "room", Mode: ModeID, Phase: g.phase, Host: g.host, Wave: g.wave, PlotsFor: g.PlotsFor(), NextWave: []WaveEntry{}, End: g.end,
+		Map: g.m.ID, MapPick: g.mapPick,
 		Players: make([]PlayerInfo, 0, len(g.players))}
 	for _, p := range g.players {
 		m.Players = append(m.Players, PlayerInfo{ID: p.id, Name: p.name, Color: p.color, Connected: p.connected, Ready: p.ready,
 			Offer: slices.Clone(p.offer), Perks: maps.Clone(p.perks), Costs: costTable(p), Free: p.free})
+	}
+	if g.phase == PhaseLobby && g.mapPick == MapRandom {
+		m.Map = "" // drawn at start
 	}
 	if g.phase == PhaseBuild && g.wave >= 1 && g.wave <= len(Defs.WaveDefs) {
 		m.NextWave = WavePreview(g.wave)

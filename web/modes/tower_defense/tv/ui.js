@@ -40,6 +40,9 @@ export class UI {
 
     const phase = room.phase;
     const inGame = phase === 'build' || phase === 'wave';
+    this.renderMapTag(room, game);
+    // the game has just started: name the town being defended
+    if (inGame && prev?.phase === 'lobby' && game?.map) this.banner(game.map.name, game.map.desc || '', 'clear');
     if (phase === 'lobby') {
       this.show('lobby');
       this.clearBanners();
@@ -53,7 +56,7 @@ export class UI {
       const live = prev && (prev.phase === 'wave' || prev.phase === 'build');
       if (live) {
         clearTimeout(this.endTimer);
-        this.banner(phase === 'won' ? 'Brasswick stands!' : 'The Clock has stopped', '', phase === 'won' ? 'win' : 'boss');
+        this.banner(phase === 'won' ? `${game?.map?.name || 'Brasswick'} stands!` : 'The Clock has stopped', '', phase === 'won' ? 'win' : 'boss');
         this.endTimer = setTimeout(() => {
           this.endTimer = null;
           this.show('end');
@@ -61,6 +64,20 @@ export class UI {
       } else if (!this.endTimer) this.show('end');
     }
     this.updatePaused(room);
+  }
+
+  // Lobby: which map the host has picked (top right, above the shell's player list).
+  renderMapTag(room, game) {
+    const el = $('mapTag');
+    const random = room.mapPick === 'random' || !room.map;
+    const m = random ? null : game?.map;
+    const key = JSON.stringify([room.phase, random, m?.id]);
+    if (key === this.mapTagKey) return;
+    this.mapTagKey = key;
+    el.classList.toggle('on', room.phase === 'lobby' && (this.welcome?.defs?.maps?.length || 0) > 1);
+    el.innerHTML = random
+      ? `<div class="ml">Map</div><div class="mn">Surprise me</div><div class="md">A map drawn at random when the game starts</div>`
+      : `<div class="ml">Map</div><div class="mn">${esc(m?.name || '')}</div><div class="md">${esc(m?.desc || '')}</div>`;
   }
 
   show(which) {
