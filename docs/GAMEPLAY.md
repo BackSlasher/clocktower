@@ -1,6 +1,8 @@
-# How Clocktower plays
+# How Cobble Crawlers plays
 
-Clocktower is a co-op game for one to eight people. One screen (the TV) shows the town of Brasswick; every player uses their own phone as a controller. The team shares 20 lives and has to hold out for 15 waves of scrap-metal machines marching on the Great Clock.
+Cobble Crawlers is Clocktower's tower defence game (the other game, Hold the Keep, is described in [CATAPULT_COOP.md](CATAPULT_COOP.md)). It is a co-op game for one to eight people. In the lobby the host picks one of three maps (Brasswick, Spindle Row, Lockgate Canal) or leaves it on "Surprise me". Every map has the same towers, enemies and waves.
+
+One screen (the TV) shows the map; every player uses their own phone as a controller. The team shares 20 lives and has to hold out for 15 waves of scrap-metal machines marching on the Great Clock.
 
 This page is for players and whoever is hosting. To get the game running, see [RUNNING.md](RUNNING.md).
 

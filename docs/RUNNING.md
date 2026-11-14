@@ -27,6 +27,7 @@ go build -o bin/clocktower ./cmd/clocktower
 | | `-dev` | off | Serve `web/` from disk (caching disabled) instead of the embedded copy. |
 | | `-web-dir` | `web` | Web directory used with `-dev`. |
 | | `-speed` | `1` | Run the simulation N times faster (1 to 50; testing only). |
+| `CLOCKTOWER_WIP_MODES` | `-wip-modes` | off | Also offer the games still in progress (currently Hold the Keep). Any non-empty value of the env var turns it on. |
 | | `-stub-mode` | off | Also register the dev-only `stub` mode ("Stub"), so the lobby offers a choice of modes (testing only; the container image does not set it). |
 
 The wire-level details of these are in [PROTOCOL.md](PROTOCOL.md).
