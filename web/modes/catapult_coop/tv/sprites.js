@@ -3,13 +3,11 @@
 //   bombSprites[kind](g, x, y, s, t)      a bomb standing on (x, y) (bottom centre), scale s
 //   drawEngineer(g, e)                     an engineer standing on (e.sx, e.sy)
 //   drawCatapult(g, S, c)                  a catapult on its wall cell, arm angle c.phi
-//   drawMachine(g, S, m)                   a machine on a lane (the tower defense's creatures,
-//                                          laid on the ground plane of the iso view)
+//   drawMachine(g, S, m)                   a clockwork machine standing on a lane ring
 //
 // Sprites are designed at a tile width of 130 logical px and scaled by S.k.
 
 import { TAU, softSprite } from '../../tower_defense/tv/geom.js';
-import { enemySprites } from '../../tower_defense/tv/sprites.js';
 
 const circle = (g, x, y, r) => {
   g.beginPath();
@@ -238,6 +236,17 @@ export function drawEngineer(g, e) {
   g.beginPath();
   g.ellipse(0, 0, 22 * k, 9 * k, 0, 0, TAU);
   g.fill();
+  if (e.ring) {
+    // a ring in the player's colour under the feet, matching their card in the queue strip
+    g.beginPath();
+    g.ellipse(0, 0, 25 * k, 11 * k, 0, 0, TAU);
+    g.lineWidth = 7 * k;
+    g.strokeStyle = 'rgba(20,14,8,0.85)';
+    g.stroke();
+    g.lineWidth = 4 * k;
+    g.strokeStyle = color;
+    g.stroke();
+  }
   g.scale(k * f, k);
   if (e.dim) g.globalAlpha = 0.72;
   const bob = e.walk >= 0 ? -Math.abs(Math.sin(e.walk * Math.PI * 2)) * 3 : Math.sin(e.t * 2.2) * 0.8;
@@ -455,10 +464,10 @@ export function drawCatapult(g, S, c) {
   const pz = z0 + SC * 1.0; // pivot height
   const side = (v) => {
     // sled runner, A-frame and brass caps on one side
-    beam(P(-0.46, v, z0 + SC * 0.07), P(0.46, v, z0 + SC * 0.07), 11 * k, '#8a5c34');
-    beam(P(-0.38, v, z0 + SC * 0.1), P(0, v, pz), 10 * k, '#a87444');
-    beam(P(0.38, v, z0 + SC * 0.1), P(0, v, pz), 10 * k, '#a87444');
-    beam(P(-0.19, v, z0 + SC * 0.5), P(0.19, v, z0 + SC * 0.5), 6 * k, '#8a5c34');
+    beam(P(-0.46, v, z0 + SC * 0.07), P(0.46, v, z0 + SC * 0.07), 11 * k, '#9a4426');
+    beam(P(-0.38, v, z0 + SC * 0.1), P(0, v, pz), 10 * k, '#b8582c');
+    beam(P(0.38, v, z0 + SC * 0.1), P(0, v, pz), 10 * k, '#b8582c');
+    beam(P(-0.19, v, z0 + SC * 0.5), P(0.19, v, z0 + SC * 0.5), 6 * k, '#9a4426');
     const cap = P(0, v, pz);
     g.fillStyle = '#d9b25a';
     g.beginPath();
@@ -500,11 +509,11 @@ export function drawCatapult(g, S, c) {
   g.ellipse(sc[0], sc[1], S.TW * 0.42, S.TH * 0.42, 0, 0, TAU);
   g.fill();
   // cross beams of the sled
-  beam(P(-0.4, -0.34, z0 + SC * 0.06), P(-0.4, 0.34, z0 + SC * 0.06), 7 * k, '#6a4426');
-  beam(P(0.4, -0.34, z0 + SC * 0.06), P(0.4, 0.34, z0 + SC * 0.06), 7 * k, '#6a4426');
+  beam(P(-0.4, -0.34, z0 + SC * 0.06), P(-0.4, 0.34, z0 + SC * 0.06), 7 * k, '#6e2e18');
+  beam(P(0.4, -0.34, z0 + SC * 0.06), P(0.4, 0.34, z0 + SC * 0.06), 7 * k, '#6e2e18');
   side(vFar);
   // winch drum between the runners at the keep end, with its rope up to the arm
-  beam(P(-0.3, -0.3, z0 + SC * 0.2), P(-0.3, 0.3, z0 + SC * 0.2), 11 * k, '#5a3a1c');
+  beam(P(-0.3, -0.3, z0 + SC * 0.2), P(-0.3, 0.3, z0 + SC * 0.2), 11 * k, '#5a2614');
   g.strokeStyle = 'rgba(200,170,110,0.6)';
   g.lineWidth = 2 * k;
   for (let i = -2; i <= 2; i++) {
@@ -538,7 +547,7 @@ export function drawCatapult(g, S, c) {
   g.stroke();
   // axle
   beam(P(0, -0.36, pz), P(0, 0.36, pz), 5 * k, '#3a3632', '#111');
-  beam(w, q, 13 * k, '#b47a46');
+  beam(w, q, 13 * k, '#c4643a');
   // iron bands on the arm
   g.strokeStyle = '#2b2a28';
   g.lineWidth = 3 * k;
@@ -614,120 +623,292 @@ export function drawCatapult(g, S, c) {
 
 // ---------------------------------------------------------------- machines
 
-// The tower defense draws its creatures top-down, facing +x, around a radius r (px). Here each
-// is laid along its lane's direction on screen, seen from above at a steep angle (squashed
-// across), raised a little over a dark underside so it reads as a body, not a decal.
-export const MACHINE_R = { scrap: 20, roach: 15, brute: 29, baron: 46 }; // TD radius x its visual scale
-export const MACHINE_CELLS = { scrap: 0.46, roach: 0.38, brute: 0.58, baron: 0.74 }; // radius in cells
-const SQUASH = 0.84;
+// Clockwork machines standing upright on their lane rings, in the same view as the engineers:
+// drawn in screen space around their foot point, facing the keep, with a ground shadow.
+// Designed at TW = 130 (like the engineers), from the little Scrapling to the Iron Baron.
+//   drawMachine(g, S, m)        m = { kind, x, y (grid), z, a (heading toward the keep, grid
+//                               radians), t, walk (0..1), flash, alpha, frozen }
+//   drawMachineShadow(g, S, m)  a machine arriving next turn: a pulsing ghost on its ring
+export const MACHINE_CELLS = { scrap: 0.36, roach: 0.42, brute: 0.52, baron: 0.68 }; // footprint radius in cells
+const MACHINE_K = { scrap: 1.3, roach: 1.5, brute: 1.3, baron: 1.25 }; // drawn size (engineers are 1.3)
 
-// screen frame for a machine at grid (x, y, z) heading a (grid radians): [hx, hy, nx, ny] unit vectors
-function frame(S, x, y, z, a) {
-  const [x0, y0] = S.p(x, y, z);
-  const [x1, y1] = S.p(x + Math.cos(a), y + Math.sin(a), z);
-  const L = Math.hypot(x1 - x0, y1 - y0) || 1;
-  const hx = (x1 - x0) / L;
-  const hy = (y1 - y0) / L;
-  return [x0, y0, hx, hy, -hy, hx];
+const OUTLINE = '#21170e';
+
+function hexRGB(c) {
+  const n = parseInt(c.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-function sized(S, kind, scale = 1) {
-  const r = MACHINE_R[kind] || 20;
-  const cells = (MACHINE_CELLS[kind] || 0.34) * scale;
-  return { r, cells, px: cells * S.TW * 0.62, s: (cells * S.TW * 0.62) / r };
+function mixer(m) {
+  if (m.ghost) return () => m.ghost;
+  const fl = Math.max(0, Math.min(1, m.flash || 0));
+  const fr = m.frozen > 0 ? 0.38 : 0;
+  if (!fl && !fr) return (c) => c;
+  return (c) => {
+    let [r, g, b] = hexRGB(c);
+    if (fr) {
+      r += (168 - r) * fr;
+      g += (220 - g) * fr;
+      b += (255 - b) * fr;
+    }
+    r += (255 - r) * fl;
+    g += (255 - g) * fl;
+    b += (255 - b) * fl;
+    return `rgb(${r | 0},${g | 0},${b | 0})`;
+  };
 }
 
-// The sprite is rendered into a small scratch canvas first, so the dark underside and the
-// incoming silhouettes are a cheap 'source-atop' fill instead of a canvas filter (filters are
-// very slow on software-rendered canvases).
-const scratch = { a: null, b: null };
-function spriteTo(S, kind, r, t, dark) {
-  const q = Math.max(0.6, Math.min(4, (sized(S, kind).s * (S.px || 1)) * 1.25));
-  const half = Math.ceil(r * (kind === 'baron' ? 3 : 2.2));
-  const n = Math.ceil(half * 2 * q);
-  if (!scratch.a) {
-    scratch.a = document.createElement('canvas');
-    scratch.b = document.createElement('canvas');
-  }
-  const A = scratch.a;
-  const B = scratch.b;
-  for (const c of [A, B]) {
-    if (c.width < n) c.width = c.height = n;
-  }
-  const ga = A.getContext('2d');
-  ga.setTransform(1, 0, 0, 1, 0, 0);
-  ga.clearRect(0, 0, n, n);
-  ga.setTransform(q, 0, 0, q, half * q, half * q);
-  (enemySprites[kind] || enemySprites._default)(ga, { x: 0, y: 0, a: 0, r, t, hp: 1, flags: 0, def: {}, flash: 0 });
-  let gb = null;
-  if (dark !== undefined) {
-    gb = B.getContext('2d');
-    gb.setTransform(1, 0, 0, 1, 0, 0);
-    gb.globalCompositeOperation = 'source-over';
-    gb.clearRect(0, 0, n, n);
-    gb.drawImage(A, 0, 0);
-    gb.globalCompositeOperation = 'source-atop';
-    gb.fillStyle = dark;
-    gb.fillRect(0, 0, n, n);
-    gb.globalCompositeOperation = 'source-over';
-  }
-  return { n, half, q };
-}
-
-// m = { kind, x, y (grid), z, a (heading, grid radians), t, flash, alpha, scale }
-export function drawMachine(g, S, m) {
-  const { r, px, s } = sized(S, m.kind, m.scale);
-  const lift = 9 * S.k + px * 0.12;
-  const [sx, sy, hx, hy, nx, ny] = frame(S, m.x, m.y, m.z, m.a);
-  const alpha = m.alpha ?? 1;
-  // shadow
-  g.globalAlpha = alpha;
-  g.fillStyle = 'rgba(0,0,0,0.5)';
+function rr(g, x, y, w, h, r) {
   g.beginPath();
-  g.ellipse(sx, sy + 2 * S.k, px * 1.05, px * 0.5, 0, 0, TAU);
-  g.fill();
-  const { n, half, q } = spriteTo(S, m.kind, r, m.t, 'rgba(12,10,8,0.82)');
-  // dark underside, a little lower, then the body
-  for (const [img, dy] of [[scratch.b, lift * 0.35], [scratch.a, lift]]) {
-    g.save();
-    g.transform(hx * s, hy * s, nx * s * SQUASH, ny * s * SQUASH, sx, sy - dy);
-    g.drawImage(img, 0, 0, n, n, -half, -half, n / q, n / q);
-    g.restore();
-  }
-  g.globalAlpha = 1;
-  if (m.flash > 0) {
-    const rr = px * 1.9;
-    g.globalCompositeOperation = 'lighter';
-    g.globalAlpha = Math.min(1, m.flash);
-    g.drawImage(softSprite('rgba(255,240,210,1)', 64, 0.35), sx - rr, sy - lift - rr * 0.8, rr * 2, rr * 1.6);
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
-  }
-  return sy - lift - px; // top of the sprite on screen
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
 }
 
-// an incoming arrival: the same creature as a dark, pulsing silhouette with an amber ring
-export function drawMachineShadow(g, S, m) {
-  const { r, px, s } = sized(S, m.kind);
-  const [sx, sy, hx, hy, nx, ny] = frame(S, m.x, m.y, m.z, m.a);
-  const a = m.alpha ?? 0.5;
+function fillOut(g, col, lw = 2.4) {
+  g.fillStyle = col;
+  g.fill();
+  g.lineWidth = lw;
+  g.strokeStyle = g._out;
+  g.stroke();
+}
+
+function limb(g, x0, y0, x1, y1, w, col) {
+  g.lineCap = 'round';
+  g.strokeStyle = g._out;
+  g.lineWidth = w + 4;
+  g.beginPath();
+  g.moveTo(x0, y0);
+  g.lineTo(x1, y1);
+  g.stroke();
+  g.strokeStyle = col;
+  g.lineWidth = w;
+  g.stroke();
+}
+
+function dot(g, x, y, r, col, out = true) {
+  g.beginPath();
+  g.arc(x, y, r, 0, TAU);
+  if (out) fillOut(g, col, 2);
+  else {
+    g.fillStyle = col;
+    g.fill();
+  }
+}
+
+// a tin-can walker: one big lamp eye, an antenna with a red bulb, a pincer
+function paintScrap(g, C, t, walk) {
+  const ph = Math.sin(t * 9) * 6 * walk;
+  limb(g, -6, -16, -7 + ph, -2, 5, C('#4b4d55'));
+  limb(g, 6, -16, 7 - ph, -2, 5, C('#5b5e66'));
+  g.beginPath();
+  g.ellipse(-6 + ph, -1, 6, 3, 0, 0, TAU);
+  fillOut(g, C('#3a3c42'), 2);
+  g.beginPath();
+  g.ellipse(8 - ph, -1, 6, 3, 0, 0, TAU);
+  fillOut(g, C('#3a3c42'), 2);
+  limb(g, -4, -40, -9, -50, 2.5, C('#5b5e66'));
+  dot(g, -9, -51, 3.6, C('#ff4a2e'));
+  rr(g, -15, -42, 30, 28, 7);
+  fillOut(g, C('#d8702f'));
+  g.fillStyle = C('#a8501d');
+  g.fillRect(-13, -21, 26, 5);
+  for (const [x, y] of [[-11, -38], [11, -38], [-11, -19], [11, -19]]) dot(g, x, y, 1.6, C('#f3c46a'), false);
+  dot(g, 5, -30, 7.5, C('#2b2c30'));
+  dot(g, 5, -30, 5, C('#ffd23a'), false);
+  dot(g, 6.5, -30, 2, C('#2b2c30'), false);
+  limb(g, 13, -24, 21, -18, 3.5, C('#5b5e66'));
+  g.strokeStyle = C('#3a3c42');
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(21, -18);
+  g.lineTo(26, -22);
+  g.moveTo(21, -18);
+  g.lineTo(26, -14);
+  g.stroke();
+  return -56;
+}
+
+// a copper beetle on six legs with a wind-up key on its back
+function paintRoach(g, C, t, walk) {
+  const ph = Math.sin(t * 16) * 4 * (0.3 + walk);
+  for (let i = 0; i < 3; i++) {
+    const x = -13 + i * 12;
+    const s = i % 2 ? 1 : -1;
+    limb(g, x, -10, x - 5 + ph * s, 0, 2.6, C('#3a2a1c'));
+  }
+  g.beginPath();
+  g.ellipse(-1, -15, 22, 12, 0, 0, TAU);
+  fillOut(g, C('#c26a2a'));
+  g.strokeStyle = C('#8a4518');
+  g.lineWidth = 2;
+  for (const x of [-9, 2]) {
+    g.beginPath();
+    g.moveTo(x, -26);
+    g.quadraticCurveTo(x + 3, -15, x, -4);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(255,255,255,0.3)';
+  g.beginPath();
+  g.ellipse(-6, -21, 9, 3.5, -0.2, 0, TAU);
+  g.fill();
+  dot(g, 21, -12, 7, C('#5a3820'));
+  dot(g, 24, -14, 2.4, C('#ff3a20'), false);
+  g.strokeStyle = g._out;
+  g.lineWidth = 1.8;
+  g.beginPath();
+  g.moveTo(25, -17);
+  g.quadraticCurveTo(32, -26, 36, -22);
+  g.moveTo(23, -18);
+  g.quadraticCurveTo(28, -30, 33, -29);
+  g.stroke();
+  limb(g, -2, -26, -2, -31, 2.5, C('#c9a040'));
+  const sx = Math.cos(t * 5);
   g.save();
-  g.globalAlpha = Math.min(1, a * 1.1);
-  g.drawImage(softSprite('rgba(255,170,70,1)', 64, 0.2), sx - px * 1.6, sy - px * 1.1, px * 3.2, px * 1.8);
-  g.globalAlpha = Math.min(1, a * 1.6);
+  g.translate(-2, -34);
+  g.scale(Math.abs(sx) < 0.15 ? 0.15 : sx, 1);
+  dot(g, -5, 0, 4.2, C('#e6b443'));
+  dot(g, 5, 0, 4.2, C('#e6b443'));
+  g.restore();
+  return -40;
+}
+
+// a brass boiler on legs: furnace window, visor eye, piston arms, smokestack
+function paintBrute(g, C, t, walk) {
+  const ph = Math.sin(t * 6) * 7 * walk;
+  limb(g, -11, -36, -12 + ph, -3, 10, C('#585b63'));
+  limb(g, 11, -36, 12 - ph, -3, 10, C('#666a72'));
+  for (const [x] of [[-12 + ph], [14 - ph]]) {
+    rr(g, x - 9, -6, 18, 7, 3);
+    fillOut(g, C('#3a3c42'));
+  }
+  limb(g, -22, -74, -30, -44, 9, C('#5c5f67'));
+  dot(g, -30, -41, 8.5, C('#4a4d55'));
+  rr(g, -18, -106, 9, 26, 2);
+  fillOut(g, C('#3a3a40'));
+  rr(g, -26, -84, 52, 52, 14);
+  fillOut(g, C('#d9a93e'), 2.8);
+  g.fillStyle = C('#b5852a');
+  g.fillRect(-24, -48, 48, 10);
+  g.strokeStyle = C('#7c5a1c');
+  g.lineWidth = 4;
+  for (const y of [-70, -50]) {
+    g.beginPath();
+    g.moveTo(-25, y);
+    g.lineTo(25, y);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(255,255,255,0.28)';
+  g.fillRect(-18, -80, 8, 26);
+  dot(g, 9, -60, 9, C('#ff8a2a'));
+  dot(g, 9, -60, 5, C('#ffd27a'), false);
+  rr(g, -10, -98, 21, 17, 5);
+  fillOut(g, C('#9a7a30'));
+  rr(g, 2, -93, 10, 5, 2);
+  g.fillStyle = C('#ff3a20');
+  g.fill();
+  limb(g, 22, -74, 33, -46, 9, C('#6a6e76'));
+  dot(g, 34, -43, 9, C('#55585f'));
+  return -110;
+}
+
+// the boss: a cast-iron giant in a top hat, monocle aglow, furnace chest, gold trim
+function paintBaron(g, C, t, walk) {
+  const ph = Math.sin(t * 4.5) * 7 * walk;
+  limb(g, -16, -54, -18 + ph, -4, 16, C('#3f434b'));
+  limb(g, 16, -54, 18 - ph, -4, 16, C('#4a4f58'));
+  for (const x of [-18 + ph, 20 - ph]) {
+    rr(g, x - 14, -8, 28, 9, 4);
+    fillOut(g, C('#2c2f35'));
+  }
+  limb(g, -32, -104, -48, -62, 14, C('#43474f'));
+  dot(g, -49, -57, 13, C('#373a41'));
+  rr(g, -36, -118, 72, 70, 18);
+  fillOut(g, C('#505762'), 3);
+  g.strokeStyle = C('#e0b440');
+  g.lineWidth = 4;
+  rr(g, -30, -112, 60, 58, 14);
+  g.stroke();
+  g.fillStyle = 'rgba(255,255,255,0.18)';
+  g.fillRect(-26, -106, 10, 40);
+  dot(g, 6, -84, 15, C('#ff5a1e'), true);
+  dot(g, 6, -84, 9, C('#ffd070'), false);
+  g.strokeStyle = g._out;
+  g.lineWidth = 2;
+  for (const dx of [-6, 0, 6]) {
+    g.beginPath();
+    g.moveTo(6 + dx, -97);
+    g.lineTo(6 + dx, -71);
+    g.stroke();
+  }
+  dot(g, -30, -114, 8, C('#e0b440'));
+  dot(g, 30, -114, 8, C('#e0b440'));
+  rr(g, -15, -136, 30, 22, 7);
+  fillOut(g, C('#3c4048'));
+  dot(g, 7, -125, 6.5, C('#e0b440'));
+  dot(g, 7, -125, 4, C('#ff2a1a'), false);
+  g.beginPath();
+  g.ellipse(0, -137, 22, 4.5, 0, 0, TAU);
+  fillOut(g, C('#23252b'));
+  rr(g, -14, -170, 28, 33, 3);
+  fillOut(g, C('#2a2c32'));
+  g.fillStyle = C('#e0b440');
+  g.fillRect(-13, -146, 26, 6);
+  limb(g, 32, -104, 50, -64, 14, C('#4d525a'));
+  dot(g, 51, -59, 13, C('#41454c'));
+  return -172;
+}
+
+const PAINT = { scrap: paintScrap, roach: paintRoach, brute: paintBrute, baron: paintBaron };
+
+// screen facing of a machine heading `a` (grid radians): +1 right, -1 left
+function facing(a) {
+  const dx = Math.cos(a) - Math.sin(a);
+  return dx >= 0 ? 1 : -1;
+}
+
+export function drawMachine(g, S, m) {
+  const [sx, sy] = S.p(m.x, m.y, m.z);
+  const [, gy] = S.p(m.x, m.y, Math.min(m.z, -0.3));
+  const s = S.k * (m.scale || 1) * (MACHINE_K[m.kind] || 1.3);
+  const alpha = m.alpha ?? 1;
+  const cells = MACHINE_CELLS[m.kind] || 0.3;
+  g.save();
+  g.globalAlpha = alpha * (m.ghost ? 1 : 1);
+  if (!m.ghost) {
+    g.fillStyle = 'rgba(30,60,12,0.32)';
+    g.beginPath();
+    g.ellipse(sx + 5 * s, gy + 2 * s, cells * S.TW * 0.8, cells * S.TW * 0.3, 0, 0, TAU);
+    g.fill();
+  }
+  g.translate(sx, sy);
+  g.scale(s * facing(m.a), s);
+  g._out = m.ghost ? m.ghost : OUTLINE;
+  g.lineJoin = 'round';
+  const top = (PAINT[m.kind] || paintScrap)(g, mixer(m), m.t || 0, m.walk ?? 0.15);
+  g.restore();
+  return sy + top * s;
+}
+
+// a machine arriving at the end of this turn: a pulsing ghost on its ring, ringed in red
+export function drawMachineShadow(g, S, m) {
+  const [sx, sy] = S.p(m.x, m.y, m.z);
+  const a = m.alpha ?? 0.6;
+  const cells = Math.max(0.36, MACHINE_CELLS[m.kind] || 0.3);
+  g.save();
+  g.globalAlpha = Math.min(1, a + 0.2);
   g.setLineDash([8 * S.k, 6 * S.k]);
   g.lineDashOffset = -m.t * 20;
-  g.lineWidth = 3 * S.k;
-  g.strokeStyle = 'rgba(255,182,72,0.95)';
+  g.lineWidth = 3.5 * S.k;
+  g.strokeStyle = '#c8321e';
   g.beginPath();
-  g.ellipse(sx, sy, px * 1.25, px * 0.62, 0, 0, TAU);
+  g.ellipse(sx, sy, cells * S.TW * 0.9, cells * S.TH * 0.9, 0, 0, TAU);
   g.stroke();
-  g.setLineDash([]);
-  const { n, half, q } = spriteTo(S, m.kind, r, m.t, 'rgb(70,26,12)');
-  g.transform(hx * s, hy * s, nx * s * SQUASH, ny * s * SQUASH, sx, sy - 8 * S.k);
-  g.globalAlpha = Math.min(1, a * 1.5);
-  g.drawImage(scratch.b, 0, 0, n, n, -half, -half, n / q, n / q);
   g.restore();
+  drawMachine(g, S, { ...m, ghost: `rgba(60,40,30,${(0.45 * a).toFixed(3)})`, alpha: 1 });
 }
 
 // ---------------------------------------------------------------- small icons (HUD / ghosts)

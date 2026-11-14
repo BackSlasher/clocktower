@@ -34,6 +34,7 @@ const HTML = `
       </div>
       <div class="cclvl"><small id="ccLvlName">Level</small><b id="ccLvl"></b></div>
       <div class="cctimer" id="ccTimerBox"><small id="ccTimerLbl">Plan</small><b id="ccTimer"></b></div>
+      <button id="ccHelpBtn" class="menubtn cchelpbtn" type="button" aria-label="How to play">?</button>
       <button id="ccMenuBtn" class="menubtn" type="button" aria-label="Menu">&#8943;</button>
       <i id="ccTbar" class="cctbar"></i>
     </header>
@@ -84,6 +85,33 @@ const HTML = `
       <p id="ccAgainWait" class="dim center-text" hidden></p>
     </div>
   </section>
+
+  <div id="ccHelp" class="cchelpsheet" role="dialog" aria-modal="true" aria-labelledby="ccHelpTtl" hidden>
+    <div class="cchelphead"><b id="ccHelpTtl" class="display">How a turn works</b><button id="ccHelpClose" class="x" type="button" aria-label="Close">&times;</button></div>
+    <div class="cchelpbody">
+      <div class="cchcol">
+      <p class="cchlead">Everyone files up to <b class="ccslotsn"></b> steps, then taps <b>Done</b>. Then everyone's step 1 plays at once, then step 2, and so on.</p>
+      <h3>The five actions</h3>
+      <ul class="cchacts">
+        <li><i class="cchi">&#8599;</i><div><b>Move</b> one tile with an arrow. Up and down only by the stairs.</div></li>
+        <li><i class="cchi">&#9995;</i><div><b>Pick up</b> the bomb under your feet. Walk onto it first.</div></li>
+        <li><i class="cchi">&#10148;</i><div><b>Throw</b>, then an arrow: the bomb flies in a straight line. The first engineer on the line catches it if their hands are free; full hands and it drops at their feet. Nobody there: it lands by the wall.</div></li>
+        <li><i class="cchi">&#11015;</i><div><b>Load</b> the catapult next to you on the rampart. It fires by itself as soon as a machine is in its lane.</div></li>
+        <li><i class="cchi">&#8987;</i><div><b>Wait</b> one step and do nothing.</div></li>
+      </ul>
+      </div>
+      <div class="cchcol">
+      <h3>Inside each step, in this order</h3>
+      <ol class="cchorder">
+        <li><b>Throw</b></li><li><b>Move</b></li><li><b>Pick up &amp; load</b></li><li><b>Fire</b> <small>(loaded catapults)</small></li>
+      </ol>
+      <p class="cchnote">After the last step the machines walk one step toward the wall.</p>
+      <div class="cchgot"><b>Throws go before moves:</b> throw to where someone <i>is</i>, not where they are going. A teammate who steps into your line in the same step is too late.</div>
+      <p class="cchnote">A step that can't happen when it comes up (a wall in the way, nothing to pick up) just fizzles; the rest of your queue still plays.</p>
+      <button id="ccHelpOk" class="btn big-btn" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
 
   <div id="ccMenu" class="sheet" hidden>
     <div class="sheet-body plate">
@@ -213,6 +241,7 @@ export async function mount(ctx) {
     $('ccEnd').hidden = name !== 'end';
     ctx.wake(name === 'game' || name === 'break');
     if (name !== 'game' && name !== 'break') $('ccMenu').hidden = true;
+    if (name !== 'game') $('ccHelp').hidden = true;
   }
 
   function onRoom(m) {
@@ -542,6 +571,13 @@ export async function mount(ctx) {
     $('ccAgainWait').textContent = `Waiting for ${pname(r.host)} to go back to the lobby…`;
   }
   $('ccAgain').onclick = () => ctx.send({ t: 'restart' });
+
+  // ---------------------------------------------------------------- help sheet (rules, usable while planning)
+  for (const el of $('ccHelp').querySelectorAll('.ccslotsn')) el.textContent = String(SLOTS);
+  const closeHelp = () => ($('ccHelp').hidden = true);
+  $('ccHelpBtn').onclick = () => { $('ccHelp').hidden = false; $('ccHelp').querySelector('.cchelpbody').scrollTop = 0; };
+  $('ccHelpClose').onclick = closeHelp;
+  $('ccHelpOk').onclick = closeHelp;
 
   // ---------------------------------------------------------------- menu
   let armed = null; let armTimer = null;

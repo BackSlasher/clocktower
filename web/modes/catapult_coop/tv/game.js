@@ -8,7 +8,11 @@ import { Scene, W, H, OUT_Z } from './scene.js';
 import { boardFromSnap, viewOf, Playback, FIZZLE_TEXT, BOMB_OFF } from './board.js';
 import { drawBomb, drawEngineer, drawCatapult, drawMachine, drawMachineShadow, drawStars, MACHINE_CELLS } from './sprites.js';
 
-const ENG_K = 1.15; // engineers are drawn a little larger than the tile scale
+// the HUD bands: the board never goes under them (ui.js / tv.css keep to these heights)
+export const TOP_H = 136;
+export const STRIP_H = 176;
+
+const ENG_K = 1.3; // engineers are drawn a little larger than the tile scale
 
 export class Game {
   constructor(canvas, ui) {
@@ -87,9 +91,35 @@ export class Game {
     clearTimeout(this._rb);
   }
 
-  // the scene's box: below the top bar, above the one-row queue strip (at most 4 players)
+  // the scene's box: below the top bar, above the one-row queue strip (at most 4 players);
+  // the keep and every lane, end to end, are fitted into it
   box() {
-    return { x0: 34, x1: W - 34, y0: 196, y1: H - 182 };
+    return { x0: 20, x1: W - 20, y0: TOP_H + 4, y1: H - STRIP_H - 4 };
+  }
+
+  // a floating text that never lands on top of another one still in the air: it is pushed up
+  // (and, when that runs out of room, aside) until it is clear
+  say(x, y, str, color, size = 32, life = 1.2) {
+    const fx = this.fx;
+    const g = this.g;
+    g.font = `bold ${size}px Georgia, serif`;
+    const w = g.measureText(str).width + 16;
+    const h = size + 8;
+    const hits = (yy, xx) => fx.texts.some((t) => {
+      if (t.life <= 0) return false;
+      g.font = `bold ${t.size}px Georgia, serif`;
+      const tw = g.measureText(t.str).width + 16;
+      return Math.abs(t.x - xx) < (tw + w) / 2 && Math.abs(t.y - yy) < (t.size + 8 + h) / 2;
+    });
+    let yy = y;
+    let xx = x;
+    for (let i = 0; i < 8 && hits(yy, xx); i++) yy -= h * 0.9;
+    if (hits(yy, xx)) {
+      yy = y;
+      xx = x + w;
+    }
+    yy = Math.max(TOP_H + h / 2, yy);
+    fx.text(xx, yy, str, color, size, life);
   }
 
   color(pid) {
@@ -215,14 +245,14 @@ export class Game {
         const [sx, sy] = at(x, y, S.standZ(x, y) + 1);
         fx.ring(sx, sy, 6, 40 * S.k, 0.45, this.color(ev.by), 5);
         fx.burst(sx, sy, 10, { speed: 160, life: 0.4, size: 2.5, color: 'rgba(255,230,160,1)' });
-        fx.text(sx, sy - 120 * S.k, 'Caught!', '#8ff0c8', 32, 1.1);
+        this.say(sx, sy - 120 * S.k, 'Caught!', '#8ff0c8', 32, 1.1);
         break;
       }
       case 'blocked': {
         const [x, y] = ev.to;
         const [sx, sy] = at(x, y, S.standZ(x, y) + 1);
         fx.burst(sx, sy, 8, { speed: 170, life: 0.35, size: 3, color: 'rgba(255,190,120,1)' });
-        fx.text(sx, sy - 120 * S.k, 'Hands full!', '#ffb36a', 30, 1.1);
+        this.say(sx, sy - 120 * S.k, 'Hands full!', '#ffb36a', 30, 1.1);
         const [ax, ay] = ev.at;
         const [lx, ly] = at(ax, ay, S.topZ(ax, ay));
         fx.smoke(lx, ly, 4, { size: 14 * S.k, life: 0.6, speed: 45, color: 'rgba(150,140,120,0.5)' });
@@ -240,7 +270,7 @@ export class Game {
         const [bx, by] = ev.path?.[0] || ev.to;
         const [sx, sy] = at((x + bx) / 2, (y + by) / 2, S.standZ(x, y) + 0.8);
         fx.burst(sx, sy, 10, { speed: 220, life: 0.35, size: 3, color: 'rgba(255,230,120,1)' });
-        fx.text(sx, sy - 40 * S.k, 'Bump!', '#ffd76a', 30, 1.0);
+        this.say(sx, sy - 40 * S.k, 'Bump!', '#ffd76a', 30, 1.0);
         break;
       }
       case 'pickup': {
@@ -255,7 +285,7 @@ export class Game {
         const [sx, sy] = at(cat.x, cat.y, 1.4);
         fx.burst(sx, sy, 14, { speed: 200, life: 0.4, size: 3, color: 'rgba(255,210,120,1)' });
         fx.burst(sx, sy, 3, { type: 'cog', speed: 120, life: 0.7, size: 5, color: '#d9b25a', up: 140 });
-        fx.text(sx, sy - 50 * S.k, 'Loaded', '#ffd76a', 28, 1.0);
+        this.say(sx, sy - 50 * S.k, 'Loaded', '#ffd76a', 28, 1.0);
         break;
       }
       case 'fizzle': {
@@ -264,9 +294,9 @@ export class Game {
         const [sx, sy] = at(x, y, c.z ?? S.topZ(x, y) + 0.4);
         fx.smoke(sx, sy, 6, { size: 18 * S.k, life: 0.8, speed: 50, color: 'rgba(120,120,120,0.6)' });
         const msg = ev.e === 'fizzle' ? FIZZLE_TEXT[ev.reason] || 'Fizzle' : ev.result === 'contested' ? 'Clash!' : ev.result === 'empty' ? 'Already fired' : FIZZLE_TEXT[ev.result] || 'Fizzle';
-        if (ev.e === 'fizzle') fx.text(sx, sy - 20 * S.k, '✗', '#ff6a4a', 44, 0.9);
+        if (ev.e === 'fizzle') this.say(sx, sy - 20 * S.k, '✗', '#ff6a4a', 44, 0.9);
         if (ev.result === 'contested') fx.burst(sx, sy, 14, { speed: 260, life: 0.35, size: 3, color: 'rgba(255,120,80,1)' });
-        fx.text(sx, sy - 70 * S.k, msg, '#ff8a6a', 34, 1.5);
+        this.say(sx, sy - 70 * S.k, msg, '#ff8a6a', 34, 1.5);
         break;
       }
       case 'fire': {
@@ -284,7 +314,7 @@ export class Game {
         const k = S.k;
         if (ev.result === 'wasted') {
           fx.smoke(sx, sy, 8, { size: 22 * k, life: 1.0, speed: 60, color: 'rgba(120,100,70,0.6)' });
-          fx.text(sx, sy - 50 * k, 'Wasted!', '#ff8a6a', 32, 1.3);
+          this.say(sx, sy - 50 * k, 'Wasted!', '#ff8a6a', 32, 1.3);
           break;
         }
         if (ev.kind === 'stopwatch') {
@@ -312,8 +342,8 @@ export class Game {
         const [sx, sy] = at(gx, gy, OUT_Z + 0.4);
         const h = c.hit;
         const k = S.k;
-        if (h.dmg) fx.text(sx, sy - 60 * k, `−${h.dmg}`, '#ffb648', 38, 1.2);
-        else if (h.frozen) fx.text(sx, sy - 60 * k, 'Frozen', '#9fdcff', 30, 1.2);
+        if (h.dmg) this.say(sx, sy - 60 * k, `−${h.dmg}`, '#ffb648', 38, 1.2);
+        else if (h.frozen) this.say(sx, sy - 60 * k, 'Frozen', '#9fdcff', 30, 1.2);
         if (c.kind === 'kill') {
           const boss = this.defs.machines?.[m.kind]?.boss;
           const r = (MACHINE_CELLS[m.kind] || 0.34) * S.TW;
@@ -340,7 +370,7 @@ export class Game {
         fx.burst(sx, sy, 30, { speed: 380, life: 0.6, size: 3.5, color: 'rgba(255,110,60,1)' });
         fx.burst(sx, sy, 8, { type: 'cog', speed: 220, life: 1.0, size: 6, color: '#8a8070', up: 180 });
         fx.smoke(sx, sy, 10, { size: 30 * S.k, life: 1.4, speed: 70, color: 'rgba(110,100,90,0.7)' });
-        fx.text(sx, sy - 70 * S.k, `Wall −${ev.dmg}`, '#ff6a4a', 44, 1.6);
+        this.say(sx, sy - 70 * S.k, `Wall −${ev.dmg}`, '#ff6a4a', 44, 1.6);
         this.ui.wallHit?.(ev);
         break;
       }
@@ -369,7 +399,7 @@ export class Game {
     const tsec = now / 1000;
     g.setTransform(1, 0, 0, 1, 0, 0);
     if (!S) {
-      g.fillStyle = '#0d1416';
+      g.fillStyle = '#9ad94c';
       g.fillRect(0, 0, this.cv.width, this.cv.height);
       return;
     }
@@ -386,19 +416,6 @@ export class Game {
     g.setTransform(px, 0, 0, px, sx * px, sy * px);
     g.imageSmoothingEnabled = true;
     g.drawImage(S.ground, 0, 0, W, H);
-    // flickering lamp flames on the streets
-    g.globalCompositeOperation = 'lighter';
-    const flame = softSprite('rgba(255,190,90,1)', 32, 0.2);
-    for (const l of S.lamps) {
-      const [lx, ly] = S.p(l.x, l.y, OUT_Z + 1.55);
-      const f = 0.45 + 0.15 * Math.sin(tsec * 9 + l.x * 3.1) * Math.sin(tsec * 2.7 + l.y);
-      const R = 26 * S.k;
-      g.globalAlpha = f;
-      g.drawImage(flame, lx - R, ly - 10 * S.k - R, R * 2, R * 2);
-    }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
-
     if (v) this.drawWorld(g, v, now, tsec);
     else this.drawBare(g, tsec);
     fx.drawAir(g, tsec);
@@ -412,7 +429,7 @@ export class Game {
     }
     if (phase === 'lobby') {
       g.setTransform(px, 0, 0, px, 0, 0);
-      g.fillStyle = 'rgba(6,10,12,0.66)';
+      g.fillStyle = 'rgba(6,10,12,0.5)';
       g.fillRect(0, 0, W, H);
     }
   }
@@ -451,7 +468,7 @@ export class Game {
     const room = this.room;
     const planPhase = room?.phase === 'plan';
 
-    // incoming arrivals: shadows at the far end of their lanes
+    // incoming arrivals: ghosts on the far ring of their lanes (they appear at the end of the turn)
     if (planPhase && this.board?.incoming?.length && !this.pb) {
       const per = new Map();
       for (const inc of this.board.incoming) {
@@ -459,10 +476,10 @@ export class Game {
         per.set(inc.lane, n + 1);
         const L = S.keep.lanes[inc.lane];
         if (!L) continue;
-        const [x, y] = S.lanePt(inc.lane, L.len - 1 + 0.15 * n);
+        const [x, y] = S.lanePt(inc.lane, L.len - 1);
         const perp = [-L.dir[1], L.dir[0]];
-        const o = (n % 2 ? 1 : -1) * 0.18 * (n > 0 ? 1 : 0);
-        const pulse = 0.62 + 0.18 * Math.sin(tsec * 4 + inc.lane);
+        const o = n === 0 ? 0 : (n % 2 ? 1 : -1) * 0.3 * Math.ceil(n / 2);
+        const pulse = 0.55 + 0.25 * Math.sin(tsec * 4 + inc.lane);
         drawMachineShadow(g, S, { kind: inc.kind, x: x + perp[0] * o, y: y + perp[1] * o, z: OUT_Z, a: Math.atan2(-L.dir[1], -L.dir[0]), t: tsec, alpha: pulse });
       }
     }
@@ -478,17 +495,20 @@ export class Game {
       g.setLineDash([14 * k, 12 * k]);
       g.lineDashOffset = -tsec * 40 * k;
       g.lineCap = 'round';
-      g.lineWidth = 6 * k;
-      g.strokeStyle = `rgba(255,196,96,${0.55 + 0.25 * Math.sin(tsec * 4)})`;
+      g.lineWidth = 9 * k;
+      g.strokeStyle = 'rgba(60,30,6,0.45)';
       g.beginPath();
       g.moveTo(a0[0], a0[1]);
       g.lineTo(a1[0], a1[1]);
+      g.stroke();
+      g.lineWidth = 5 * k;
+      g.strokeStyle = `rgba(255,170,40,${0.7 + 0.25 * Math.sin(tsec * 4)})`;
       g.stroke();
       g.restore();
     }
 
     // ground shadows of things in the air
-    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.fillStyle = 'rgba(40,30,10,0.3)';
     for (const f of [...v.flying, ...v.shots]) {
       const gx = f.x;
       const gy = f.y;
@@ -549,30 +569,25 @@ export class Game {
         g.globalAlpha = b.a;
         // a pulsing amber ring and glow so bombs on the ground pop against the floor
         const pulse = 0.5 + 0.5 * Math.sin(tsec * 3 + b.id);
-        g.globalCompositeOperation = 'lighter';
-        g.globalAlpha = b.a * (0.3 + 0.15 * pulse);
-        g.drawImage(softSprite('rgba(255,170,60,1)', 64, 0.25), sx - 24 * k, sy - 14 * k, 48 * k, 28 * k);
-        g.globalCompositeOperation = 'source-over';
-        g.globalAlpha = b.a;
-        g.strokeStyle = 'rgba(20,10,2,0.7)';
-        g.lineWidth = 5 * k;
+        g.strokeStyle = 'rgba(20,10,2,0.8)';
+        g.lineWidth = 6 * k;
         g.beginPath();
-        g.ellipse(sx, sy, (17 + pulse * 2) * k, (8.5 + pulse * 1) * k, 0, 0, TAU);
+        g.ellipse(sx, sy, (23 + pulse * 2) * k, (11.5 + pulse * 1) * k, 0, 0, TAU);
         g.stroke();
-        g.strokeStyle = `rgba(255,${190 + Math.round(pulse * 40)},90,0.95)`;
-        g.lineWidth = 2.5 * k;
+        g.strokeStyle = `rgb(255,${200 + Math.round(pulse * 40)},${60 + Math.round(pulse * 60)})`;
+        g.lineWidth = 3 * k;
         g.stroke();
-        g.fillStyle = 'rgba(0,0,0,0.45)';
+        g.fillStyle = 'rgba(40,24,8,0.35)';
         g.beginPath();
-        g.ellipse(sx, sy, 11 * k, 4.5 * k, 0, 0, TAU);
+        g.ellipse(sx, sy, 15 * k, 6 * k, 0, 0, TAU);
         g.fill();
-        drawBomb(g, b.kind, sx, sy + 1 * k, 0.72 * k, tsec + b.id);
+        drawBomb(g, b.kind, sx, sy + 2 * k, 1.0 * k, tsec + b.id);
         g.globalAlpha = 1;
       } else if (it.m) {
         const m = it.m;
         const p = it.p;
         const bob = m.frozen > 0 ? 0 : Math.abs(Math.sin(tsec * 4.5 + m.id * 1.7)) * 0.07;
-        const top = drawMachine(g, S, { kind: m.kind, x: p.x, y: p.y, z: p.z + bob, a: p.a, t: tsec * (m.frozen > 0 ? 0.15 : 1) + m.id, flash: m.flash, alpha: m.alpha });
+        const top = drawMachine(g, S, { kind: m.kind, x: p.x, y: p.y, z: p.z + bob, a: p.a, t: m.frozen > 0 ? m.id : tsec + m.id, walk: m.hop > 0 ? 1 : 0.12, flash: m.flash, alpha: m.alpha, frozen: m.frozen });
         mtop.set(m.id, [S.p(p.x, p.y, p.z)[0], top]);
         if (m.frozen > 0) {
           // frost over the machine
@@ -595,6 +610,7 @@ export class Game {
           sy,
           k: k * ENG_K,
           color: this.color(e.pid),
+          ring: true,
           face: this.face.get(e.pid) || (e.pid.charCodeAt(e.pid.length - 1) % 2 ? 1 : -1),
           walk: e.walk,
           carry: e.carry,
@@ -649,22 +665,16 @@ export class Game {
     // ---- overlays (never occluded)
     if (planPhase && !this.pb) this.drawFirstSteps(g, tsec, engScreen);
 
-    // brass number plates: each catapult and the far end of its lane (lane id + 1)
+    // where each machine steps next (plan phase): a red chevron on the ring it will reach,
+    // or a red bang at the wall if it gets there this turn
+    if (!this.pb && planPhase) this.drawNextSteps(g, v, tsec);
+
+    // brass number plates on the catapults (lane id + 1)
     for (const c of S.keep.catapults) {
       const L = S.laneOfCat(c.id);
       const num = String((L ? L.id : c.lane ?? c.id) + 1);
       const cp = S.p(c.x, c.y, 1.0);
-      plate(g, cp[0], cp[1] + 34 * k, num, k);
-      if (L) {
-        // beside the road at the far end, clear of the machines
-        const [lx, ly] = S.lanePt(L.id, L.len - 1);
-        // on the outer side of the road, away from the neighbouring lane
-        const twin = S.keep.lanes.find((o) => o !== L && o.dir[0] === L.dir[0] && o.dir[1] === L.dir[1]);
-        const sg = twin ? Math.sign(L.dir[0] !== 0 ? L.y - twin.y : L.x - twin.x) || -1 : -1;
-        const side = L.dir[0] !== 0 ? [0, 1.25 * sg] : [1.25 * sg, 0];
-        const fp = S.p(lx + side[0], ly + side[1], 0);
-        plate(g, fp[0], fp[1] - 14 * k, num, k, 1);
-      }
+      plate(g, cp[0], cp[1] + 30 * k, num, k, 0.8);
     }
 
     // machine status: hp pips, frozen badge, boss name
@@ -683,9 +693,9 @@ export class Game {
         g.lineWidth = 5;
         g.strokeStyle = 'rgba(20,6,4,0.9)';
         const nm = (this.defs.machines[m.kind].name || '').toUpperCase();
-        g.strokeText(nm, sx, sy - 14 * k);
+        g.strokeText(nm, sx, sy - 24 * k);
         g.fillStyle = '#ff9a7a';
-        g.fillText(nm, sx, sy - 14 * k);
+        g.fillText(nm, sx, sy - 24 * k);
       }
       g.globalAlpha = 1;
     }
@@ -697,8 +707,63 @@ export class Game {
       if (b && now - b < 1200) drawStars(g, s.sx, headY - 6 * k, 1 - (now - b) / 1200, tsec, k);
       const p = this.players.get(pid);
       if (!p) continue;
-      const ty = s.sy - (s.carry ? 118 : 90) * k * ENG_K;
+      const ty = s.sy - (s.carry ? 104 : 78) * k * ENG_K;
       drawTag(g, s.sx, ty, p.name, p.color, planPhase && !!this.plans.get(pid)?.done, s.away, k);
+    }
+  }
+
+  drawNextSteps(g, v, tsec) {
+    const S = this.scene;
+    const k = S.k;
+    const seen = new Set();
+    for (const m of v.machs) {
+      if (m.frozen > 0) continue;
+      const def = this.defs.machines?.[m.kind] || {};
+      const to = Math.round(m.pos) - (def.speed || 1);
+      const L = S.keep.lanes[m.lane];
+      if (!L) continue;
+      const key = `${m.lane}|${to}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const wall = to < 0;
+      const [x, y] = S.lanePt(m.lane, wall ? -0.45 : to);
+      const [sx, sy] = S.p(x, y, OUT_Z);
+      // chevron pointing toward the keep, in screen space
+      const [tx, ty] = S.p(x - L.dir[0], y - L.dir[1], OUT_Z);
+      const an = Math.atan2(ty - sy, tx - sx);
+      const pulse = 0.5 + 0.5 * Math.sin(tsec * 5 + m.lane);
+      g.save();
+      g.translate(sx, sy);
+      if (wall) {
+        g.translate(0, -20 * k);
+        g.beginPath();
+        g.arc(0, 0, 15 * k, 0, TAU);
+        g.fillStyle = '#e0321c';
+        g.fill();
+        g.lineWidth = 3 * k;
+        g.strokeStyle = '#2a0c04';
+        g.stroke();
+        g.fillStyle = '#fff';
+        g.font = `bold ${Math.round(22 * k)}px Georgia, serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('!', 0, 1 * k);
+      } else {
+        g.rotate(an);
+        g.translate(4 * k * pulse, 0);
+        g.lineJoin = 'round';
+        g.lineCap = 'round';
+        for (const [w, col] of [[13 * k, '#2a0c04'], [7 * k, '#ff4a2a']]) {
+          g.lineWidth = w;
+          g.strokeStyle = col;
+          g.beginPath();
+          g.moveTo(-13 * k, -18 * k);
+          g.lineTo(7 * k, 0);
+          g.lineTo(-13 * k, 18 * k);
+          g.stroke();
+        }
+      }
+      g.restore();
     }
   }
 
@@ -836,48 +901,56 @@ function roundRect(g, x, y, w, h, r) {
   g.closePath();
 }
 
+function luma(hex) {
+  const n = parseInt((hex || '#888888').slice(1, 7), 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+
+// a small name pill in the player's own colour (the colour of their card in the strip)
 function drawTag(g, x, y, name, col, ticked, away, k) {
-  const fs = Math.round(24 * Math.max(0.85, k));
+  const fs = Math.round(17 * Math.max(0.9, k));
   g.font = `bold ${fs}px Georgia, serif`;
   const tw = g.measureText(name).width;
-  const tick = ticked ? fs + 4 : 0;
-  const w = tw + 24 + tick;
-  const h = fs + 12;
+  const tick = ticked ? fs : 0;
+  const w = tw + 14 + tick;
+  const h = fs + 7;
   const x0 = x - w / 2;
   const y0 = y - h;
-  g.globalAlpha = away ? 0.55 : 0.95;
-  g.fillStyle = 'rgba(10,14,16,0.88)';
+  g.globalAlpha = away ? 0.55 : 1;
+  g.fillStyle = col;
   roundRect(g, x0, y0, w, h, h / 2);
   g.fill();
-  g.lineWidth = 3;
-  g.strokeStyle = col;
+  g.lineWidth = 2.5;
+  g.strokeStyle = 'rgba(20,14,8,0.9)';
   g.stroke();
-  // pointer
   g.beginPath();
-  g.moveTo(x - 7, y);
-  g.lineTo(x, y + 8);
-  g.lineTo(x + 7, y);
+  g.moveTo(x - 5, y);
+  g.lineTo(x, y + 6);
+  g.lineTo(x + 5, y);
   g.closePath();
   g.fillStyle = col;
   g.fill();
+  g.stroke();
+  const dark = luma(col) > 0.55;
   g.textAlign = 'left';
   g.textBaseline = 'middle';
-  g.fillStyle = '#f4ead2';
-  g.fillText(name, x0 + 12 + tick, y0 + h / 2 + 1);
-  if (ticked) {
-    const cx = x0 + 12 + fs / 2 - 2;
-    const cy = y0 + h / 2;
-    g.fillStyle = '#5fd3a8';
-    g.beginPath();
-    g.arc(cx, cy, fs / 2 - 1, 0, TAU);
-    g.fill();
-    g.strokeStyle = '#0d1416';
+  g.fillStyle = dark ? '#1a120a' : '#ffffff';
+  if (!dark) {
     g.lineWidth = 3;
+    g.strokeStyle = 'rgba(20,14,8,0.6)';
+    g.strokeText(name, x0 + 7 + tick, y0 + h / 2 + 1);
+  }
+  g.fillText(name, x0 + 7 + tick, y0 + h / 2 + 1);
+  if (ticked) {
+    const cx = x0 + 7 + fs / 2 - 2;
+    const cy = y0 + h / 2;
+    g.strokeStyle = dark ? '#1a120a' : '#ffffff';
+    g.lineWidth = 2.6;
     g.lineCap = 'round';
     g.beginPath();
-    g.moveTo(cx - fs * 0.22, cy);
-    g.lineTo(cx - fs * 0.05, cy + fs * 0.17);
-    g.lineTo(cx + fs * 0.24, cy - fs * 0.18);
+    g.moveTo(cx - fs * 0.26, cy);
+    g.lineTo(cx - fs * 0.06, cy + fs * 0.2);
+    g.lineTo(cx + fs * 0.28, cy - fs * 0.22);
     g.stroke();
     g.lineCap = 'butt';
   }

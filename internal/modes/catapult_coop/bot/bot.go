@@ -592,6 +592,10 @@ func (p *planner) moveToward(e *eng, dist [][]int, tie [][]int) bool {
 	return true
 }
 
+// gunnerRoam is how far a gunner walks along the rampart for a bomb lying
+// there.
+const gunnerRoam = 6
+
 func (p *planner) gunnerCount(n int) int {
 	switch {
 	case n <= 0:
@@ -798,16 +802,23 @@ func (p *planner) carry(e *eng) {
 }
 
 // gunnerFetch steps a free-handed gunner toward an unclaimed bomb at its own
-// height or below (picked up from above) that it can reach this round.
+// height or below (picked up from above) that it can reach this round, or
+// one lying on the rampart within a few steps (lobbed up with nobody there
+// to catch it).
 func (p *planner) gunnerFetch(e *eng) bool {
 	h := p.l.At(e.x, e.y).H
 	best, bd := [2]int{-1, -1}, inf
 	for k := range p.bombs {
-		if p.claimedBomb[k] || p.l.At(k[0], k[1]).H > h {
+		bh := p.l.At(k[0], k[1]).H
+		if p.claimedBomb[k] || bh > h {
 			continue
 		}
+		reach := e.can.Move
+		if bh == h && h > 0 {
+			reach = gunnerRoam
+		}
 		d := p.reachDist(k[0], k[1], e.can.Reach)[e.y][e.x]
-		if d >= 0 && d <= e.can.Move && (d < bd || d == bd && less(k, best)) {
+		if d >= 0 && d <= reach && (d < bd || d == bd && less(k, best)) {
 			best, bd = k, d
 		}
 	}

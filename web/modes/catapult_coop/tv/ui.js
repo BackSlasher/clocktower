@@ -1,12 +1,13 @@
-// DOM side of the catapult_coop TV: the top plate (level, turn, countdown, wall), the queue
-// strip (every player's live queue, the slot being played and what came of each action), the
-// step indicator, the level title card, banners, the break panel and the end screen. Every
-// element id is prefixed "cc" so nothing collides with the shell or another mode.
+// DOM side of the catapult_coop TV: the top bar (level, countdown or the step being played, the
+// order of a step, wall), the queue strip (every player's live queue, the slot being played and
+// what came of each action), the level title card, banners, the break panel and the end
+// screen. The board has the space between the top bar and the strip to itself: nothing in the
+// HUD is ever placed over it during play. Every element id is prefixed "cc" so nothing
+// collides with the shell or another mode.
 
 import { fmtTime } from '../../tower_defense/tv/geom.js';
 import { esc, GEAR_SVG, CROWN_SVG } from '/shared/dom.js';
 import { drawBomb } from './sprites.js';
-import { vignetteEl } from './vignettes.js';
 
 const TICK_SVG = `<svg class="cc-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>`;
 const DOTS = `<span class="cc-think"><i></i><i></i><i></i></span>`;
@@ -18,11 +19,9 @@ export const HTML = `
     <div id="ccTop">
       <div class="cc-lvl"><div class="cc-lbl">Level</div><div class="cc-big"><span id="ccLevel">1</span><span class="cc-of" id="ccLevels">/ 6</span></div><div class="cc-sub" id="ccLevelName"></div></div>
       <div class="cc-phase"><div class="cc-lbl" id="ccPhaseLbl"></div><div class="cc-count" id="ccCount"></div><div class="cc-sub" id="ccRound"></div></div>
+      <div class="cc-ord" id="ccOrd"></div>
       <div class="cc-wall"><div class="cc-lbl">${BRICK_SVG} Wall</div><div class="cc-big"><span id="ccWall">10</span><span class="cc-of" id="ccWallMax">/ 10</span></div><div class="cc-bar"><div id="ccWallBar"></div></div></div>
     </div>
-    <div id="ccStep"></div>
-    <div id="ccOrder"></div>
-    <div id="ccTut"></div>
     <div id="ccQueue"></div>
     <div id="ccPaused">Paused &mdash; waiting for engineers to reconnect</div>
   </section>
@@ -120,81 +119,32 @@ export class UI {
     this.buildCards();
   }
 
-  // ------------------------------------------------------------ reference cards
+  // ------------------------------------------------------------ the order of a step
 
   // The stages of a step in the order the server plays them (docs/PROTOCOL.md, "Resolve
   // rules"): throws, moves, pick-ups and loads, automatic fire; machines after the last step.
   static STAGES = [
     ['throw', 'Throw'],
     ['move', 'Move'],
-    ['grab', 'Pick up & load'],
+    ['grab', 'Pick up · Load'],
     ['fire', 'Fire'],
   ];
 
   buildCards() {
     const n = this.slots;
-    const panel = (id, num, cap, cls = '') => {
-      const d = document.createElement('div');
-      d.className = `cc-op ${cls}`;
-      d.dataset.s = id;
-      d.append(vignetteEl(id));
-      const c = document.createElement('div');
-      c.className = 'cc-oc';
-      c.innerHTML = `${num ? `<span class="cc-on">${num}</span>` : ''}${esc(cap)}`;
-      d.append(c);
-      return d;
-    };
-    // the always-visible turn-order card
-    const card = this.$('ccOrder');
-    card.replaceChildren();
-    const h = document.createElement('div');
-    h.className = 'cc-oh';
-    h.textContent = 'Each step, in order';
-    const grid = document.createElement('div');
-    grid.className = 'cc-og';
-    UI.STAGES.forEach(([id, cap], i) => grid.append(panel(id, i + 1, cap)));
-    card.append(h, grid, panel('machines', '', `After step ${n}: machines advance`, 'wide'));
-
-    // the first-turn card
-    const tut = this.$('ccTut');
-    const act = (a, name, text) => `<div class="cc-ta">${actIcon(a)}<div><b>${esc(name)}</b> ${text}</div></div>`;
-    tut.innerHTML = `
-      <div class="cc-th">How a turn works</div>
-      <div class="cc-tl">Everyone files up to <b>${esc(n)} steps</b> on their phone, then all the steps play together.</div>
-      <div class="cc-tacts">
-        ${act({ a: 'move', dx: 1, dy: 0 }, 'Move', 'one tile.')}
-        ${act({ a: 'pickup' }, 'Pick up', 'the bomb under you.')}
-        ${act({ a: 'throw', dx: 0, dy: -1 }, 'Throw', 'in a straight line: the first engineer in the way catches it. Full hands? It drops at their feet.')}
-        ${act({ a: 'load' }, 'Load', 'next to a catapult. It fires itself when a machine is in its lane.')}
-        ${act({ a: 'wait' }, 'Wait', 'and do nothing.')}
-      </div>
-      <div class="cc-tsec">Each step plays in this order</div>
-      <div class="cc-tord"></div>
-      <div class="cc-tgot"><div class="cc-tgt"><b>Throws go before moves:</b> throw to where someone <i>is</i>, not where they're going.</div><div class="cc-tgv"></div></div>
-      <div class="cc-tft">No timer this turn &mdash; press <b>Done</b> when you're ready.</div>`;
-    const ord = tut.querySelector('.cc-tord');
-    UI.STAGES.forEach(([id, cap], i) => ord.append(panel(id, i + 1, cap)));
-    ord.append(panel('machines', '', `After step ${n}: machines`));
-    const gv = tut.querySelector('.cc-tgv');
-    gv.append(vignetteEl('good'), vignetteEl('bad'));
+    const chips = UI.STAGES.map(([id, cap], i) => `<span class="cc-oc" data-s="${id}"><i>${i + 1}</i>${esc(cap)}</span>`).join('<b class="cc-oa">›</b>');
+    this.$('ccOrd').innerHTML = `<div class="cc-oh">Inside each step, in order</div><div class="cc-orow">${chips}</div><div class="cc-orow"><span class="cc-oc mach" data-s="machines">After step ${esc(n)}: machines advance</span></div>`;
     this.cardsBuilt = true;
   }
 
-  // per frame: the card's highlight follows the stage being played; the first-turn card shows
-  // while the game's first, untimed turn is being planned
+  // per frame: the chip of the stage being played lights up
   tickCards(game, now) {
     const phase = this.room?.phase;
-    const tut = phase === 'plan' && !!game.snap?.untimed;
-    if (tut !== this._tut) {
-      this._tut = tut;
-      this.$('ccTut').classList.toggle('on', tut);
-      this.$('ccOrder').classList.toggle('hide', tut);
-    }
     const st = phase === 'resolve' || game.pb ? game.stageNow(now) : null;
     if (st !== this._stage) {
       this._stage = st;
-      for (const el of this.$('ccOrder').querySelectorAll('.cc-op')) el.classList.toggle('cur', el.dataset.s === st);
-      this.$('ccOrder').classList.toggle('live', !!st);
+      for (const el of this.$('ccOrd').querySelectorAll('.cc-oc')) el.classList.toggle('cur', el.dataset.s === st);
+      this.$('ccOrd').classList.toggle('live', !!st);
     }
   }
 
@@ -319,33 +269,42 @@ export class UI {
     const left = game.left(now);
     let lbl = '';
     let val = '';
+    let sub = null;
     let hurry = false;
     const present = room.players.filter((p) => !p.away && p.connected);
     const doneN = present.filter((p) => game.plans.get(p.id)?.done).length;
-    if (phase === 'plan') {
-      if (snap?.untimed) {
-        lbl = 'First turn — no timer';
-        val = '';
-      } else {
+    const st = phase === 'plan' || phase === 'resolve' ? game.queueState(now) : null;
+    const playing = st && (phase === 'resolve' || game.pb);
+    if (playing) {
+      // while a turn plays, the phase cell says which step
+      lbl = 'Watch the keep!';
+      if (st.machines) val = 'Machines';
+      else if (st.cur >= 0) {
+        val = `Step ${st.cur + 1}`;
+        sub = `of ${this.slots} · Turn ${room.round}`;
+      } else sub = `Turn ${room.round}`;
+    } else if (phase === 'plan') {
+      if (snap?.untimed) lbl = 'First turn: no timer';
+      else {
         lbl = 'Plan your steps';
         val = String(Math.ceil(left));
         hurry = left <= 3.0;
       }
-      this.set('ccRound', `Done: ${doneN} of ${present.length}`);
-    } else if (phase === 'resolve') {
-      lbl = 'Watch the keep!';
-      this.set('ccRound', `Turn ${room.round}`);
+      sub = `Done: ${doneN} of ${present.length}${snap?.untimed ? ' · rules: tap ? on your phone' : ''}`;
     } else if (phase === 'break') {
       lbl = 'Next level in';
       val = String(Math.ceil(left));
       if (this.screen === 'break') this.set('ccBreakCount', val);
     }
+    if (sub !== null) this.set('ccRound', sub);
     this.set('ccPhaseLbl', lbl);
     this.set('ccCount', val);
     const top = this.$('ccTop');
     if (top.classList.contains('hurry') !== hurry) top.classList.toggle('hurry', hurry);
     if (top.dataset.ph !== phase) top.dataset.ph = phase;
     top.classList.toggle('untimed', phase === 'plan' && !!snap?.untimed);
+    top.classList.toggle('playing', !!playing);
+    top.classList.toggle('mach', !!(playing && st.machines));
     const wall = game.wallNow ?? game.board?.wall;
     const max = game.board?.wallMax || this.defs.wallHP || 10;
     if (wall !== null && wall !== undefined) {
@@ -358,28 +317,7 @@ export class UI {
         top.classList.toggle('low', wall / max <= 0.3);
       }
     }
-
-    // queue strip and step indicator
-    if (phase === 'plan' || phase === 'resolve') {
-      const st = game.queueState(now);
-      this.renderQueue(st);
-      let step = '';
-      if (st.machines) step = 'Machines advance';
-      else if (st.cur >= 0) step = `Step ${st.cur + 1}`;
-      if (step !== this._step) {
-        this._step = step;
-        const el = this.$('ccStep');
-        el.className = '';
-        el.innerHTML = step ? `<span class="cc-stl">${esc(step)}</span>${st.machines ? '' : `<span class="cc-sto">of ${this.slots}</span>`}` : '';
-        if (step) {
-          void el.offsetWidth;
-          el.className = st.machines ? 'on mach' : 'on';
-        }
-      }
-    } else if (this._step) {
-      this._step = '';
-      this.$('ccStep').className = '';
-    }
+    if (st) this.renderQueue(st);
     this.$('ccQueue').classList.toggle('on', phase === 'plan' || phase === 'resolve');
     this.tickCards(game, now);
   }
@@ -399,7 +337,7 @@ export class UI {
     const ld = defs.levels?.[ev.level - 1];
     const el = this.$('ccCard');
     const boss = ev.level === total;
-    el.innerHTML = `<div class="cc-cl">Level ${esc(ev.level)} of ${esc(total)}</div><div class="cc-ct">${esc(ev.name || ld?.name || '')}</div>${ld?.desc ? `<div class="cc-cd">${esc(ld.desc)}</div>` : ''}${bombRow(ld, defs)}`;
+    el.innerHTML = `<div class="cc-chd"><div class="cc-cl">Level ${esc(ev.level)} of ${esc(total)}</div><div class="cc-ct">${esc(ev.name || ld?.name || '')}</div></div><div class="cc-cbody">${ld?.desc ? `<div class="cc-cd">${esc(ld.desc)}</div>` : ''}${bombRow(ld, defs)}</div>`;
     el.className = '';
     void el.offsetWidth;
     el.className = `on${boss ? ' boss' : ''}`;

@@ -521,8 +521,8 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
   `y = 0` and the column `x = 0` are the two far sides, seen from the
   `(w, h)` corner.
 - A **layout** is one level's interior of that keep: every cell's kind and
-  height, and the engineer start cells (seats 1 and 3 on the ramparts, seats
-  2 and 4 in the courtyard). Each level names its layout; the outer wall line and
+  height, and the engineer start cells (seats 1 and 3 in the courtyard by the
+  powder store, seats 2 and 4 on the ramparts at a catapult). Each level names its layout; the outer wall line and
   the catapults are identical in every layout of a keep.
 - Cell `kind`: `floor` (walkable), `block` (crate, pipe or wall; not
   walkable), `stairs` (walkable; connects both heights), `catapult` (not
@@ -548,7 +548,7 @@ Editing a queue never triggers a `room` message; queues are only in `snap`.
   furthest walkable cell.
 - **Lanes**: lane `L` leaves the keep from catapult `L.cat` in direction
   `L.dir` (`[0,-1]` from the `y = 0` side, `[-1,0]` from the `x = 0` side).
-  Lane positions are integers `0 … len-1` (`len` is 3); position `p` is
+  Lane positions are integers `0 … len-1` (`len` is 4); position `p` is
   drawn at cell `(L.x + p·L.dir[0], L.y + p·L.dir[1])` (outside the grid;
   position 0 is the cell just outside the wall next to the catapult). Catapult
   `i` fires down lane `catapults[i].lane` (today lane id = catapult id).
@@ -563,7 +563,7 @@ Map = { "keeps": [ Keep ] }         // one keep today
 Keep = {
   "id": "small", "minPlayers": 1, "maxPlayers": 4, "w": 9, "h": 9,
   "catapults": [ { "id": 0, "x": 3, "y": 0, "lane": 0 }, … ],   // 4, ids 0..3
-  "lanes": [ { "id": 0, "cat": 0, "len": 3, "dir": [0,-1], "x": 3, "y": -1 }, … ] }
+  "lanes": [ { "id": 0, "cat": 0, "len": 4, "dir": [0,-1], "x": 3, "y": -1 }, … ] }
 ```
 
 The interior is not in `map`: it comes with the room message (`room.layout`),
@@ -574,7 +574,7 @@ because it changes from level to level.
 ```jsonc
 Defs = {
   "maxPlayers": 4,              // same as welcome.modes[…].maxPlayers
-  "wallHP": 16,                 // wall hit points at the start (and maximum)
+  "wallHP": 20,                 // wall hit points at the start (and maximum)
   "slots": 4,                   // actions per player per turn
   "planTime": 20,               // seconds of a plan phase; the game's first turn has no timer
   "breakTime": 6,               // seconds of the break between levels
@@ -591,7 +591,7 @@ Defs = {
                 "roach": { … "speed": 2 … }, "brute": { … "hp": 4, "dmg": 2 },
                 "baron": { … "hp": 9, "dmg": 3, "boss": true } },
   "machineOrder": ["scrap", "roach", "brute", "baron"],
-  "levels": [ { "name": "Tutorial", "desc": "One Scrapling on one lane.", "layout": "open",
+  "levels": [ { "name": "First Shots", "desc": "Scraplings, a few at a time. …", "layout": "open",
                 "bombs": { "keg": 1 } }, … ] }   // 6 levels; bombs = kinds that can appear (spawn weights)
 ```
 
@@ -862,7 +862,10 @@ Wall hit points carry over.
 After every turn's machine stage, new bombs are added until
 `bombsBase + bombsPerPlayer × active players` lie on the ground (active =
 connected and not away, at least 1). Each goes on a random `floor` cell with
-`h` 0 that has no bomb and no engineer; its kind is drawn from the level's
+`h` 0 of the layout's **powder store** (a few courtyard cells far from the
+stairs and catapults; server-side, not on the wire: the TV sees where bombs
+appear, and they always appear there) that has no bomb and no engineer; with
+every store cell taken the top-up waits for the next turn. Its kind is drawn from the level's
 `bombs` weights, except that if no keg or grapeshot exists anywhere (ground,
 hands, catapults) only those damaging kinds are drawn. Levels 1–2 have kegs
 only; grapeshot comes with level 3, the stopwatch with level 4.
@@ -938,3 +941,7 @@ own cell; `defs.reach` is gone; fizzle reason `catapult_empty` is gone;
 are gone; the `fire` event lost `result`, its `pid` is now the loader (and may
 be absent) and `hits` is never empty; `end.stats` lost `fires`; lanes are 3
 cells; stairs are always corner steps; seats 2 and 4 start in the courtyard.
+Later, with no change to any message shape: lanes are 4 cells, `wallHP` is
+20, seats 1 and 3 start in the courtyard and 2 and 4 on the ramparts, levels
+take several turns with machines arriving over them, and new bombs appear
+only in the layout's powder store.

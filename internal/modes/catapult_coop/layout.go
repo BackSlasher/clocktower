@@ -60,6 +60,7 @@ type Layout struct {
 	Cells  [][]Cell `json:"cells"`  // cells[y][x]
 	Spawns [][2]int `json:"spawns"` // engineer start cells, in seating order
 	Bombs  [][2]int `json:"-"`      // bombs lying here at the level start
+	Supply [][2]int `json:"-"`      // the powder store: courtyard cells where new bombs appear
 }
 
 // Keep is a keep shell and its layouts.
@@ -74,13 +75,14 @@ type Keep struct {
 	Layouts    map[string]*Layout `json:"-"`
 }
 
-const laneLen = 3
+const laneLen = 4
 
 // Legend of the layout drawings:
 //
 //	W outer wall (block, h1)   C catapult (h1)    = floor h1 (rampart, platform)
 //	. floor h0                 # crate (block h0) S stairs
-//	o bomb (floor h0)          * bomb (floor h1)  (space) void
+//	, store (floor h0)         o bomb in the store (floor h0)
+//	* bomb (floor h1)          (space) void
 //	1–4 engineer start n (floor h0)   a–d engineer start 1–4 (floor h1)
 //
 // Engineers are seated in start order: player 1 on start 1, and so on.
@@ -90,55 +92,65 @@ var keepArt = []struct {
 	layouts  map[string][]string
 }{
 	{"small", 1, 4, map[string][]string{
-		// Seat 1 stands at catapult 1's loading cell and seat 3 on the left
-		// rampart; seat 2 starts in column 6 under seat 1 and seat 4 in row 5
-		// right of seat 3, so their first throws can be catches.
-		// Stairs sit in inside corners (two raised neighbours at a right angle,
-		// two low ones): the rampart's inner corner (2,2), and next to a
-		// one-cell ledge ("bump") stuck out from the rampart.
+		// The rule of every layout: the powder store (where bombs lie and
+		// new ones appear) is far from the stairs, so nobody can carry a
+		// bomb to a catapult in time on their own (layout_test checks at
+		// least minStoreWalk steps from every store cell to every loading
+		// cell). Bombs travel by throws: from the courtyard up a catapult's
+		// column or along its row to an engineer on the rampart.
+		//
+		// Seats: 1 and 3 in the courtyard by the store (fetchers), 2 on the
+		// top rampart at a catapult, 4 on the left rampart at a catapult
+		// (gunners). Two players are a fetcher and a gunner, three two
+		// fetchers and a gunner, four two of each. A lone player starts by
+		// the store.
+		//
+		// Stairs sit in inside corners (two raised neighbours at a right
+		// angle, two low ones): the rampart's inner corner (2,2), or beside
+		// a ledge stuck out from a rampart.
 		"open": {
 			"WWWCWWCWW",
-			"W=====a==",
-			"W=S...*S.",
-			"C=.......",
-			"W=.......",
-			"Wc..4.2..",
+			"W=====b==",
+			"W=S......",
 			"C=.......",
 			"W=.......",
 			"W=.......",
+			"Cd.......",
+			"W=..o,o,,",
+			"W=..3,1,,",
 		},
 		"crates": {
 			"WWWCWWCWW",
-			"W=====a==",
-			"W=S....#.",
-			"C=.#....o",
-			"W=....o#.",
-			"Wc..4o2..",
-			"C==...o..",
-			"W=S.#....",
-			"W=...o...",
+			"W==b=====",
+			"W=.....S=",
+			"C=..#....",
+			"W=....#..",
+			"W=.#.....",
+			"Cd...#...",
+			"W=o,,,#..",
+			"W=,o1.3..",
 		},
 		"platform": {
 			"WWWCWWCWW",
-			"W=====a==",
-			"W=So.....",
-			"C=...==*.",
-			"W=...=S.o",
-			"Wc..4.2o.",
-			"C=.o..#..",
-			"W=....o..",
+			"W=====b==",
+			"W=..#,.o,",
+			"Cd.....3.",
+			"W=..#,.o,",
+			"W=.....1,",
+			"C===.....",
+			"W==S..#..",
 			"W=.......",
 		},
 		"split": {
 			"WWWCWWCWW",
-			"W=====a==",
-			"W=So.#=S.",
-			"C=...#.o.",
-			"W=.==#...",
-			"Wc.*S..4.",
-			"C=...#2o.",
-			"W=o......",
-			"W=....o..",
+			"W==b=====",
+			"W=S......",
+			"C=.......",
+			"W=.......",
+			"W=######.",
+			"Cd.1.....",
+			"W=o,,....",
+			"W=,o,.3..",
 		},
 	}},
 }
@@ -214,8 +226,11 @@ func parseLayout(id string, rows []string) *Layout {
 			case 'a', 'b', 'c', 'd':
 				c.H = 1
 				starts[int(ch-'a')+1] = [2]int{x, y}
+			case ',':
+				l.Supply = append(l.Supply, [2]int{x, y})
 			case 'o':
 				l.Bombs = append(l.Bombs, [2]int{x, y})
+				l.Supply = append(l.Supply, [2]int{x, y})
 			case '*':
 				c.H = 1
 				l.Bombs = append(l.Bombs, [2]int{x, y})

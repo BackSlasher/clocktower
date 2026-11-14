@@ -1,6 +1,9 @@
 package catapultcoop
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // Every authored layout must be playable: same shell as its keep, every
 // catapult loadable from the rampart, no walled-off walkable regions, every
@@ -113,30 +116,55 @@ func TestLayoutsValid(t *testing.T) {
 	}
 }
 
-// The tutorial has no platforms: the only raised cells inside the walkway
-// are rampart ledges (touching the walkway), plus corner stairs. Its one bomb
-// lies next to a stair.
-func TestTutorialLayout(t *testing.T) {
+// minStoreWalk is the fewest walking steps allowed from a store cell (or a
+// bomb lying at a level start) to the loading cell of any catapult: a lone
+// engineer must not be able to fetch and load in a turn or two; bombs go up
+// by throws.
+const minStoreWalk = 8
+
+// Every layout keeps its powder store far from the catapults, big enough
+// for the bombs of a full team, with every bomb in it. The tutorial has no
+// platforms: the only raised cells inside the walkway are rampart ledges
+// (touching the walkway), plus corner stairs.
+func TestStoreFarFromCatapults(t *testing.T) {
 	for _, k := range Keeps {
-		l := k.LevelLayout(1)
-		if len(l.Bombs) != 1 {
-			t.Fatalf("%s tutorial has %d bombs", k.ID, len(l.Bombs))
+		for id, l := range k.Layouts {
+			name := k.ID + "/" + id
+			var load [][2]int
+			for _, c := range k.Catapults {
+				for _, d := range Dirs4 {
+					if l.LoadCell(c.X+d[0], c.Y+d[1], c) {
+						load = append(load, [2]int{c.X + d[0], c.Y + d[1]})
+					}
+				}
+			}
+			if want := Defs.BombsBase + Defs.BombsPerPlayer*Defs.MaxPlayers; len(l.Supply) < want {
+				t.Errorf("%s: store has %d cells, want at least %d", name, len(l.Supply), want)
+			}
+			for _, s := range append(append([][2]int{}, l.Supply...), l.Bombs...) {
+				if c := l.At(s[0], s[1]); c.Kind != KFloor || c.H != 0 {
+					t.Errorf("%s: store cell %v is %+v", name, s, c)
+				}
+				d := l.Dists(s[0], s[1])
+				for _, lc := range load {
+					if v := d[lc[1]][lc[0]]; v >= 0 && v < minStoreWalk {
+						t.Errorf("%s: store cell %v is %d steps from loading cell %v", name, s, v, lc)
+					}
+				}
+			}
+			for _, b := range l.Bombs {
+				if !slices.Contains(l.Supply, b) {
+					t.Errorf("%s: bomb %v outside the store", name, b)
+				}
+			}
 		}
+		l := k.LevelLayout(1)
 		for y := 2; y < l.H; y++ {
 			for x := 2; x < l.W; x++ {
 				if c := l.At(x, y); c.Kind == KFloor && c.H > 0 && l.At(x, y-1).H == 0 && l.At(x-1, y).H == 0 {
 					t.Errorf("%s tutorial: platform cell at (%d,%d)", k.ID, x, y)
 				}
 			}
-		}
-		b, near := l.Bombs[0], false
-		for _, d := range Dirs4 {
-			if l.At(b[0]+d[0], b[1]+d[1]).Kind == KStairs {
-				near = true
-			}
-		}
-		if !near {
-			t.Errorf("%s tutorial bomb %v not next to stairs", k.ID, b)
 		}
 	}
 }

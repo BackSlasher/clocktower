@@ -1,6 +1,6 @@
 // Dev-only showcase: /tv?demo=plan|tutorial|resolve|break|won|lost|boss[&n=1..4] feeds synthetic room and
 // snap messages through the normal handlers, so every screen can be looked at without playing
-// to it. Uses the real setup (keeps + defs) from the server; the interior layouts below are
+// to it. `tutorial` is the game's first turn (level 1, untimed plan phase). Uses the real setup (keeps + defs) from the server; the interior layouts below are
 // sample drawings in the server's notation (W wall, C catapult, = raised floor, . floor,
 // # crate, S stairs). `ctDebug.game.freezeT = 1.35` holds a resolve playback at 1.35 s
 // (the middle of step 2 in the resolve scene).
@@ -18,6 +18,26 @@ const ART = [
     'W=.......',
     'W=.......',
 ];
+
+// the sample drawing if it fits the keep, else a plain interior of the keep's own size (the
+// keep shell may change): ramparts along both walls, corner stairs and one crate
+function demoRows(keep) {
+  if (keep.w === ART[0].length && keep.h === ART.length) return ART;
+  const rows = [];
+  for (let y = 0; y < keep.h; y++) {
+    let r = '';
+    for (let x = 0; x < keep.w; x++) {
+      if (keep.catapults.some((c) => c.x === x && c.y === y)) r += 'C';
+      else if (x === 0 || y === 0) r += 'W';
+      else if (x === 1 || y === 1) r += '=';
+      else if (x === 2 && y === 2) r += 'S';
+      else if (x === keep.w - 3 && y === keep.h - 3) r += '#';
+      else r += '.';
+    }
+    rows.push(r);
+  }
+  return rows;
+}
 
 function layoutFrom(rows, id) {
   const cells = rows.map((row) =>
@@ -50,7 +70,7 @@ export function startDemo(kind, setup, deliver) {
   const { map, defs } = setup;
   const N = Math.min(4, Math.max(1, Number(new URLSearchParams(location.search).get('n')) || 4));
   const keep = map.keeps[0];
-  const lay = layoutFrom(ART, 'platform');
+  const lay = layoutFrom(demoRows(keep), 'platform');
   const names = ['Ada', 'Brunel', 'Tesla', 'Babbage', 'Lovelace-Byr', 'Watt', 'Faraday', 'Stephenson'];
   const colors = ['#e0a030', '#4fb39a', '#d1594a', '#6a8cff', '#c06adf', '#8fd14f', '#f0f0f0', '#ff8fb0'];
   const levels = defs.levels?.length || 6;
@@ -112,8 +132,9 @@ export function startDemo(kind, setup, deliver) {
       : null;
   const room = { t: 'room', mode: 'catapult_coop', phase, host: 'p1', keep: keep.id, layout: lay, level, levels, round: tutorial ? 1 : 4, players, end };
 
-  const machines =
-    kind === 'boss'
+  const machines = tutorial
+    ? [{ id: 1, kind: 'scrap', lane: 1, pos: far(1), hp: 1, max: 1, frozen: 0 }]
+    : kind === 'boss'
       ? [
           { id: 1, kind: 'baron', lane: 1, pos: far(1), hp: 7, max: 9, frozen: 0 },
           { id: 2, kind: 'scrap', lane: 0, pos: 1, hp: 1, max: 1, frozen: 0 },
@@ -139,8 +160,8 @@ export function startDemo(kind, setup, deliver) {
   const A = {
     t: 'snap', phase, time: 100, level, round: 4, left: tutorial ? 0 : kind === 'break' ? 5 : 14.4, untimed: tutorial, wall: kind === 'lost' ? 0 : kind === 'boss' ? 4 : 11, wallMax: defs.wallHP,
     engineers, bombs, catapults, machines,
-    incoming: [],
-    plans: phase === 'plan' ? plansOf(kind === 'plan' ? QP : Q) : players.map((p) => ({ pid: p.id, acts: [], done: false })),
+    incoming: kind === 'plan' && !tutorial ? [{ lane: 3, kind: 'brute' }, { lane: 0, kind: 'scrap' }] : [],
+    plans: phase === 'plan' && !tutorial ? plansOf(kind === 'plan' ? QP : Q) : players.map((p, i) => ({ pid: p.id, acts: tutorial && i === 0 ? [mv(1, 0)] : [], done: false })),
     ev: [],
   };
 

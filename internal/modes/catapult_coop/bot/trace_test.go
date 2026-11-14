@@ -58,6 +58,7 @@ func TestDebugTrace(t *testing.T) {
 		pid, _, _ := g.AddPlayer(fmt.Sprint("B", i))
 		g.SetConnected(pid, true)
 		b := New(pid, uint64(i))
+		fmt.Sscan(os.Getenv("CT_TRACE_MISTAKE"), &b.Mistake)
 		bots = append(bots, b)
 	}
 	_ = g.Start(g.Host())

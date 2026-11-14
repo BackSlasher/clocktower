@@ -133,3 +133,71 @@ func TestBalance(t *testing.T) {
 			float64(rounds)/float64(runs), b.String())
 	}
 }
+
+// TestParticipation prints, per team and level, how many of the players
+// pulled their weight (see LevelUse), and compares a full team on level 1
+// with one worker whose teammates stand idle. Skipped unless
+// CT_BALANCE_RUNS is set (games per row).
+func TestParticipation(t *testing.T) {
+	v := os.Getenv("CT_BALANCE_RUNS")
+	if v == "" {
+		t.Skip("set CT_BALANCE_RUNS to run")
+	}
+	runs, err := strconv.Atoi(v)
+	if err != nil || runs < 1 {
+		t.Fatalf("bad CT_BALANCE_RUNS %q", v)
+	}
+	levels := len(game.Defs.Levels)
+	t.Logf("players useful in the level (share of seats) / player-turns useful (share), per level")
+	for _, s := range []struct {
+		name string
+		sc   Scenario
+	}{
+		{"2 perfect", Scenario{Players: 2}},
+		{"3 perfect", Scenario{Players: 3}},
+		{"4 perfect", Scenario{Players: 4}},
+		{"2 sloppy", Scenario{Players: 2, Mistake: 0.25}},
+		{"3 sloppy", Scenario{Players: 3, Mistake: 0.25}},
+		{"4 sloppy", Scenario{Players: 4, Mistake: 0.25}},
+	} {
+		rs := RunMany(s.sc, 1000, runs)
+		var b strings.Builder
+		for lv := 1; lv <= levels; lv++ {
+			seats, used, pturns, uturns, contrib := 0, 0, 0, 0, 0
+			for _, r := range rs {
+				if lv > len(r.Use) || r.Use[lv-1].Turns == 0 {
+					continue
+				}
+				u := r.Use[lv-1]
+				seats += u.Players
+				used += len(u.Useful)
+				contrib += len(u.Contrib)
+				pturns += u.Players * u.Turns
+				uturns += u.UsefulTurns
+			}
+			if seats > 0 {
+				fmt.Fprintf(&b, " L%d %3.0f%%/%3.0f%%/%3.0f%%", lv, 100*float64(used)/float64(seats),
+					100*float64(contrib)/float64(seats), 100*float64(uturns)/float64(pturns))
+			}
+		}
+		t.Logf("%-10s useful/contributed/turns:%s", s.name, b.String())
+	}
+	t.Logf("level 1: wall lost and turns, full team vs one perfect worker (a fetcher, seat 1, or a gunner, seat 2) + idle teammates")
+	for n := 2; n <= 4; n++ {
+		row := fmt.Sprintf("%d players:", n)
+		for _, sc := range []Scenario{{Players: n}, {Players: n, Mistake: 0.25}, {Players: 1, Idle: n - 1}, {Players: 1, Idle: n - 1, BotSeat: 1}} {
+			rs := RunMany(sc, 1000, runs)
+			lost, turns, dead := 0, 0, 0
+			for _, r := range rs {
+				lost += r.Use[0].WallLost
+				turns += r.Use[0].Turns
+				if !r.Won && r.Level == 1 {
+					dead++
+				}
+			}
+			row += fmt.Sprintf("  [%d+%d idle seat %d, %.0f%% wasted] wall lost %.1f turns %.1f lost-on-L1 %d%%", sc.Players, sc.Idle,
+				sc.BotSeat+1, 100*sc.Mistake, float64(lost)/float64(runs), float64(turns)/float64(runs), 100*dead/runs)
+		}
+		t.Logf("%s", row)
+	}
+}

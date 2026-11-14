@@ -8,8 +8,8 @@ clients to come. Wire contract: docs/PROTOCOL.md, "Mode `catapult_coop`".
 ## Pitch
 
 The horde has reached Brasswick's walls. The engineers are inside the keep
-with four steam catapults on the ramparts and bombs lying all over the
-courtyard below. Fetch bombs, pass them hand to hand up to the ramparts and
+with four steam catapults on the ramparts and the powder store down in the
+far corner of the courtyard. Fetch bombs, pass them hand to hand up to the ramparts and
 load them; a loaded catapult fires by itself the moment a machine is in its
 lane. Everybody plans their next few moves at the same time, in full view of
 each other, then all the moves happen at once, step by step.
@@ -29,14 +29,15 @@ The TV shows the keep in an isometric view: a square courtyard seen from one
 corner.
 
 - **Courtyard** (low ground): a grid of about 7 × 7 cells with a few crates
-  and pipes blocking cells. Bombs lie scattered here.
+  and pipes blocking cells. In one corner of it lies the **powder store**:
+  the bombs lie there, and new ones appear there.
 - **Ramparts** (high ground): the two sides of the square furthest from the
   viewer are raised walkways. Each has **two catapults**. The only way up is
-  by **stairs**, built as corner steps: the main flight in the courtyard's
-  inner corner where the two ramparts meet, sometimes a second one beside a
-  short ledge sticking out of a rampart.
+  by **stairs**, built as corner steps: in the courtyard's inner corner where
+  the two ramparts meet, or beside a short ledge sticking out of a rampart.
+  The stairs are always far from the store.
 - **Lanes**: each catapult looks out over its own lane, running away from the
-  wall, 3 cells long. Four catapults, four lanes. Machines appear at the far
+  wall, 4 cells long. Four catapults, four lanes. Machines appear at the far
   end of a lane and step toward the wall, one step a turn.
 
 There is one keep (id `small`): 9 × 9 cells with a 7 × 7 courtyard. Its
@@ -44,20 +45,65 @@ outer shape (size, wall, the four catapults and their lanes) never changes,
 so the TV camera never moves, and with at most four players the TV's queue
 strip is always a single row under it.
 
+### Nobody can do it alone
+
+The first playtest's lesson: when one engineer starts next to both a bomb
+and a catapult, they play the game and the others watch. So the keep is
+built for passing:
+
+- The store is down in the courtyard, the catapults up on the ramparts, and
+  the stairs on the far side from the store: walking a bomb from the store
+  to any catapult takes at least 8 steps (two whole turns, a test checks
+  every layout), while a throw crosses the keep in one action.
+- So bombs go up by throws: a **fetcher** in the courtyard picks a bomb up,
+  steps into a catapult's column or row and throws; a **gunner** on the
+  rampart catches and loads. A bomb thrown with nobody to catch it still
+  lands on the rampart (the last cell before the wall), where a gunner can
+  pick it up, a step or two from a catapult.
+- Seats are roles: seats 1 and 3 start in the courtyard by the store
+  (fetchers), seat 2 on the top rampart and seat 4 on the left one, each at a
+  catapult (gunners). Two players are a fetcher and a gunner; three, two
+  fetchers feeding one gunner; four, two of each. A lone player starts by the
+  store and has to do the long walk.
+- Machines come on several lanes over a level, more lanes for bigger teams
+  (up to three players mostly the top two, four players both ramparts from
+  level 1), so a team of four has to split: each gunner minds a rampart,
+  each fetcher feeds whoever is in trouble.
+
 **The interior belongs to the level.** Each level brings its own layout of
-the keep: which courtyard cells are crates, which are raised platforms
-(height 1, reached by stairs like the ramparts), where the stairs are, where
-the engineers start and where bombs lie when the level begins. At every level
-start the engineers go back to the start cells (seat 1 on a rampart right at
-a catapult, seat 3 on the other rampart; seats 2 and 4 in the courtyard, lined
-up with them for a first throw) and the board is cleared of
-bombs (in hands, in catapults, on the ground) before the level's own bombs are
-placed. Layouts are ASCII drawings in the code; a test checks every one (all
-catapults reachable from every start cell, every bomb reachable, no
-walled-off pockets, every stairs cell a corner step: two raised neighbours at
-a right angle, two low ones, nothing blocked). The keep has four layouts: *open* (flat, the
-tutorial), *crates*, *platform* (a raised platform with a bomb on it) and
-*split* (a line of crates splitting the courtyard, two platforms).
+the keep: which courtyard cells are crates, which are raised platforms or
+ledges (height 1, reached by stairs like the ramparts), where the stairs and
+the store are, where the engineers start and which store cells hold a bomb
+when the level begins. At every level start the engineers go back to the
+start cells and the board is cleared of bombs (in hands, in catapults, on
+the ground) before the level's own bombs are placed. Layouts are ASCII
+drawings in the code; tests check every one (all catapults reachable from
+every start cell, every bomb reachable, no walled-off pockets, every stairs
+cell a corner step: two raised neighbours at a right angle, two low ones,
+nothing blocked; the store at least 8 steps from every catapult's loading
+cell and big enough for a full team's bombs). The keep has four layouts:
+
+```
+ open (level 1)   crates (2, 5)    platform (3)     split (4, 6)
+ WWWCWWCWW        WWWCWWCWW        WWWCWWCWW        WWWCWWCWW
+ W=====b==        W==b=====        W=====b==        W==b=====
+ W=S......        W=.....S=        W=..#,.o,        W=S......
+ C=.......        C=..#....        Cd.....3.        C=.......
+ W=.......        W=....#..        W=..#,.o,        W=.......
+ W=.......        W=.#.....        W=.....1,        W=######.
+ Cd.......        Cd...#...        C===.....        Cd.1.....
+ W=..o,o,,        W=o,,,#..        W==S..#..        W=o,,....
+ W=..3,1,,        W=,o1.3..        W=.......        W=,o,.3..
+```
+
+`W` wall, `C` catapult, `=` raised floor (rampart, ledge), `.` courtyard,
+`#` crate, `S` stairs, `,` store, `o` store with a bomb at the start, `1` `3`
+fetcher seats, `b` `d` gunner seats (seats 2 and 4, on the rampart). *open*
+is flat with the store in the far corner; *crates* puts the store in the
+near-left corner and the stairs top right behind a ledge; *platform* has the
+store top right and the stairs bottom left in an L-shaped ledge off the left
+rampart; *split* walls the store off from the stairs with a row of crates
+(the way round is through the far gap).
 
 ## A turn
 
@@ -130,8 +176,8 @@ slot earlier. Catching is a deliberate, called play.
 
 ## Bombs
 
-Bombs appear on free courtyard cells, so there are always a few lying about
-(more for bigger groups). A catapult has no aim: it fires down its own lane.
+Bombs appear on free cells of the powder store, so there are always a few
+lying there (more for bigger groups). A catapult has no aim: it fires down its own lane.
 
 | bomb | effect when fired |
 |------|-------------------|
@@ -157,27 +203,42 @@ fused bomb that goes off after three rounds wherever it is.
 ## Levels
 
 A game is a series of levels. A level is a script: which machines appear on
-which lane in which turn (today each level is one wave: all its machines
-appear at the start). It ends when everything in the script has been
-destroyed or has reached the wall. Difficulty is nothing more than how many
-machines are put on how many lanes:
+which lane in which turn, a few at a time over the level. It ends when
+everything in the script has been destroyed or has reached the wall. Lanes are
+4 cells, so a machine can be shot during four plan phases (a Clockroach,
+two cells a turn, during two); a level lasts about five to seven turns.
+Difficulty is how many machines come on how many lanes, how close together:
 
-1. **Tutorial**: one Scrapling on one lane.
-2. Two lanes, a handful of Scraplings.
-3. Clockroach clusters arrive; three lanes.
-4. All four lanes; first Brutes.
-5. Everything, faster.
-6. The Iron Baron, with company.
+1. **First Shots** (*open*): Scraplings, a few at a time, on the gunners'
+   lanes; four players get both ramparts from the start.
+2. **Two Fronts** (*crates*): more Scraplings, closer together.
+3. **Roach Run** (*platform*): a Clockroach pair; grapeshot appears.
+4. **Brass Arrives** (*split*): the first Brute; stopwatches appear.
+5. **Full Tilt** (*crates*): everything at once.
+6. **The Iron Baron** (*split*): the Baron, with company.
 
-Each level also lists the bomb kinds that can appear, with weights: levels 1–2
+Each level lists the bomb kinds that can appear, with weights: levels 1–2
 have powder kegs only, grapeshot arrives with the Clockroaches (level 3), the
-stopwatch with the Brutes (level 4). Each level uses one interior layout
-(tutorial: *open*; 2–3: *crates*; 4: *platform*; 5–6: *split*). A level
-takes about three turns.
+stopwatch with the Brutes (level 4).
 
-Machine counts scale with the number of players (an explicit count per team
-size in the level data, so the curve can be shaped). Wall hit points carry
-over between levels. Clearing the last level wins.
+Machine counts, lanes and the Iron Baron's hit points are set per team size
+in the level data, so the curve can be shaped. The scripts today (turn 0 =
+on the board at the level start, turn t = arrives at the end of turn t; `S`
+Scrapling, `R` Clockroach, `B` Brute, `I` Iron Baron, digit = lane; lanes 0
+and 1 are the top rampart's, 2 and 3 the left one's):
+
+| level | 1 player | 2 players | 3 players | 4 players |
+|-------|----------|-----------|-----------|-----------|
+| 1 | 1: S1 | 0: S1 · 1: S0 · 3: S1 | 0: S1 · 1: S0 · 3: S1 · 4: S0 | 0: S1 S3 · 1: S0 · 3: S1 S3 |
+| 2 | 0: S0 · 1: S1 | 0: S0 · 1: S1 · 2: S0 · 3: S1 | 0: S0 · 1: S1 S3 · 2: S0 | 0: S0 · 1: S1 S3 · 2: S0 · 3: S2 |
+| 3 | 0: S1 · 1: 2×R0 | 0: S1 · 1: S0 2×R0 | 0: S1 · 1: S0 2×R0 | 0: S1 S2 · 1: 2×R0 · 2: S3 |
+| 4 | 0: S0 · 1: B1 | 0: S0 · 1: S3 B1 · 2: S1 | 0: S0 · 1: S3 B1 | 0: S0 · 1: S3 B1 · 2: S1 · 3: S2 |
+| 5 | 0: S0 · 1: S1 | 0: S0 · 1: S1 · 2: S0 2×R1 | 0: S0 · 1: S1 · 2: S0 2×R1 · 3: B0 | 0: S0 · 1: S1 S3 · 2: 2×R1 |
+| 6 | 0: S1 · 1: I0 (3 HP) S3 | 0: S1 · 1: I0 (5 HP) S3 | 0: S1 · 1: I0 (4 HP) S3 | 0: S1 · 1: I0 (6 HP) S3 · 2: S2 |
+
+Teams of two and three are pressed mostly on the top lanes (one gunner); a
+left-lane machine now and then makes someone take the long way round. Wall
+hit points (20) carry over between levels. Clearing the last level wins.
 
 Between levels there is a short break: a few seconds showing the level result
 (level cleared, wall hit points), over when everyone presses ready. There are
@@ -259,8 +320,9 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
   action slot, appear at the far end and first move the turn after. The TV
   gets next turn's arrivals (`incoming`) to draw as shadows.
 - **Bombs** on the ground are topped up to *players + 2* after every turn,
-  on random free courtyard floor cells (no bomb, no engineer); if no keg or
-  grapeshot exists anywhere, the next one drawn is never a stopwatch.
+  on random free cells of the layout's store (no bomb, no engineer; with
+  every store cell taken the top-up waits a turn); if no keg or grapeshot
+  exists anywhere, the next one drawn is never a stopwatch.
 - **Iron Baron** does 3 wall damage; its hit points are set per team size in
   the level data.
 - **No perks.** The break between levels is a short intermission with no
@@ -278,39 +340,62 @@ The protocol (docs/PROTOCOL.md, "Mode `catapult_coop`") has the exact rules.
 
 Tuned for error-prone party players, not for perfect play. The scripted bots
 (`internal/modes/catapult_coop/bot`) plan whole four-action queues for the
-team (gunners on the ramparts catch and load; fetchers in the courtyard
-walk, pick up and throw), simulating each slot to plan the next. The tuning
-target is a **sloppy** team whose every player wastes a quarter of their
-actions (25% chance per slot to wait instead). Run the table with
-`CT_BALANCE_RUNS=100 go test ./internal/modes/catapult_coop/bot -run TestBalance -v`.
+team (gunners on the ramparts catch, pick up bombs lobbed onto the rampart
+and load; fetchers in the courtyard walk, pick up and throw), simulating each
+slot to plan the next. The tuning target is a **sloppy** team whose every
+player wastes a quarter of their actions (25% chance per slot to wait
+instead). Run the tables with
+`CT_BALANCE_RUNS=200 go test ./internal/modes/catapult_coop/bot -run 'TestBalance|TestParticipation' -v`
+(`CT_TRACE=4` with `-run TestDebugTrace` prints a game turn by turn;
+`CT_TRACE_MISTAKE=0.25` makes it sloppy).
 
-Current knobs: wall 16 HP, lanes 3 cells, every machine moving one step a
-turn (Clockroaches two), each level one wave at its start, bombs on the ground
-players + 2, seats 1 and 3 on the ramparts and 2 and 4 in the courtyard lined
-up with them, machine counts and Iron Baron HP per team size in each level's
-data (tuned by searching a ladder of single-machine steps per team size), no
-heal at breaks. Results, 100 games per row:
+Current knobs: wall 20 HP, lanes 4 cells, every machine moving one step a
+turn (Clockroaches two), machines arriving over the level (see the scripts
+under "Levels"), bombs on the ground players + 2 in the store, no heal at
+breaks. Results, 200 games per row (first playtest build, for comparison:
+wall 16, lanes 3, one wave per level, bombs anywhere):
 
-| team | wins | wall left when won (of 16) | turns per game | losses |
+| team | wins | wall left when won (of 20) | turns per game | losses |
 |------|------|----------------------------|----------------|--------|
-| 4 perfect bots | 100% | 6.0 | 18 | — |
-| 4 bots, 15% wasted | 93% | 2.8 | 18 | level 6 |
-| **4 sloppy (25% wasted)** | **49%** | 1.6 | 17 | level 6 |
-| 4 sloppy, 10% pointless moves on top | 8% | 1.6 | 17 | level 6 |
-| 1 / 2 / 3 sloppy | 31% / 68% / 58% | 1.1 / 1.3 / 1.4 | 17 / 17 / 17 | level 6 |
-| 3 sloppy + 1 idle | 31% | 1.5 | 17 | level 6 |
-| 1 / 2 perfect | 100% / 100% | 1.9 / 4.2 | 16 / 17 | — |
+| 4 perfect bots | 100% | 14.1 | 32 | — |
+| 4 bots, 15% wasted | 97% | 6.2 | 36 | level 6 |
+| **4 sloppy (25% wasted)** | **56%** | 2.9 | 37 | level 6 (one on 5) |
+| 4 sloppy, 10% pointless moves on top | 4% | 1.6 | 35 | levels 5–6 |
+| **2 / 3 sloppy** | **56% / 53%** | 2.4 / 2.6 | 35 / 36 | level 6 (a few on 5) |
+| 3 sloppy + 1 idle | 16% | 1.9 | 34 | levels 5–6 |
+| 2 perfect | 100% | 11.2 | 32 | — |
+| 1 perfect / 1 sloppy | 100% / 100% | 6.9 / 4.5 | 27 / 29 | — |
 
-Turns per level in a won 4-player game: about 2, 3, 3, 3, 3, 3. The tutorial
-and levels 2–5 are never lost; every loss is on level 6. Wins end with a hit
-point or two left.
+Turns per level in a won 4-player sloppy game: about 7, 7, 5, 7, 5, 6.
+Levels 1–4 are never lost.
 
-Solo play is nearly deterministic: a lone engineer kills little (fetching a
-bomb, climbing the corner stairs and loading takes most of a turn) and wins or
-loses on total machine damage against wall hit points, so one machine more or
-less moves the solo win rate between about 31% and 88%; 31% is the current
-setting.
+**Everyone plays.** `TestParticipation` counts, per level, the players who
+did something useful (picked a bomb up, loaded one, threw one that was
+caught, or caught one that was later loaded) and, stricter, who handled a
+bomb that ended up in a catapult. With the new layouts every seat is useful
+in every level (perfect bots: 100% of players on every level and team size;
+sloppy: 98–99% on level 1, 87–99% elsewhere); in the first playtest build a
+4-player team had one useful player on level 1 (25%). The share of
+player-turns with a useful action is 69–88% on level 1 for perfect bots, 45–48%
+for sloppy ones.
 
-The outcome is steep in wasted actions (15% wasted wins 93%, 25% wins 49%),
+**Nobody can do it alone.** Level 1 with one perfect bot and idle
+teammates, against a full team (wall hit points lost on level 1):
+
+| players | full perfect team | full sloppy team | 1 worker (a fetcher) + idle | 1 worker (a gunner) + idle |
+|---------|-------------------|------------------|-----------------------------|----------------------------|
+| 2 | 0 | 1.0 | 3 (every machine) | 3 |
+| 3 | 0 | 1.1 | 3 | 4 (every machine) |
+| 4 | 0 | 1.4 | 5 (every machine) | 5 |
+
+Idle teammates also get in the way: a free-handed engineer standing in a
+throw line catches the bomb and holds it.
+
+Solo play is weak by design (a lone engineer walks every bomb round to the
+stairs: about one kill per four turns) and the solo scripts are short, so a
+solo game is won on the wall outlasting the machines rather than by killing
+them; the level 1 Scrapling comes a turn late so a lone engineer can reach it.
+
+The outcome is steep in wasted actions (15% wasted wins 97%, 25% wins 56%),
 and pointless moves (bumps, walking out of a catcher's line) hurt much more
 than plain waiting.

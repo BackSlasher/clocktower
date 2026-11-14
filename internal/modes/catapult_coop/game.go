@@ -747,18 +747,26 @@ func (g *Game) anyDamaging() bool {
 }
 
 // topUpBombs keeps bombsBase + bombsPerPlayer × active players on the ground,
-// placing new ones on random free courtyard (height 0) floor cells with no
-// bomb and no engineer.
+// placing new ones on random free cells (no bomb, no engineer) of the
+// layout's powder store; a layout without a store uses the whole courtyard
+// (height 0 floor). With every store cell taken, the bombs wait.
 func (g *Game) topUpBombs(stage string) {
 	want := Defs.BombsBase + Defs.BombsPerPlayer*g.activeCount()
-	for len(g.bombs) < want {
-		var free [][2]int
+	cells := g.lay.Supply
+	if len(cells) == 0 {
 		for y := range g.lay.H {
 			for x := range g.lay.W {
-				c := g.lay.Cells[y][x]
-				if c.Kind == KFloor && c.H == 0 && g.bombAt(x, y) == nil && g.engineerAt(x, y) == nil {
-					free = append(free, [2]int{x, y})
+				if c := g.lay.Cells[y][x]; c.Kind == KFloor && c.H == 0 {
+					cells = append(cells, [2]int{x, y})
 				}
+			}
+		}
+	}
+	for len(g.bombs) < want {
+		var free [][2]int
+		for _, at := range cells {
+			if g.bombAt(at[0], at[1]) == nil && g.engineerAt(at[0], at[1]) == nil {
+				free = append(free, at)
 			}
 		}
 		if len(free) == 0 {
