@@ -1,7 +1,8 @@
-// Dev-only showcase: /tv?demo=wave|build|boss|won|lost feeds synthetic room
+// Dev-only showcase: /tv?demo=wave|build|boss|won|lost|card feeds synthetic room
 // and snap messages through the normal handlers, so every tower/enemy kind,
 // tension state and screen can be inspected without playing to that point.
-// Uses the real welcome (map + defs) from the server.
+// Uses the real welcome (map + defs) from the server. `card` is a tidy wave
+// (few enemies, towers wound, full lives) for tools/social-card.mjs.
 
 import { preparePath } from './geom.js';
 
@@ -20,7 +21,8 @@ export function startDemo(mode, welcome, deliver) {
   const paths = map.paths.map((p) => preparePath(p.pts));
   const kinds = defs.enemyOrder;
   const tk = defs.towerOrder;
-  const phase = mode === 'boss' ? 'wave' : mode;
+  const card = mode === 'card';
+  const phase = mode === 'boss' || card ? 'wave' : mode;
   const wave = mode === 'boss' ? 8 : mode === 'build' ? 8 : 11;
 
   const end =
@@ -58,7 +60,7 @@ export function startDemo(mode, welcome, deliver) {
   };
 
   // towers: every kind, every level, a spread of tensions
-  const tensions = [1, 0.8, 0.5, 0.3, 0.12, 0.02];
+  const tensions = card ? [1, 0.85, 0.7, 0.95, 0.6, 0.8] : [1, 0.8, 0.5, 0.3, 0.12, 0.02];
   const towers = map.plots.slice(0, 16).map((p, i) => ({
     plot: p.id,
     kind: tk[i % tk.length],
@@ -71,12 +73,12 @@ export function startDemo(mode, welcome, deliver) {
 
   // enemies spread along all paths
   const enemies = [];
-  const N = mode === 'boss' ? 60 : phase === 'wave' ? 160 : 0;
+  const N = card ? 34 : mode === 'boss' ? 60 : phase === 'wave' ? 160 : 0;
   for (let i = 0; i < N; i++) {
     const kind = kinds[i % (kinds.length - 1)];
     enemies.push({ id: i + 1, k: kinds.indexOf(kind), p: i % paths.length, off: (i / N) * 0.95, hp: 0.3 + ((i * 37) % 70) / 100, f: i % 7 === 0 ? 1 : i % 11 === 0 ? 2 : 0 });
   }
-  if (mode === 'boss' || phase === 'wave') enemies.push({ id: 999, k: kinds.indexOf('baron'), p: 1, off: 0.55, hp: 0.62, f: 1 });
+  if (!card && (mode === 'boss' || phase === 'wave')) enemies.push({ id: 999, k: kinds.indexOf('baron'), p: 1, off: 0.55, hp: 0.62, f: 1 });
 
   deliver(room);
   let t = 0;
@@ -133,7 +135,7 @@ export function startDemo(mode, welcome, deliver) {
       phase,
       wave,
       left: phase === 'build' ? Math.max(0, 18 - t) : 0,
-      lives: mode === 'lost' ? 0 : mode === 'boss' ? 4 : 14,
+      lives: card ? 20 : mode === 'lost' ? 0 : mode === 'boss' ? 4 : 14,
       purses: Object.fromEntries(players.map((p, i) => [p.id, [140, 75, 12, 260, 1450, 9, 33, 87][i]])),
       towers,
       enemies: ens,

@@ -68,7 +68,7 @@ export async function mount(ctx) {
       for (const e of game.ents.values()) if (!e.gone) n++;
       return { canvas: `${game.cv.width}x${game.cv.height}`, enemies: n, text: `${game.cv.width}x${game.cv.height}  ${n} enemies` };
     },
-    // /tv?demo=wave|build|boss|won|lost: synthetic game state, for looking at any screen
+    // /tv?demo=wave|build|boss|won|lost|card: synthetic game state, for looking at any screen
     demo(kind, deliver) {
       import('./demo.js').then(({ startDemo }) => startDemo(kind, ctx.setup, deliver));
     },

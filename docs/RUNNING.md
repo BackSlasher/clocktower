@@ -72,6 +72,7 @@ internal/modes/   game modes, one directory per mode id; all/ registers them
   stub/               dev-only test mode (see -stub-mode); the template for a new mode
 web/              embedded front end: phone/ and tv/ (the generic shells), shared/, modes/<id>/{tv,phone}/ (one module per mode, see web/modes/README.md), assets/
 tools/shot.mjs    screenshot helper for headless Chromium
+tools/social-card.mjs  renders docs/img/social-preview.jpg
 docs/             DESIGN.md (design rationale), PROTOCOL.md (wire protocol), this page and GAMEPLAY.md
 ```
 
@@ -124,11 +125,13 @@ Without `-room` it creates a room itself through a TV connection. Flags:
 
 ### TV demo and diagnostic modes
 
-- `/tv?demo=wave|build|boss|won|lost` is a dev-only mode that feeds the TV synthetic game state so you can look at any screen without playing to it. `&n=8` shows a full room.
+- `/tv?demo=wave|build|boss|won|lost` is a dev-only mode that feeds the TV synthetic game state so you can look at any screen without playing to it. `&n=8` shows a full room. `demo=card` is the tidy wave used for the social preview image.
 - `/tv?fps=1` adds a readout of frames actually drawn.
 - `/tv/soundboard.html` is a page for auditioning every sound and music track. Audio credits are in [../CREDITS.md](../CREDITS.md).
 
 ### Screenshots
+
+`docs/img/social-preview.jpg` is the GitHub social preview (uploaded by hand under Settings → General → Social preview; GitHub does not read it from the repository). Regenerate it with `node tools/social-card.mjs` while a server and a debugging Chromium are running; it needs ImageMagick.
 
 The images in `docs/img/` were taken from live games with `tools/shot.mjs` against a headless Chromium started with `--remote-debugging-port`:
 
